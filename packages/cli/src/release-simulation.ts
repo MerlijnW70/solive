@@ -7,7 +7,7 @@ import { ENGINE_ERROR_BASE, ENGINE_ERROR_NAMES, failureOf } from "./agent/proble
 
 export type SimulatedRelease = { ok: true; units_consumed: number } | { ok: false; error: string };
 
-export type ReleaseInput = { url: string; owner: Address; nonce: bigint; announcement: Address; result: bigint; sha256: string; salt: string };
+export type ReleaseInput = { url: string; owner: Address; nonce: bigint; announcement: Address; result: bigint; sha256: string; salt: string; payer?: TransactionPartialSigner | undefined };
 
 class Simulated extends Error {
   readonly simulation: Simulation;
@@ -38,6 +38,7 @@ export async function simulateRelease(transport: Transport, judge: TransactionPa
       announcement: release.announcement,
       opening: { sha256: release.sha256, salt: release.salt },
       result: release.result,
+      ...(release.payer === undefined ? {} : { payer: release.payer }),
     });
   } catch (error) {
     if (error instanceof Simulated) {

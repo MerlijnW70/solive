@@ -7,7 +7,7 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/core";
 import { announcementCommitment, getIntentDecoder } from "@intent-engine/core/internal";
-import { type AnnouncementView, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type AnnouncementView, FetchFailed, type SpecFetch, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { DEVNET_GENESIS_HASH, loadAnnouncement, PLAIN_HTTP_ON_PUBLIC } from "@intent-engine/client/internal";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
@@ -336,9 +336,12 @@ describe("fetching a delivery to judge", () => {
       ["https://a.example/x", serving(() => new Response("gone", { status: 404 })), "answered 404"],
       ["https://a.example/x", serving(() => new Response("x", { headers: { "content-length": String(MAX_ARTIFACT_BYTES + 1) } })), `is larger than ${MAX_ARTIFACT_BYTES} bytes`],
       ["https://a.example/x", serving(() => new Response(big)), `is larger than ${MAX_ARTIFACT_BYTES} bytes`],
-      ["https://a.example/x", serving(() => Promise.reject(new TypeError("fetch failed"))), "could not be fetched: fetch failed"],
+      ["https://a.example/x", serving(() => Promise.reject(new TypeError("fetch failed", { cause: new Error("unexpected redirect") }))), "could not be fetched: fetch failed"],
+      ["https://a.example/x", serving(() => Promise.reject(new FetchFailed("https://a.example/x", "redirect", "unexpected redirect"))), "could not be fetched: fetch failed"],
     ] as const) {
-      await expect(fetchDelivery(get, transport, await delivery(url, hash), 5), url).rejects.toThrow(new DeliveryUnfit(url, reason));
+      const fetching = fetchDelivery(get, transport, await delivery(url, hash), 5);
+      await expect(fetching, url).rejects.toThrow(new DeliveryUnfit(url, reason));
+      await expect(fetching, url).rejects.toBeInstanceOf(DeliveryUnfit);
     }
     h.genesis = DEVNET_GENESIS_HASH;
     await expect(fetchDelivery(serving(() => new Response("x")), transport, await delivery("http://a.example/x", hash), 5)).rejects.toThrow(

@@ -12,6 +12,16 @@ export class JudgeDeferred extends JudgeRefused {
   }
 }
 
+export class JudgeUnreadable extends JudgeDeferred {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "JudgeUnreadable";
+  }
+}
+
+export const unreadableSkipped = (tries: number, last: string): string =>
+  `the work or its spec could not be read ${tries} times, so this watch does not fetch it again; this is not a verdict on the work. The last: ${last}`;
+
 export const EXIT_RETRY = 75;
 
 export const INFRA_NEXT = "nothing was signed or paid and no verdict was written; this is not a verdict on the work, so fix the cause if needed and run the judge again";
@@ -24,6 +34,9 @@ export class JudgeInfraError extends JudgeDeferred {
     this.name = "JudgeInfraError";
   }
 }
+
+export const infraSkipped = (runs: number, last: string): string =>
+  `the check stopped on an infrastructure error ${runs} times, so this watch does not run it again; this is not a verdict on the work. The last: ${last}`;
 
 export const timedOutInfra = (seconds: number): string => `the check did not finish within --timeout ${seconds} seconds, so it was stopped and removed`;
 

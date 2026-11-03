@@ -18,7 +18,8 @@ import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runConta
 import { containerArgs, containerName, dockerEnv, GPU_SHARED, NO_ISOLATION, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
-import { checkInvited, InviteRefused } from "./invites.js";
+import { checkInvited } from "./invites.js";
+import { inviteRefusal } from "./fetch-failure.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
 import { type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
@@ -155,6 +156,17 @@ export async function escrowFor(transport: Transport, judge: Address, owner: Add
   };
 }
 
+export async function pinnedSpec(spec: string, intent: Address, specHash: string): Promise<Buffer> {
+  const bytes = await readFile(resolve(spec));
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (sha256 !== specHash) {
+    throw new JudgeRefused(`--spec ${spec} has sha256 ${sha256}, but intent ${intent} commits ${specHash}${isResaved(bytes, specHash) ? `; ${RESAVED}` : ""}`);
+  }
+  return bytes;
+}
+
+const haltedBy = (stop: AbortSignal | undefined): InterruptSignal | undefined => (stop?.aborted !== true ? undefined : stop.reason === "SIGTERM" ? "SIGTERM" : "SIGINT");
+
 export const workResaved = (artifact: string, sha256: string, announced: string): string =>
   `--artifact ${artifact} has sha256 ${sha256}, but the work announced has sha256 ${announced}: ${RESAVED}; nothing was run or paid`;
 
@@ -171,7 +183,7 @@ async function resavedWork(transport: Transport, intent: Address, read: Artifact
   }
 }
 
-export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
+export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport, stop?: AbortSignal): Promise<Verdict> {
   if (command.verdict !== undefined) {
     await rm(command.verdict, { force: true });
   }
@@ -195,11 +207,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (result < minResult || result > maxResult) {
     throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
   }
-  const specBytes = await readFile(resolve(command.spec));
-  const specSha256 = createHash("sha256").update(specBytes).digest("hex");
-  if (specSha256 !== specHash) {
-    throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}${isResaved(specBytes, specHash) ? `; ${RESAVED}` : ""}`);
-  }
+  const specBytes = await pinnedSpec(command.spec, address, specHash);
   const viper = command.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
@@ -219,12 +227,19 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;
   const payTo = opening.worker;
   const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-  await checkInvited(transport, runtime.specFetch, address, [payTo], { lookup: runtime.lookup, rpcUrl: command.url }).catch((error: unknown) => {
-    throw error instanceof InviteRefused ? new JudgeRefused(error.message) : error;
+  await checkInvited(transport, runtime.specFetch, address, [payTo], { lookup: runtime.lookup, rpcUrl: command.url }).catch(async (error: unknown) => {
+    throw await inviteRefusal(error, runtime.lookup);
   });
   const draw = viper?.cases.draw;
-  const beacon = draw === undefined ? undefined : await drawBeacon(transport, (seconds) => runtime.sleep(seconds), first, draw, address, sha256);
-  const signals = holdSignals();
+  const beacon =
+    draw === undefined
+      ? undefined
+      : await drawBeacon(transport, (seconds) => runtime.sleep(seconds, stop), first, draw, address, sha256).catch((error: unknown) => {
+          const halted = haltedBy(stop);
+          throw halted === undefined ? error : new JudgeInterrupted(halted);
+        });
+  const own = holdSignals();
+  const signals: HeldSignals = { ...own, caught: () => own.caught() ?? haltedBy(stop) };
   try {
     const judged = {
       address,
@@ -428,7 +443,7 @@ async function checkAndSettle(
       throw error;
     }
   } else if (passed && !isDevice(signer)) {
-    simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, announcement, result, sha256, salt });
+    simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, announcement, result, sha256, salt, payer: feePayer });
   }
   const verdict: Verdict = {
     intent: address,

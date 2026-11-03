@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AnnouncementView, isSdkError, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type AnnouncementView, type SpecFetch, type Transport } from "@intent-engine/client";
 import { opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS } from "@intent-engine/client/internal";
 import { isLocalWorkUrl } from "@intent-engine/core/internal";
 import { hex } from "./announcement-views.js";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
-import { type Lookup, publicAddresses, systemLookup } from "./public-address.js";
+import { fetchFailure, lastingFailure, reached, temporaryStatus } from "./fetch-failure.js";
+import { type Lookup, systemLookup } from "./public-address.js";
 
 export const FETCHED_NAME = "artifact";
 
@@ -21,6 +22,16 @@ export class DeliveryUnfit extends Error {
   constructor(url: string, reason: string) {
     super(`the work at ${url} ${reason}; it is not judged again`);
     this.name = "DeliveryUnfit";
+    this.reason = reason;
+  }
+}
+
+export class DeliveryUnreadable extends Error {
+  readonly reason: string;
+
+  constructor(url: string, reason: string) {
+    super(`the work at ${url} ${reason}; it is fetched again later`);
+    this.name = "DeliveryUnreadable";
     this.reason = reason;
   }
 }
@@ -39,7 +50,8 @@ export const tooLarge = (cap: number): string => `is larger than ${cap} bytes`;
 async function body(response: Response, url: string, cap = MAX_ARTIFACT_BYTES): Promise<Uint8Array> {
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
-    throw new DeliveryUnfit(url, `answered ${response.status}`);
+    const reason = `answered ${response.status}`;
+    throw temporaryStatus(response.status) ? new DeliveryUnreadable(url, reason) : new DeliveryUnfit(url, reason);
   }
   if (Number(response.headers.get("content-length") ?? "0") > cap) {
     await response.body?.cancel().catch(() => undefined);
@@ -59,12 +71,13 @@ async function body(response: Response, url: string, cap = MAX_ARTIFACT_BYTES): 
   return Buffer.concat(chunks);
 }
 
-async function checkedAddresses(transport: Transport, url: URL, lookup: Lookup): Promise<{ addresses?: string[] } | null> {
+export const UNRESOLVED = "has a host name that could not be looked up";
+
+async function checkedAddresses(transport: Transport, url: URL, lookup: Lookup): Promise<{ addresses?: string[] } | "private" | "unresolved"> {
   if (!PUBLIC_GENESIS_HASHES.has(await transport.genesisHash())) {
     return {};
   }
-  const addresses = await publicAddresses(url.hostname, lookup, transport.offline === true);
-  return addresses === null ? null : { addresses };
+  return reached(url.hostname, lookup, transport.offline === true);
 }
 
 export async function fetchSha256(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ sha256: string } | { problem: string }> {
@@ -72,7 +85,7 @@ export async function fetchSha256(get: SpecFetch, transport: Transport, url: str
   return "problem" in found ? found : { sha256: createHash("sha256").update(found.bytes).digest("hex") };
 }
 
-export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup, cap = MAX_ARTIFACT_BYTES): Promise<{ bytes: Uint8Array } | { problem: string }> {
+export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup, cap = MAX_ARTIFACT_BYTES): Promise<{ bytes: Uint8Array } | { problem: string; temporary?: true }> {
   if (isLocalWorkUrl(url)) {
     return { problem: WORK_IS_LOCAL };
   }
@@ -89,24 +102,25 @@ export async function fetchBytes(get: SpecFetch, transport: Transport, url: stri
     return { problem: PLAIN_HTTP_ON_PUBLIC };
   }
   const addresses = await checkedAddresses(transport, parsed, lookup);
-  if (addresses === null) {
+  if (addresses === "private") {
     return { problem: NOT_PUBLIC };
+  }
+  if (addresses === "unresolved") {
+    return { problem: UNRESOLVED, temporary: true };
   }
   try {
     return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS), ...addresses }), url, cap) };
   } catch (error) {
-    return { problem: error instanceof DeliveryUnfit ? error.reason : `could not be fetched (${fetchFailure(error)})` };
+    if (error instanceof DeliveryUnfit) {
+      return { problem: error.reason };
+    }
+    if (error instanceof DeliveryUnreadable) {
+      return { problem: error.reason, temporary: true };
+    }
+    const problem = `could not be fetched (${fetchFailure(error)})`;
+    return lastingFailure(error) ? { problem } : { problem, temporary: true };
   }
 }
-
-const fetchFailure = (error: unknown): string => {
-  if (isSdkError(error, "fetch-failed")) {
-    return `${error.message}: ${error.detail}`;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
-  return cause === "" ? message : `${message}: ${cause}`;
-};
 
 export type Announced = { announcement: AnnouncementView; salt: string; url: string };
 
@@ -127,17 +141,21 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
     throw new DeliveryUnfit(delivery.url, PLAIN_HTTP_ON_PUBLIC);
   }
   const addresses = await checkedAddresses(transport, url, lookup);
-  if (addresses === null) {
+  if (addresses === "private") {
     throw new DeliveryUnfit(delivery.url, NOT_PUBLIC);
+  }
+  if (addresses === "unresolved") {
+    throw new DeliveryUnreadable(delivery.url, UNRESOLVED);
   }
   let bytes: Uint8Array;
   try {
     bytes = await body(await get(delivery.url, { redirect: "error", signal: AbortSignal.timeout(seconds * 1000), ...addresses }), delivery.url);
   } catch (error) {
-    if (error instanceof DeliveryUnfit) {
+    if (error instanceof DeliveryUnfit || error instanceof DeliveryUnreadable) {
       throw error;
     }
-    throw new DeliveryUnfit(delivery.url, `could not be fetched: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = `could not be fetched: ${error instanceof Error ? error.message : String(error)}`;
+    throw lastingFailure(error) ? new DeliveryUnfit(delivery.url, reason) : new DeliveryUnreadable(delivery.url, reason);
   }
   const digest = createHash("sha256").update(bytes).digest();
   const sha256 = digest.toString("hex");

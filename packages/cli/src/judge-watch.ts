@@ -1,6 +1,3 @@
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import type { Address } from "@solana/kit";
 import { IntentStatus } from "@intent-engine/core";
 import { decodeIntentAccount, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
@@ -10,9 +7,9 @@ import { chainTime, deviceJudgeReady, isDevice } from "@intent-engine/client/int
 import { openedBy } from "./announcement-views.js";
 import { removeCopy } from "./artifact.js";
 import { holdSignals } from "./check-process.js";
-import { type Announced, DeliveryUnfit, type Fetched, fetchDelivery } from "./delivery-fetch.js";
-import { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused } from "./judge-errors.js";
-import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, type Verdict } from "./judge.js";
+import { type Announced, DeliveryUnfit, DeliveryUnreadable, type Fetched, fetchDelivery } from "./delivery-fetch.js";
+import { infraSkipped, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, JudgeUnreadable, unreadableSkipped } from "./judge-errors.js";
+import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, pinnedSpec, type Verdict } from "./judge.js";
 import { messageSigner } from "./ledger-keys.js";
 import { rpcFailed } from "./rpc-failure.js";
 import type { Runtime } from "./runtime.js";
@@ -22,7 +19,11 @@ export type Stopped = "paid" | "passed" | "closed" | "ended" | InterruptSignal;
 
 type Seen = { announcement: Address; seq: bigint; worker: Address; url: string | null };
 
-export type Watched = Seen & (Verdict | { artifactSha256: string | null; verdict: "fail"; reason: string } | { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true });
+export type Watched = Seen & (Verdict | { artifactSha256: string | null; verdict: "fail"; reason: string } | { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true } | { artifactSha256: string | null; verdict: "skipped"; reason: string });
+
+export const INFRA_RUNS = 3;
+
+export const UNREADABLE_TRIES = 6;
 
 export const SEALED_ELSEWHERE = "opens with none of the keys this judge was given, so its url cannot be read";
 
@@ -39,7 +40,9 @@ async function stillOpen(transport: Transport, intent: Address): Promise<boolean
 
 const bySeq = (a: AnnouncementView, b: AnnouncementView): number => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0);
 
-type Work = { judged: Set<string>; deferred: Set<string> };
+type Missed = { tries: number; due: number };
+
+type Work = { judged: Set<string>; deferred: Set<string>; stalled: Map<Address, number>; missed: Map<Address, Missed>; round: number; stop: AbortSignal };
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -54,12 +57,22 @@ async function judgeAnnounced(
   const { announcement } = delivery;
   const seen: Seen = { announcement: announcement.address, seq: announcement.seq, worker: announcement.worker, url: delivery.url };
   const failed = (error: Error, sha256: string | null): Watched => ({ ...seen, artifactSha256: sha256, verdict: "fail", reason: error.message });
+  const unreadable = (error: Error, sha256: string | null): Watched => {
+    const tries = (work.missed.get(announcement.address)?.tries ?? 0) + 1;
+    work.missed.set(announcement.address, { tries, due: work.round + 2 ** (tries - 1) });
+    return tries >= UNREADABLE_TRIES
+      ? { ...seen, artifactSha256: sha256, verdict: "skipped", reason: unreadableSkipped(tries, error.message) }
+      : { ...seen, artifactSha256: sha256, verdict: "retry", reason: error.message, retry: true };
+  };
   let fetched: Fetched;
   try {
     fetched = await fetchDelivery(runtime.specFetch, transport, delivery, command.timeout, runtime.lookup);
   } catch (error) {
     if (error instanceof DeliveryUnfit) {
       return failed(error, null);
+    }
+    if (error instanceof DeliveryUnreadable) {
+      return unreadable(error, null);
     }
     throw error;
   }
@@ -73,10 +86,21 @@ async function judgeAnnounced(
     if (work.deferred.has(fetched.sha256)) {
       return "later";
     }
-    const verdict = await judge({ ...command, artifact: fetched.path }, runtime, transport);
+    const verdict = await judge({ ...command, artifact: fetched.path }, runtime, transport, work.stop);
     work.judged.add(fetched.sha256);
     return { ...seen, ...verdict };
   } catch (error) {
+    if (error instanceof JudgeInfraError) {
+      const runs = (work.stalled.get(announcement.address) ?? 0) + 1;
+      work.stalled.set(announcement.address, runs);
+      if (runs >= INFRA_RUNS) {
+        return { ...seen, artifactSha256: fetched.sha256, verdict: "skipped", reason: infraSkipped(runs, error.message) };
+      }
+    }
+    if (error instanceof JudgeUnreadable) {
+      work.deferred.add(fetched.sha256);
+      return unreadable(error, fetched.sha256);
+    }
     if (error instanceof JudgeDeferred || rpcFailed(error)) {
       work.deferred.add(fetched.sha256);
       return { ...seen, artifactSha256: fetched.sha256, verdict: "retry", reason: reasonOf(error), retry: true };
@@ -98,18 +122,18 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
   if (isDevice(signer)) {
     await deviceJudgeReady(transport, signer.address, address).catch(historyRefused);
   }
-  const specSha256 = createHash("sha256").update(await readFile(resolve(command.spec))).digest("hex");
-  if (specSha256 !== specHash) {
-    throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
-  }
+  await pinnedSpec(command.spec, address, specHash);
   const client = createClient({ url: command.url, transport });
   const seen = new Set<Address>();
   const judgedWork = new Set<string>();
+  const stalled = new Map<Address, number>();
+  const missed = new Map<Address, Missed>();
+  let rounds = 0;
   const told = new Map<Address, string>();
   let judged = 0;
   const signals = holdSignals();
   const stop = new AbortController();
-  signals.listen(() => stop.abort());
+  signals.listen((signal) => stop.abort(signal));
   const stopped = (why: Stopped): number => {
     out(line({ stopped: why, intent: address, judged }));
     return 0;
@@ -120,13 +144,17 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
     }
     const fresh = (await client.announcementsTo(attestor)).announcements.filter((a) => a.intent === address && a.state === "announced" && !seen.has(a.address)).sort(bySeq);
     const opened = await openedBy(fresh, keypair);
-    const work: Work = { judged: judgedWork, deferred: new Set<string>() };
+    const work: Work = { judged: judgedWork, deferred: new Set<string>(), stalled, missed, round: rounds, stop: stop.signal };
+    rounds += 1;
     for (const announcement of fresh) {
       if (signals.caught() !== undefined) {
         break;
       }
       if (!(await stillOpen(transport, address))) {
         return "closed";
+      }
+      if ((missed.get(announcement.address)?.due ?? 0) > work.round) {
+        continue;
       }
       const found = opened.find((one) => one.announcement.address === announcement.address);
       let watched: Watched | null | "skipped" | "later";
@@ -152,6 +180,10 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
       seen.add(announcement.address);
       told.delete(announcement.address);
       if (watched === "skipped") {
+        continue;
+      }
+      if (watched.verdict === "skipped") {
+        out(line(watched));
         continue;
       }
       judged += 1;

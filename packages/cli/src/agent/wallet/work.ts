@@ -24,8 +24,6 @@ export const NONE_OPENS = `no announcement to this escrow opens with this wallet
 
 export const WORK_LOCAL = `the work ${WORK_IS_LOCAL}: give it to ${tool("wallet_judge_work")} as artifact, or to the CLI command judge --artifact`;
 
-const PERMANENT_WORK: readonly RegExp[] = [/^is larger than /, /is not an http or https url/, /is not a url/, /private, loopback/, /plain http url/, /answered 4\d\d/, /redirect/];
-
 const REASONS = ["incomplete", "key-not-given", "claim-held", "nothing-opens"] as const;
 
 export async function firstOf(ctx: AgentContext, intent: Address, sha256: string, openers: DeliveryOpener[], signer: WalletSigner) {
@@ -90,7 +88,7 @@ export const walletFetchWork = define({
       if (found.problem === WORK_IS_LOCAL) {
         throw new AgentRefusal("WorkUnfetchable", WORK_LOCAL);
       }
-      const code = PERMANENT_WORK.some((pattern) => pattern.test(found.problem)) ? "WorkUnfetchable" : "WorkUnreadable";
+      const code = found.temporary === true ? "WorkUnreadable" : "WorkUnfetchable";
       throw new AgentRefusal(code, SERVER_PROBLEMS[code].hint, `the work at ${url} ${found.problem}`);
     }
     const digest = createHash("sha256").update(found.bytes).digest();
