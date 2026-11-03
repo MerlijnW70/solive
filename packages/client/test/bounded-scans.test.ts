@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Address, generateKeyPairSigner, getAddressDecoder, getAddressEncoder } from "@solana/kit";
-import { describe, expect, it } from "vitest";
+import { type Address, getAddressDecoder, getAddressEncoder, type Signature } from "@solana/kit";
+import { beforeAll, describe, expect, it } from "vitest";
 import { Kind, NATIVE_MINT } from "@intent-engine/core";
 import { refutationAddress, signMessageBytes } from "@intent-engine/core/internal";
 import { createClient, InvalidInput, NotRefutable } from "../src/index.js";
@@ -34,17 +34,45 @@ const shifted = (data: Uint8Array, by: bigint): Uint8Array => {
   return copy;
 };
 
-async function paddedCluster(clones: number, shift: bigint, padding: number, drift = 0n, older = 0) {
+const cloneAddress = (i: number): Address => getAddressDecoder().decode(Uint8Array.from({ length: 32 }, (_, at) => (at === 0 ? i + 1 : 0xc1)));
+const CLONE_ADDRESSES = Array.from({ length: CLONES }, (_, i) => cloneAddress(i));
+const FAKE_PAGE = Array.from({ length: SIGNATURE_PAGE }, (_, i): ListedSignature => ({ signature: testSignature(`padded page ${i}`), slot: 1n, blockTime: null, failed: false, memo: null }));
+const FAKE_TRANSACTIONS = new Map(FAKE_PAGE.map(({ signature }): [string, EngineTransaction] => [signature, { signature, slot: 1n, blockTime: null, failed: false, emitted: [] }]));
+
+const PADDING = 3 * SIGNATURE_PAGE + 17;
+const OLDER = 3 * SIGNATURE_PAGE;
+const NEWER_SIGNATURES = Array.from({ length: PADDING }, (_, i) => testSignature(`newer ${i}`));
+const OLDER_SIGNATURES = Array.from({ length: OLDER }, (_, i) => testSignature(`older ${i}`));
+
+const timed = (signatures: readonly Signature[], count: number, blockTime: (i: number) => bigint): ListedSignature[] =>
+  signatures.slice(0, count).map((signature, i) => ({ signature, slot: 1n, blockTime: blockTime(i), failed: false, memo: null }));
+
+async function heldRelease() {
   const held = await heldWorld();
   const paid = await held.release(held.memoRequired);
   const base = held.w.chain.transport;
-  const real = (await base.getAccount(paid.announcement)) ?? undefined;
-  const paidAt = (await loadAnnouncement(base, paid.announcement))?.paidAt ?? 0n;
-  expect(real).toBeDefined();
-  const fakes = await Promise.all(Array.from({ length: clones }, async () => (await generateKeyPairSigner()).address));
+  const real = await base.getAccount(paid.announcement);
+  const paidAt = (await loadAnnouncement(base, paid.announcement))?.paidAt;
+  const history = await (base.signaturesOf as NonNullable<Transport["signaturesOf"]>).call(base, paid.announcement, SIGNATURE_PAGE);
+  if (real === null || paidAt === undefined) {
+    throw new Error("the held release left no paid announcement to clone");
+  }
+  return { ...held, paid, base, real, paidAt, history };
+}
+
+let shared: Promise<Awaited<ReturnType<typeof heldRelease>>>;
+
+async function paddedCluster(clones: number, shift: bigint, padding: number, drift = 0n, older = 0) {
+  const held = await shared;
+  const { paid, base, real, paidAt } = held;
+  const fakes = CLONE_ADDRESSES.slice(0, clones);
   const padded = new Set(fakes);
-  const newer = Array.from({ length: padding }, (_, i): ListedSignature => ({ signature: testSignature(`newer ${i}`), slot: 1n, blockTime: paidAt + 1n + BigInt(i % 7), failed: false, memo: null }));
-  const earlier = Array.from({ length: older }, (_, i): ListedSignature => ({ signature: testSignature(`older ${i}`), slot: 1n, blockTime: paidAt - 2n, failed: false, memo: null }));  const counts = { reads: 0, inFlight: 0, most: 0, read: new Set<Address>() };
+  const cloneData = shifted(real.data, shift);
+  const newer = timed(NEWER_SIGNATURES, padding, (i) => paidAt + 1n + BigInt(i % 7));
+  const earlier = timed(OLDER_SIGNATURES, older, () => paidAt - 2n);
+  const own = held.history.map((entry) => ({ ...entry, blockTime: entry.blockTime === null ? null : entry.blockTime + drift }));
+  const all = [...newer, ...own, ...earlier];
+  const counts = { reads: 0, inFlight: 0, most: 0, read: new Set<Address>() };
   const spend = (count: number) => {
     counts.reads += count;
     if (counts.reads > RUNAWAY) {
@@ -53,11 +81,12 @@ async function paddedCluster(clones: number, shift: bigint, padding: number, dri
   };
   const listing = base.engineAccounts as NonNullable<Transport["engineAccounts"]>;
   const signatures = base.signaturesOf as NonNullable<Transport["signaturesOf"]>;
+  const transactions = base.transactionsOf as NonNullable<Transport["transactionsOf"]>;
   const transport: Transport = {
     ...base,
     engineAccounts: async (filter) => [
       ...(await listing.call(base, filter)),
-      ...fakes.map((address) => ({ address, lamports: real?.lamports ?? 0n, data: shifted(real?.data ?? new Uint8Array(), shift) })),
+      ...fakes.map((address) => ({ address, lamports: real.lamports, data: cloneData })),
     ],
     signaturesOf: async (of, limit, before, until) => {
       spend(1);
@@ -67,27 +96,33 @@ async function paddedCluster(clones: number, shift: bigint, padding: number, dri
       await new Promise((resolve) => setTimeout(resolve, 1));
       counts.inFlight--;
       if (padded.has(of)) {
-        return Array.from({ length: SIGNATURE_PAGE }, (_, i): ListedSignature => ({ signature: testSignature(`${of} ${before ?? ""} ${i}`), slot: 1n, blockTime: null, failed: false, memo: null }));
+        return FAKE_PAGE;
       }
       if (of !== paid.announcement) {
         return signatures.call(base, of, limit, before, until);
       }
-      const own = (await signatures.call(base, of, SIGNATURE_PAGE)).map((entry) => ({ ...entry, blockTime: entry.blockTime === null ? null : entry.blockTime + drift }));
-      const all = [...newer, ...own, ...earlier];
       const from = before === undefined ? 0 : all.findIndex(({ signature }) => signature === before) + 1;
       return all.slice(from, from + limit);
     },
     transactionsOf: async (listed) => {
       spend(listed.length);
-      const known = await (base.transactionsOf as NonNullable<Transport["transactionsOf"]>).call(base, listed);
+      const known = await transactions.call(base, listed);
       const found = new Set(known.map(({ signature }) => signature));
-      return [...known, ...listed.filter(({ signature }) => !found.has(signature)).map(({ signature }): EngineTransaction => ({ signature, slot: 1n, blockTime: null, failed: false, emitted: [] }))];
+      return [
+        ...known,
+        ...listed.filter(({ signature }) => !found.has(signature)).map(({ signature }): EngineTransaction => FAKE_TRANSACTIONS.get(signature) ?? { signature, slot: 1n, blockTime: null, failed: false, emitted: [] }),
+      ];
     },
   };
-  return { ...held, paid, fakes, counts, client: createClient({ url: LOCAL, transport }) };
+  return { ...held, fakes, counts, client: createClient({ url: LOCAL, transport }) };
 }
 
 describe("heldShares on a cluster padded with held announcements", () => {
+  beforeAll(async () => {
+    shared = heldRelease();
+    await shared;
+  });
+
   it("reads a bounded history in a few lanes, still lists the newest share and says it is incomplete", async () => {
     const { blocked, paid, fakes: clones, counts, client } = await paddedCluster(CLONES, -1n, 0);
     const listed = await client.heldShares(blocked.address);
@@ -101,8 +136,7 @@ describe("heldShares on a cluster padded with held announcements", () => {
   });
 
   it("finds the release of an announcement padded with many newer transactions within its read budget", async () => {
-    const padding = 3 * SIGNATURE_PAGE + 17;
-    const { blocked, paid, counts, client } = await paddedCluster(0, 0n, padding);
+    const { blocked, paid, counts, client } = await paddedCluster(0, 0n, PADDING);
     const listed = await client.heldShares(blocked.address);
     expect(listed).toMatchObject({ complete: true, reasons: [] });
     expect(listed.shares).toEqual([expect.objectContaining({ announcement: paid.announcement, index: 1, amount: SHARES[1] })]);
@@ -110,7 +144,7 @@ describe("heldShares on a cluster padded with held announcements", () => {
   });
 
   it("stops at the first signature older than the paid time and says the release was not found", async () => {
-    const { blocked, paid, counts, client } = await paddedCluster(0, 0n, 0, -1n, 3 * SIGNATURE_PAGE);
+    const { blocked, paid, counts, client } = await paddedCluster(0, 0n, 0, -1n, OLDER);
     const listed = await client.heldShares(blocked.address);
     expect(listed).toMatchObject({ complete: false, shares: [], reasons: [releaseUnread(paid.announcement)] });
     expect(counts.reads).toBe(1);
