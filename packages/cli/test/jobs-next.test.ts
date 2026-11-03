@@ -8,7 +8,7 @@ import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { type Serving, servedActions } from "../src/agent/everyday.js";
 import { checkDelivery, DELIVER_NEXT, prepareDeliver, UNGUESSABLE_URL, walletCheckDelivery, walletDeliver } from "../src/agent/wallet/delivery.js";
-import { NO_JOB_NOW } from "../src/agent/jobs.js";
+import { NO_JOB_NOW, UNCHECKED_JOBS } from "../src/agent/jobs.js";
 import { ata, h, NOW, runtime, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -67,10 +67,11 @@ describe("solive_find_jobs next hint", () => {
       const job = await openJob();
       const listed = await found(client, {});
       expect((listed["jobs"] as { intent: Address }[]).map(({ intent }) => intent)).toEqual([job]);
-      expect(listed["next"]).toBe(next);
-      expect((await found(client, { wait: 3 }))["next"]).toBe(next);
+      expect(listed["next"]).toBe(UNCHECKED_JOBS);
+      expect((await found(client, { wait: 3 }))["next"]).toBe(UNCHECKED_JOBS);
+      expect(UNCHECKED_JOBS).not.toContain(CLAIM_STEP);
       const served = new Set(servedActions(serving).map((action) => action.name));
-      expect([...`${next} ${NO_JOB_NOW}`.matchAll(/solive_\w+/g)].map(([name]) => name).filter((name) => !served.has(name))).toEqual([]);
+      expect([...`${next} ${NO_JOB_NOW} ${UNCHECKED_JOBS}`.matchAll(/solive_\w+/g)].map(([name]) => name).filter((name) => !served.has(name))).toEqual([]);
     });
   }
 });

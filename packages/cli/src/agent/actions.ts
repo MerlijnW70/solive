@@ -1,6 +1,7 @@
 import type { Address, TransactionSigner } from "@solana/kit";
 import type { FaucetFetch } from "../faucet.js";
 import { type Lookup, type SpecFetch, type SpecSource, type Transport } from "@intent-engine/client";
+import type { JobReads } from "../job-reads.js";
 import { defaultSpecSources, type IntentChanges, memoized, type SpecCache, type SpecReadOptions } from "@intent-engine/client/internal";
 import { systemLookup } from "../public-address.js";
 import type { SpecReach } from "../invites.js";
@@ -25,6 +26,7 @@ export type AgentContext = {
   fetch?: SpecFetch;
   specSources?: readonly SpecSource[];
   specCache?: SpecCache;
+  jobReads?: JobReads;
   faucetFetch?: FaucetFetch;
   update?: Promise<string | undefined>;
   lookup?: Lookup;

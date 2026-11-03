@@ -3,11 +3,11 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
+import { createDefaultRpcTransport, createKeyPairSignerFromBytes, createSolanaRpcFromTransport, type KeyPairSigner } from "@solana/kit";
 import { Kind } from "@intent-engine/core";
 import { isSdkError } from "@intent-engine/client";
 import { openUsb, pinnedFetch, systemLookup } from "@intent-engine/client/node";
-import { changesFrom, intentNotifications, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
+import { changesFrom, intentNotifications, limitedTransport, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
 import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
@@ -186,9 +186,14 @@ type Pipes = { stdin: Readable; stdout: Writable };
 
 export const FETCH_TIMEOUT_MS = 10_000;
 
+export const RPC_REQUEST_MS = 30_000;
+
+export const timedRpc = (url: string, timeoutMs: number = RPC_REQUEST_MS): RpcLike =>
+  createSolanaRpcFromTransport(limitedTransport(createDefaultRpcTransport({ url }), timeoutMs, undefined)) as unknown as RpcLike;
+
 export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = process, timeoutMs = FETCH_TIMEOUT_MS): Runtime {
   return {
-    transport: (url) => rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url)),
+    transport: (url) => rpcTransport(timedRpc(url), undefined, signatureWatch(url)),
     intentChanges: (url) => changesFrom(intentNotifications(url)),
     jobChanges: (url) => changesFrom(intentNotifications(url, Kind.AttestedResult)),
     loadSigner: loadKeypairFile,

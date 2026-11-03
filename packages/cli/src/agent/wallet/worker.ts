@@ -58,6 +58,7 @@ export async function workerSpec(ctx: AgentContext, intent: Address) {
   let spec;
   try {
     spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, intent, undefined, lookup, rpcUrl, { sources: specReadOf(ctx).sources });
+    ctx.jobReads?.saw(intent, spec);
   } catch (error) {
     if (isSdkError(error, "spec-sealed")) {
       throw new AgentRefusal("WorkerUnfit", jobSealed(intent));

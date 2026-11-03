@@ -1,7 +1,8 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ListedSignature, Transport } from "@intent-engine/client";
-import { type Cursor, cursorOf, cursorText, FIND_DEFAULT, historyOnce, jobPage, type PageWanted, type Readable, SCAN_BATCH } from "../src/job-pages.js";
+import { type Cursor, cursorOf, cursorText, FIND_DEFAULT, historyOnce, jobPage, type PageWanted, type Readable } from "../src/job-pages.js";
+import { JobReads } from "../src/job-reads.js";
 
 const stub = vi.hoisted(() => ({ proofs: [] as unknown[], urls: new Map<string, string>() }));
 
@@ -47,7 +48,8 @@ function counted(): Counted {
 
 const reading: Readable = async (transport, intent) => {
   await transport.signaturesOf?.(intent, 1);
-  return stub.urls.has(intent) && intent !== addressOf(3);
+  const url = stub.urls.get(intent);
+  return url !== undefined && intent !== addressOf(3) ? { plain: url } : false;
 };
 
 const wanted = (more: Partial<PageWanted> = {}): PageWanted => ({ limit: FIND_DEFAULT, all: false, ...more });
@@ -100,53 +102,43 @@ describe("find_jobs pages", () => {
     expect(seen).toEqual([7, 6, 5, 4, 3, 2, 1].map((seed) => addressOf(seed + 10)));
   });
 
-  it("reads in batches no wider than the bound and no further than the limit needs", async () => {
+  it("reads no more at once than its bound and only the jobs a page lists", async () => {
     stub.proofs = Array.from({ length: 20 }, (_, i) => proof(i + 30, BigInt(i)));
     for (const { address } of stub.proofs as { address: Address }[]) {
       stub.urls.set(address, "https://specs.example/" + address);
     }
     const full = counted();
-    await jobPage(full.transport, wanted({ all: true, limit: 20 }), terms, reading);
-    expect(full.widest()).toBeLessThanOrEqual(SCAN_BATCH);
-    expect(full.calls()).toBe(20);
+    await jobPage(full.transport, wanted({ all: true, limit: 20 }), terms, reading, { reads: new JobReads({ most: 8 }) });
+    expect(full.widest()).toBeLessThanOrEqual(8);
     const short = counted();
     const page = await jobPage(short.transport, wanted({ limit: 2 }), terms, reading);
     expect(page.jobs).toHaveLength(2);
-    expect(short.calls()).toBe(SCAN_BATCH);
+    expect(short.calls()).toBe(2);
     expect(page.more).toBe(cursorText({ createdAt: 18n, expiresAt: 1_000n, intent: addressOf(48) }));
   });
 
-  it("stops reading when its time runs out and hands back a cursor", async () => {
-    stub.proofs = Array.from({ length: 12 }, (_, i) => proof(i + 60, BigInt(i)));
-    const { transport, calls } = counted();
-    let clock = 0;
-    const page = await jobPage(transport, wanted(), terms, reading, { budgetMs: 10, elapsed: () => (clock += 11), pause: () => new Promise(() => undefined) });
-    expect(calls()).toBe(SCAN_BATCH);
-    expect(page.jobs).toEqual([]);
-    expect(page.more).toBe(cursorText({ createdAt: BigInt(12 - SCAN_BATCH), expiresAt: 1_000n, intent: addressOf(60 + 12 - SCAN_BATCH) }));
-  });
-
-  it("answers when a batch stalls past its time, with a cursor that reads the same jobs again", async () => {
+  it("answers after its head start when every read stalls, listing the jobs unchecked", async () => {
     stub.proofs = [proof(80, 5n), proof(81, 4n)];
     const stalled = { signaturesOf: () => new Promise(() => undefined), transactionsOf: async () => [] } as unknown as Transport;
     const page = await jobPage(stalled, wanted({ all: true }), terms, reading, { pause: async () => undefined });
-    expect(page.jobs).toEqual([]);
-    const after = cursorOf(page.more ?? "");
-    expect(after).not.toBeNull();
-    const { transport } = counted();
-    expect(intents(await jobPage(transport, wanted({ all: true, after: after ?? undefined }), terms, reading))).toEqual([addressOf(80), addressOf(81)]);
+    expect(page.jobs.map(({ intent, specChecked, specUrl }) => [intent, specChecked, specUrl])).toEqual([
+      [addressOf(80), false, null],
+      [addressOf(81), false, null],
+    ]);
+    expect(page.more).toBeUndefined();
   });
 
-  it("keeps the jobs a stalled batch read in order before its time ran out", async () => {
-    stub.proofs = [proof(84, 9n), proof(85, 8n), proof(86, 7n), proof(87, 6n)];
-    const answered = new Set([addressOf(84), addressOf(85), addressOf(87)]);
+  it("fills in the urls a head start read, and leaves the stalled one unknown", async () => {
+    stub.proofs = [proof(84, 9n), proof(85, 8n), proof(86, 7n)];
+    for (const seed of [84, 85, 86]) {
+      stub.urls.set(addressOf(seed), `https://specs.example/${seed}`);
+    }
     const partial = {
-      signaturesOf: (of: Address) => (answered.has(of) ? Promise.resolve([]) : new Promise(() => undefined)),
+      signaturesOf: (of: Address) => (of === addressOf(86) ? new Promise(() => undefined) : Promise.resolve([])),
       transactionsOf: async () => [],
     } as unknown as Transport;
     const page = await jobPage(partial, wanted({ all: true }), terms, reading, { pause: () => new Promise((resolve) => setTimeout(resolve, 20)) });
-    expect(intents(page)).toEqual([addressOf(84), addressOf(85)]);
-    expect(page.more).toBe(cursorText({ createdAt: 8n, expiresAt: 1_000n, intent: addressOf(85) }));
+    expect(page.jobs.map(({ specUrl }) => specUrl)).toEqual(["https://specs.example/84", "https://specs.example/85", null]);
   });
 
   it("does not ask for an older page after a short page, and reads each page once", async () => {

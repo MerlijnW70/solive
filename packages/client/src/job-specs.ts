@@ -61,7 +61,7 @@ export type Spec = {
   tried: SpecAttempt[];
 };
 
-export type SpecReadOptions = { sources?: readonly SpecSource[]; cache?: SpecCache; budgetMs?: number };
+export type SpecReadOptions = { sources?: readonly SpecSource[]; cache?: SpecCache; budgetMs?: number; signal?: AbortSignal };
 
 export const webFetch: SpecFetch = (url, init) =>
   fetch(url, {
@@ -172,7 +172,8 @@ export async function readSpec(
     return specOf(cached.url, cached.bytes, hash, "cache", []);
   }
   const url = await specUrlOf(transport, intent, proof.intent.createdAt, proof.intent.owner);
-  const deadline = AbortSignal.timeout(options.budgetMs ?? SPEC_READ_MS);
+  const budget = AbortSignal.timeout(options.budgetMs ?? SPEC_READ_MS);
+  const deadline = options.signal === undefined ? budget : AbortSignal.any([budget, options.signal]);
   const reach = { transport, get, lookup, rpcUrl, deadline };
   const tried: SpecAttempt[] = [];
   let failed: SpecUnreadable | undefined;

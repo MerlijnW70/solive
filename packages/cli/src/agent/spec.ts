@@ -58,7 +58,9 @@ export const getSpec = define({
     try {
       const { lookup, rpcUrl } = specReach(ctx);
       spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, input.intent, await walletOpeners(ctx), lookup, rpcUrl, specReadOf(ctx));
+      ctx.jobReads?.saw(input.intent, spec);
     } catch (error) {
+      ctx.jobReads?.saw(input.intent, null);
       if (isSdkError(error, "spec-sealed")) {
         throw new AgentRefusal("SpecSealed", specSealedHint(error.to.length, error.keyed), error.url);
       }

@@ -2,22 +2,25 @@ import { type Address, isAddress } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { remainingOf, type UnreadableAccount } from "@intent-engine/core/internal";
 import type { EngineTransaction, ListedSignature, Transport } from "@intent-engine/client";
-import { boundMembers, jobClaimOf, loadClaimsOf, openProofEscrows, type PayTerms, type Proof, releaseNet, specUrlOf, TRANSACTION_FETCHES } from "@intent-engine/client/internal";
+import { boundMembers, jobClaimOf, loadClaimsOf, openProofEscrows, type PayTerms, type Proof, releaseNet, TRANSACTION_FETCHES } from "@intent-engine/client/internal";
 import { decimalsOnce, freezeAuthorityRead, type JobsWanted, leastUnits, mintsOnce, type PricedJob } from "./job-filters.js";
+import { JobReads, type JobToRead, type Readable } from "./job-reads.js";
+
+export type { Readable } from "./job-reads.js";
 
 export const FIND_DEFAULT = 5;
 export const SCAN_BATCH = TRANSACTION_FETCHES;
-export const SCAN_BUDGET_MS = 5_000;
-
-export type Readable = (transport: Transport, intent: Address) => Promise<boolean>;
+export const HEAD_START_MS = 1_500;
 
 export type PageWanted = JobsWanted & { limit: number; all: boolean; after?: Cursor | undefined };
 
 export type Cursor = { createdAt: bigint; expiresAt: bigint; intent: Address };
 
-export type JobPage = { jobs: PricedJob[]; unreadable: UnreadableAccount[]; more?: string };
+export type CheckedJob = PricedJob & { specChecked: boolean };
 
-export type PageOptions = { budgetMs?: number; elapsed?: () => number; pause?: (ms: number) => Promise<void> };
+export type JobPage = { jobs: CheckedJob[]; unreadable: UnreadableAccount[]; more?: string };
+
+export type PageOptions = { headStartMs?: number; elapsed?: () => number; pause?: (ms: number) => Promise<void>; reads?: JobReads };
 
 const CURSOR = /^(\d{1,20})\.(\d{1,20})\.([1-9A-HJ-NP-Za-km-z]{32,44})$/;
 
@@ -92,44 +95,43 @@ async function minPaid(proofs: Proof[], minPay: string | undefined, decimalsOf: 
   return proofs.filter(({ intent }) => remainingOf(intent) >= (least.get(intent.inputMint) ?? 0n));
 }
 
-type Found = { proof: Proof; url: string | null };
+type Found = { proof: Proof; url: string | null; checked: boolean };
 
-async function jobRead(transport: Transport, proof: Proof, all: boolean, readable: Readable): Promise<Found | null> {
-  const url = await specUrlOf(transport, proof.address, proof.intent.createdAt, proof.intent.owner);
-  return all || (await readable(transport, proof.address)) ? { proof, url } : null;
-}
-
-const before = (first: Proof): Cursor => ({ ...keyOf(first), createdAt: first.intent.createdAt + 1n });
+const toRead = ({ address: intent, intent: { createdAt, owner }, params: { specHash } }: Proof): JobToRead => ({ intent, createdAt, owner, specHash });
 
 async function scanned(transport: Transport, queue: readonly Proof[], wanted: PageWanted, readable: Readable, options: PageOptions) {
-  const { budgetMs = SCAN_BUDGET_MS, elapsed = performance.now.bind(performance), pause } = options;
+  const { headStartMs = HEAD_START_MS, elapsed = performance.now.bind(performance), pause, reads = new JobReads() } = options;
   const started = elapsed();
-  const kept: Found[] = [];
+  const listed = (proof: Proof) => reads.known(toRead(proof), wanted.all) !== null;
+  let picked: Proof[] = [];
   let at = 0;
-  for (let left = budgetMs; at < queue.length && kept.length < wanted.limit && left > 0; left = budgetMs - (elapsed() - started)) {
-    const batch = queue.slice(at, at + SCAN_BATCH);
-    const done: (Found | null | undefined)[] = batch.map(() => undefined);
-    const reads = batch.map((proof, i) => jobRead(transport, proof, wanted.all, readable).then((found) => (done[i] = found)));
-    const whole = await within(Promise.all(reads), left, pause);
-    for (const found of done) {
-      if (kept.length === wanted.limit || found === undefined) {
-        break;
-      }
-      at++;
-      if (found !== null) {
-        kept.push(found);
+  for (;;) {
+    while (at < queue.length && picked.length < wanted.limit) {
+      const proof = queue[at++] as Proof;
+      if (listed(proof)) {
+        picked.push(proof);
+        reads.start(transport, toRead(proof), wanted.all, readable);
       }
     }
-    if (whole === undefined) {
+    const left = headStartMs - (elapsed() - started);
+    const running = picked.flatMap((proof) => reads.pending(toRead(proof), wanted.all) ?? []);
+    if (left <= 0 || running.length === 0) {
       break;
     }
+    await within(Promise.all(running), left, pause);
+    const still = picked.filter(listed);
+    if (still.length === picked.length || at === queue.length) {
+      picked = still;
+      break;
+    }
+    picked = still;
   }
+  const kept: Found[] = picked.flatMap((proof) => {
+    const known = reads.known(toRead(proof), wanted.all);
+    return known === null ? [] : [{ proof, url: known.url, checked: known.checked }];
+  });
   const last = queue[at - 1];
-  const first = queue[0];
-  if (at === queue.length || first === undefined) {
-    return { kept };
-  }
-  return { kept, more: cursorText(last === undefined ? (wanted.after ?? before(first)) : keyOf(last)) };
+  return at === queue.length || last === undefined ? { kept } : { kept, more: cursorText(keyOf(last)) };
 }
 
 async function wholeTokens(raw: bigint, decimals: Promise<number>): Promise<string | null> {
@@ -140,14 +142,14 @@ async function wholeTokens(raw: bigint, decimals: Promise<number>): Promise<stri
   }
 }
 
-async function priced(transport: Transport, kept: readonly Found[], terms: PayTerms, mintsOf: ReturnType<typeof mintsOnce>, decimalsOf: (mint: Address) => Promise<number>): Promise<PricedJob[]> {
+async function priced(transport: Transport, kept: readonly Found[], terms: PayTerms, mintsOf: ReturnType<typeof mintsOnce>, decimalsOf: (mint: Address) => Promise<number>): Promise<CheckedJob[]> {
   const [claims, freezes, whole] = await Promise.all([
     loadClaimsOf(transport, kept.map(({ proof }) => proof.address)),
     Promise.all(kept.map(({ proof }) => freezeAuthorityRead(mintsOf(proof.intent.inputMint)))),
     Promise.all(kept.map(({ proof }) => wholeTokens(remainingOf(proof.intent), decimalsOf(proof.intent.inputMint)))),
   ]);
   return Promise.all(
-    kept.map(async ({ proof: { address, intent, params }, url }, i) => {
+    kept.map(async ({ proof: { address, intent, params }, url, checked }, i) => {
       const net = releaseNet(intent, terms);
       const netPay = net === null ? null : await wholeTokens(net, decimalsOf(intent.inputMint));
       return {
@@ -167,6 +169,7 @@ async function priced(transport: Transport, kept: readonly Found[], terms: PayTe
         ...(netPay === null ? { netPay: "0", payable: false } : { netPay, payable: true }),
         ...jobClaimOf(claims[i] ?? null),
         freezeAuthority: freezes[i] ?? null,
+        specChecked: checked,
       };
     }),
   );
