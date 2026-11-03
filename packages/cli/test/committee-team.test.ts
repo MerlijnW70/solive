@@ -130,7 +130,7 @@ describe("a team judging together through the default wallet tools", () => {
     expect([leadVote.member, peerVote.member]).toEqual([lead, peer.address]);
     h.files.set(defaultWallet(HOME), leadKey);
 
-    expect((await call(client, "wallet_committee_release", { ...ballot, votes: [leadVote] })).value).toMatchObject({ code: "CommitteeSigners" });
+    expect((await call(client, "wallet_committee_release", { ...ballot, votes: [leadVote] })).value).toMatchObject({ code: "Failed", untrustedDetail: expect.stringContaining("needs 2 distinct votes, got 1") });
     const votes = [peerVote, leadVote];
     const shown = await ok(client, "wallet_committee_release", { ...ballot, votes });
     expect(shown).toMatchObject({ intent, committee, signers: members, sent: false });

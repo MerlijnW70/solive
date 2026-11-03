@@ -4,7 +4,7 @@ import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { findIntentPda, signCommitteeVote, sortMembers } from "@intent-engine/core/internal";
-import { createClient, NotSettleable, VoteRejected } from "../src/index.js";
+import { createClient, InvalidInput, NotSettleable, VoteRejected } from "../src/index.js";
 import { budgeted, PACKET_DATA_SIZE, transactionBytes } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
@@ -120,7 +120,37 @@ describe("a committee judges a proof escrow", () => {
     ).rejects.toThrow(VoteRejected);
     await expect(
       client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest, ballot.committee.members)] }),
-    ).rejects.toThrow("CommitteeSigners");
+    ).rejects.toThrow("needs 2 distinct votes, got 1");
+    expect(await tokens(worker)).toBeNull();
+  });
+
+  it("settles when the same member voted twice, counting each member once", async () => {
+    const { client, fresh, tokens, members, owner, nonce, deliver } = await setup(0n);
+    const { worker, delivered } = await deliver();
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n };
+    const { digest, committee } = await client.committeeBallot(target);
+    const [a, b] = members;
+    if (a === undefined || b === undefined) throw new Error("three members");
+    const [one, again, two] = await Promise.all([a, a, b].map((m) => signCommitteeVote(m, digest, committee.members)));
+    if (one === undefined || again === undefined || two === undefined) throw new Error("votes");
+    const release = await client.plan.settleCommittee({ ...target, solver: await fresh(), votes: [one, again, two] });
+    expect([...release.voters].sort()).toEqual([a.address, b.address].sort());
+    await client.settleCommittee({ ...target, solver: await fresh(), votes: [one, again, two] });
+    expect(await tokens(worker)).not.toBeNull();
+  });
+
+  it("names the count when too few distinct members voted", async () => {
+    const { client, fresh, tokens, members, owner, nonce, created, deliver } = await setup(0n);
+    const { worker, delivered } = await deliver();
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n };
+    const { digest, committee } = await client.committeeBallot(target);
+    const [a] = members;
+    if (a === undefined) throw new Error("members");
+    const vote = await signCommitteeVote(a, digest, committee.members);
+    await expect(client.settleCommittee({ ...target, solver: await fresh(), votes: [vote, vote] })).rejects.toThrow(
+      `committee ${created.committee} needs 2 distinct votes, got 1`,
+    );
+    await expect(client.settleCommittee({ ...target, solver: await fresh(), votes: [] })).rejects.toBeInstanceOf(InvalidInput);
     expect(await tokens(worker)).toBeNull();
   });
 

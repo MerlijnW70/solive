@@ -3,16 +3,25 @@ import { formatAmount, InvalidInput } from "@intent-engine/core";
 import { NoMessageSigner } from "./announce-errors.js";
 import { isSaltSigner } from "./announce-keys.js";
 import { NotSettleable } from "./client-errors.js";
+import { notOwnerCancel } from "./client-intents.js";
 import { intentAt } from "./jobs.js";
 import { outcome, type SimpleContext } from "./simple-orders.js";
 import { sha256Given, workReads } from "./simple-reads.js";
 import { nameOfMint, wholeTokens } from "./simple-tokens.js";
+import { vaultBalance } from "./vault.js";
 import type { CancelInput, DeliveredWork, DeliverWorkInput, OpenWork, Outcome, Preview, ReleaseInput } from "./simple-types.js";
 
 export const RELEASE_NEEDS_KEY_PAIR = "release signs the judge's verdict, so connect with a signer that also signs messages";
 
 export const notFirstAnnouncer = (worker: Address, announcement: Address, sha256: string, to: Address): string =>
   `pays ${worker}, who announced the work ${sha256} first, in ${announcement}, not ${to}; nothing was sent`;
+
+const resultOf = (given: ReleaseInput["result"]): bigint => {
+  if (typeof given === "number" && !Number.isInteger(given)) {
+    throw new InvalidInput("result", "format", `result must be a whole number, not ${given}`);
+  }
+  return BigInt(given ?? 1n);
+};
 
 export function workSends(ctx: SimpleContext) {
   const { deliveries, receipt, openings } = workReads(ctx);
@@ -65,12 +74,12 @@ export function workSends(ctx: SimpleContext) {
       throw new InvalidInput("signer", "unsupported", RELEASE_NEEDS_KEY_PAIR);
     }
     const sha256 = sha256Given(input.deliveredSha256, "deliveredSha256");
+    const result = resultOf(input.result);
     const { intent, mint } = await held(input.escrow);
     const first = await ctx.client.firstOpening({ intent: input.escrow, sha256, keypair: input.keypair });
     if (input.to !== undefined && input.to !== first.worker) {
       throw new NotSettleable(input.escrow, "not-first-announcer", notFirstAnnouncer(first.worker, first.announcement, sha256, input.to));
     }
-    const result = BigInt(input.result ?? 1n);
     const summary = `Release escrow ${input.escrow} holding ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${first.worker} for work ${sha256}, announced first in ${first.announcement}`;
     return outcome(ctx, input, summary, async (client) => ({
       signature: await client.settleProof({
@@ -89,9 +98,10 @@ export function workSends(ctx: SimpleContext) {
     const address = input.escrow ?? input.intent;
     const { intent, mint } = await held(address);
     if (intent.owner !== ctx.signer.address) {
-      throw new InvalidInput("escrow", "conflict", `intent ${address} belongs to ${intent.owner}, not to ${ctx.signer.address}`);
+      throw new InvalidInput("escrow", "conflict", notOwnerCancel(address, intent.owner, ctx.signer.address));
     }
-    const summary = `Cancel ${address} and return ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${ctx.signer.address}`;
+    const refund = await vaultBalance(ctx.client.transport, address);
+    const summary = `Cancel ${address} and return ${wholeTokens(refund, mint.decimals, intent.inputMint)} to ${ctx.signer.address}`;
     return outcome(ctx, input, summary, async (client) => ({
       signature: await client.cancel(ctx.signer, address),
       intent: address,

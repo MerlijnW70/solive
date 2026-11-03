@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { InvalidInput } from "@intent-engine/core";
 import {
   attestedDeliveryFields,
   attestedDeliveryPreimage,
@@ -84,7 +85,11 @@ export function committeeSettlement(context: ClientContext) {
         throw new VoteRejected(vote.member, plan.intent);
       }
     }
-    const needed = [...input.votes]
+    const distinct = [...new Map(input.votes.map((vote) => [vote.member, vote])).values()];
+    if (distinct.length < committee.threshold) {
+      throw new InvalidInput("votes", "missing", `committee ${committee.address} needs ${committee.threshold} distinct votes, got ${distinct.length}`);
+    }
+    const needed = distinct
       .sort((a, b) => committee.members.indexOf(a.member) - committee.members.indexOf(b.member))
       .slice(0, committee.threshold);
     const { instruction, mask } = buildCommitteeBatch(committee, digest, needed);

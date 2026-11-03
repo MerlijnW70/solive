@@ -3,7 +3,7 @@ import { getCloseAccountInstruction, getTokenDecoder, getTransferInstruction, TO
 import { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
-import { findIntentPda, findUserStatePda } from "@intent-engine/core/internal";
+import { findIntentPda, findUserStatePda, findVaultPda } from "@intent-engine/core/internal";
 import { OWNER_ACCOUNT_MISSING } from "../src/agent/settle.js";
 import { costlyFunding, fundingRent } from "../src/crank.js";
 import { SETTLED_LINE } from "../src/agent/shapes.js";
@@ -47,6 +47,20 @@ describe("agent server against the deployed engine", () => {
     expect(settled["escrowed"]).toBe(ESCROW.toString());
     expect(settled["summary"].at(-1)).toBe(SETTLED_LINE);
     expect((await fail(client, "prepare_cancel", { owner: w.owner.address, nonce: "0" }))["code"]).toBe("InvalidTransition");
+  });
+
+  it("prepares a cancel that refunds the whole vault, also when it was topped up from outside", async () => {
+    const made = await createIntent();
+    const [vault] = await findVaultPda({ intent: made["intent"] });
+    const held = h.svm.getAccount(vault);
+    if (!held.exists) throw new Error("vault missing");
+    const data = new Uint8Array(held.data);
+    const extra = 700n;
+    new DataView(data.buffer).setBigUint64(64, ESCROW + extra, true);
+    h.svm.setAccount({ ...held, data });
+    const cancel = await ok(client, "prepare_cancel", { owner: w.owner.address, nonce: "0" });
+    expect(cancel["refund"]).toBe((ESCROW + extra).toString());
+    expect(cancel["summary"]).toContain(`Returns 0.0011 of ${w.inputMint} to your token account`);
   });
 
   it("closes a cancelled intent in the same transaction when asked and returns its rent to the owner who paid it", async () => {

@@ -2,7 +2,7 @@ import { type Address, type Instruction, type KeyPairSigner, lamports, none } fr
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT as TEST, NATIVE_MINT as WSOL, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { COMPUTE_BUDGET_ADDRESS, decodeEvent, getIntentDecoder, getIntentEncoder, INTENT_ENGINE_PROGRAM_ADDRESS, U64_MAX } from "@intent-engine/core/internal";
+import { COMPUTE_BUDGET_ADDRESS, decodeEvent, findVaultPda, getIntentDecoder, getIntentEncoder, INTENT_ENGINE_PROGRAM_ADDRESS, U64_MAX } from "@intent-engine/core/internal";
 import { connect, InvalidInput, type SimpleClient } from "../src/index.js";
 import { type EngineTransaction, failure, MEMO_PROGRAM_ADDRESS, type Transport } from "../src/transport.js";
 import { wrapIfShort } from "../src/setup.js";
@@ -36,9 +36,18 @@ async function devnet() {
   return { w, at };
 }
 
-function filledAt(w: World, escrow: Address, filled: bigint): Transport {
-  const edit = (address: Address, view: Awaited<ReturnType<Transport["getAccount"]>>) =>
-    view !== null && address === escrow ? { ...view, data: new Uint8Array(getIntentEncoder().encode({ ...getIntentDecoder().decode(view.data), filled })) } : view;
+async function filledAt(w: World, escrow: Address, filled: bigint, vaultAmount?: bigint): Promise<Transport> {
+  const [vault] = await findVaultPda({ intent: escrow });
+  const withAmount = (data: Uint8Array) => {
+    const copy = new Uint8Array(data);
+    new DataView(copy.buffer).setBigUint64(64, vaultAmount ?? 0n, true);
+    return copy;
+  };
+  const edit = (address: Address, view: Awaited<ReturnType<Transport["getAccount"]>>) => {
+    if (view === null) return view;
+    if (address === escrow) return { ...view, data: new Uint8Array(getIntentEncoder().encode({ ...getIntentDecoder().decode(view.data), filled })) };
+    return address === vault && vaultAmount !== undefined ? { ...view, data: withAmount(view.data) } : view;
+  };
   return {
     ...w.chain.transport,
     getAccount: async (address) => edit(address, await w.chain.transport.getAccount(address)),
@@ -243,12 +252,14 @@ describe("the work reads and sends of the simple client", () => {
 
   it("names what is still held when a release or a cancel is previewed on a part-filled escrow", async () => {
     const { w, at, owner, worker, judge, escrow, announcement } = await released();
-    const part = filledAt(w, escrow, 2_500_000n);
+    const part = await filledAt(w, escrow, 2_500_000n, 7_500_000n);
     const reviewer = await at(judge.signer, part);
     const preview = await reviewer.release({ escrow, deliveredSha256: WORK, keypair: judge.keypair, preview: true });
     expect(preview.summary).toBe(`Release escrow ${escrow} holding 0.0075 SOL to ${worker.address} for work ${WORK}, announced first in ${announcement}`);
     const buyer = await at(owner, part);
     expect((await buyer.cancel({ escrow, preview: true })).summary).toBe(`Cancel ${escrow} and return 0.0075 SOL to ${owner.address}`);
+    const unrelated = await at(owner, await filledAt(w, escrow, 2_500_000n));
+    expect((await unrelated.cancel({ escrow, preview: true })).summary).toBe(`Cancel ${escrow} and return 0.01 SOL to ${owner.address}`);
   });
 });
 

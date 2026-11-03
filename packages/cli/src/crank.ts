@@ -7,17 +7,13 @@ import {
   getTokenDecoder,
 } from "@solana-program/token";
 import { findAssociatedTokenAddress, type Intent } from "@intent-engine/core";
-import { buildCloseIntent, buildExpireIntent, decodeIntentAccount, findDelegatePda, findVaultPda, heldClaimableUntil, INTENT_VERSION, isUnreadableAccount } from "@intent-engine/core/internal";
+import { buildCloseIntent, buildExpireIntent, decodeIntentAccount, findDelegatePda, heldClaimableUntil, INTENT_VERSION, isUnreadableAccount } from "@intent-engine/core/internal";
 import { type AccountView, type Transport } from "@intent-engine/client";
-import { chainTime, createdAccount, EXTENSIONS_OFFSET, tokenProgramOf } from "@intent-engine/client/internal";
+import { chainTime, createdAccount, EXTENSIONS_OFFSET, tokenProgramOf, vaultBalance } from "@intent-engine/client/internal";
 import { STATUS } from "./accounts.js";
 import { rentFor, rentRate } from "./agent/budget.js";
 
-export async function vaultBalance(transport: Transport, intent: Address): Promise<bigint> {
-  const [vault] = await findVaultPda({ intent });
-  const view = await createdAccount(transport, vault);
-  return view === null ? 0n : getTokenDecoder().decode(view.data).amount;
-}
+export { vaultBalance };
 
 async function vaultHolds(transport: Transport, intent: Address): Promise<boolean> {
   return (await vaultBalance(transport, intent)) > 0n;

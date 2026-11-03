@@ -134,7 +134,7 @@ describe("intent-engine committee", () => {
     await cli(p.judging("m1.json", v1), p.keys);
     const lone = await cli(["committee", "release", "--keypair", "solver.json", "--vote", v1, "--yes"], p.keys);
     expect(lone.code).toBe(EXIT_FAILED);
-    expect(lone.err).toContain("CommitteeSigners");
+    expect(lone.err).toContain("needs 2 distinct votes, got 1");
     expect(p.status()).toBe(IntentStatus.Open);
   });
 

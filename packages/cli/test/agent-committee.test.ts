@@ -116,7 +116,7 @@ describe("a wallet server on a committee", () => {
     });
     const theirs = await signCommitteeVote(e.other, ballot.digest, ballot.committee.members);
     const votes = [own, { member: theirs.member, signature: hex(theirs.signature) }];
-    expect((await call(client, "wallet_committee_release", { ...e.ballot, votes: [own] })).value).toMatchObject({ code: "CommitteeSigners" });
+    expect((await call(client, "wallet_committee_release", { ...e.ballot, votes: [own] })).value).toMatchObject({ code: "Failed", untrustedDetail: expect.stringContaining("needs 2 distinct votes, got 1") });
     const forged = { member: e.other.address, signature: own.signature };
     expect((await call(client, "wallet_committee_release", { ...e.ballot, votes: [own, forged] })).value).toMatchObject({ code: "SigMessage" });
     const shown = await ok(client, "wallet_committee_release", { ...e.ballot, votes });

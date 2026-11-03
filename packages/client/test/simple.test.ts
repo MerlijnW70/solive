@@ -13,7 +13,9 @@ import {
   splitFees,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
+import { findVaultPda } from "@intent-engine/core/internal";
 import { connect, InvalidInput, MainnetNotAllowed, type Transport } from "../src/index.js";
+import { notOwnerCancel } from "../src/client-intents.js";
 import { CLUSTER_URLS, DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH, mintOfToken, tokenAmount } from "../src/internal.js";
 import { funded, world, type World } from "./svm.js";
 import { keyed } from "./work.js";
@@ -167,6 +169,41 @@ describe("the simple sdk layer", () => {
     expect(cancel.summary).toBe(`Cancel ${sent.intent} and return 0.05 SOL to ${signer.address}`);
     expect(w.chain.sent).toHaveLength(before.length + 1);
     expect((await solive.client.intent({ owner: signer.address, nonce: 0n }))?.intent.status).toBe(IntentStatus.Open);
+  });
+
+  it("previews the whole vault as the cancel refund, even when it was topped up from outside", async () => {
+    const w = await devnet();
+    const signer = await funded(w.chain);
+    const solive = await connect({ cluster: "devnet", signer, transport: w.chain.transport });
+    const sent = await solive.swap({ sell: "SOL", amount: "0.05", buy: "TEST", minReceive: "5" });
+    const [vault] = await findVaultPda({ intent: sent.intent as Address });
+    const account = w.chain.svm.getAccount(vault);
+    if (!account.exists) throw new Error("vault missing");
+    const data = new Uint8Array(account.data);
+    new DataView(data.buffer).setBigUint64(64, 60_000_000n, true);
+    w.chain.svm.setAccount({ ...account, data });
+    const cancel = await solive.cancel({ intent: sent.intent as Address, preview: true });
+    expect(cancel.summary).toBe(`Cancel ${sent.intent} and return 0.06 SOL to ${signer.address}`);
+  });
+
+  it("refuses a fractional release result as invalid input and a stranger's cancel with the one owner text", async () => {
+    const w = await devnet();
+    const [owner, worker, stranger, { signer: judge, keypair }] = [await funded(w.chain), await funded(w.chain), await funded(w.chain), await keyed(w)];
+    const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: w.chain.transport });
+    const [buyer, seller, reviewer, other] = await Promise.all([at(owner), at(worker), at(judge), at(stranger)]);
+    const escrow = await buyer.payForWork({ amount: "0.01", judge: judge.address, specHash: sha("spec"), judgeFee: "0.001" });
+    const address = escrow.intent as Address;
+    const work = sha("work");
+    await seller.deliver({ escrow: address, sha256: work, url: "https://example.org/work.tar" });
+    const sent = w.chain.sent.length;
+    const bad = reviewer.release({ escrow: address, to: worker.address, deliveredSha256: work, result: 1.5, keypair });
+    await expect(bad).rejects.toBeInstanceOf(InvalidInput);
+    await expect(bad).rejects.toThrow("result must be a whole number, not 1.5");
+    expect(w.chain.sent).toHaveLength(sent);
+    await expect(other.cancel({ escrow: address })).rejects.toThrow(notOwnerCancel(address, owner.address, stranger.address));
+    await expect(other.client.plan.cancel(stranger, { owner: owner.address, nonce: escrow.nonce ?? 0n })).rejects.toThrow(
+      notOwnerCancel(address, owner.address, stranger.address),
+    );
   });
 
   it("connect refuses mainnet unless allowed", async () => {
