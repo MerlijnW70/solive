@@ -33,7 +33,7 @@
 <input class="drip-input mono" id="address" name="address" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the address your wallet printed" required>
 <button class="btn btn-primary" id="send" type="submit">Send 0.5 SOL</button>
 </div>
-<p class="drip-note">The faucet limits drips per address and per network each day: one per address, and at most 3 per network. An address that already holds 0.25 SOL or more gets none.</p>
+<p class="drip-note">The faucet limits drips per address and per network each day: one per address, and at most 3 per network per faucet instance. An address that already holds 0.25 SOL or more gets none.</p>
 <p class="drip-result" id="result" role="status" aria-live="polite" data-tone="idle" hidden></p>
 <p class="drip-link" id="explorer-line" hidden><a id="explorer" href="https://explorer.solana.com/?cluster=devnet">See it on the devnet explorer</a></p>
 </form>
@@ -133,7 +133,7 @@
 
 <section class="block" aria-labelledby="no-sol">
 <h2 id="no-sol">No SOL yet</h2>
-<p>The instant faucet limits drips per address and per network each day. When it refuses, <code>setup</code> prints <code>faucet.refused</code> with the reason and <code>why</code> with <code>the instant faucet's rate limit applies to this address or network</code>, and your wallet keeps 0 SOL. Use one of these ways, fastest first, with your <code>address</code> from <code>setup</code>, then run <code>setup</code> again to see your balance.</p>
+<p>The instant faucet limits drips per address each day, and per network for each faucet instance. When it refuses, <code>setup</code> prints <code>faucet.refused</code> with the reason and <code>why</code> with <code>the instant faucet's rate limit applies to this address or network</code>, and your wallet keeps 0 SOL. Use one of these ways, fastest first, with your <code>address</code> from <code>setup</code>, then run <code>setup</code> again to see your balance.</p>
 <ol class="steps">
 <li><p>In a browser, paste your address at <a href="https://faucet.solana.com">https://faucet.solana.com</a>, which sends at once when it accepts.</p></li>
 <li><p>Open the <a href="https://github.com/MerlijnW70/solive/issues/new?template=faucet.yml">faucet request form</a> to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 60 minutes, so SOL arrives within 70 minutes. <code>setup</code> prints the same form with your address filled in.</p></li>
@@ -160,7 +160,7 @@
 <tr><td><code>codex is not installed or not on PATH; install Codex with npm install -g @openai/codex, then run this again</code></td><td>Install it with that command, then run <code>add-to</code> again.</td></tr>
 <tr><td><code>the public devnet node rate-limited this request; retry in a minute, or pass another --url</code></td><td>Wait, then run the same line again.</td></tr>
 <tr><td><code>the work url is hidden; pass --judge-keypair &lt;judge or member file&gt; to show it</code></td><td>Add <code>--judge-keypair</code> with your <code>keypair</code> file.</td></tr>
-<tr><td><code>This network already received the most drips allowed for one day, so wait retry_after seconds before you ask again.</code></td><td>The faucet limits drips per network each day. Use a way in <a href="#no-sol">No SOL yet</a>.</td></tr>
+<tr><td><code>This network already received the most drips this faucet instance allows for one day, so wait retry_after seconds before you ask again.</code></td><td>The faucet limits drips per network each day, per faucet instance. Use a way in <a href="#no-sol">No SOL yet</a>.</td></tr>
 <tr><td><code>the instant faucet's rate limit applies to this address or network</code></td><td>Use a way in <a href="#no-sol">No SOL yet</a>.</td></tr>
 <tr><td><code>sol</code> shows 0 after <code>setup</code></td><td>Read <code>why</code> and <code>other_ways</code> in the output, or use <a href="#no-sol">No SOL yet</a>.</td></tr>
 </tbody>

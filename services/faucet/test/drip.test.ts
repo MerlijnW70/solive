@@ -1,7 +1,7 @@
 import { generateKeyPairSigner, type Address } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
-import { SYSTEM_PROGRAM } from "../src/chain.js";
-import { drip, REASONS } from "../src/drip.js";
+import { SYSTEM_PROGRAM } from "../src/tag.js";
+import { drip, failedSend, REASONS, unknownSend } from "../src/drip.js";
 import { CONFIRM_POLL_MS, CONFIRM_TIMEOUT_MS, DRIP_LAMPORTS, DRIP_WINDOW_SECS, FLOOR_LAMPORTS, FUNDED_LAMPORTS } from "../src/limits.js";
 import { BAD_ADDRESS, NOT_JSON } from "../src/request.js";
 import { harness, newFaucet, post, START_MS, type Faucet } from "./fake-node.js";
@@ -230,15 +230,64 @@ describe("503 the node fails", () => {
     });
   }
 
-  it("names the signature when the send fails", async () => {
+  it("names the signature and says no SOL arrived when the node refuses the send in preflight", async () => {
     const h = harness(faucet);
-    h.node.failing.add("sendTransaction");
+    h.node.sendError = "preflight";
     const response = await drip(post(recipient), h.deps);
     expect(response.status).toBe(503);
     const error = (response.body as { error: string }).error;
     const signature = error.split(" ")[2] ?? "";
     expect(signature).toMatch(/^[1-9A-HJ-NP-Za-km-z]{64,88}$/);
     expect(error).toBe(`The transfer ${signature} failed, so no SOL arrived and you can try again in a minute.`);
+    expect(h.node.polls).toBe(1);
+  });
+
+  it("checks the signature once and does not claim no SOL arrived when the send errors without a refusal", async () => {
+    const h = harness(faucet);
+    h.node.failing.add("sendTransaction");
+    const response = await drip(post(recipient), h.deps);
+    expect(response.status).toBe(503);
+    const error = (response.body as { error: string }).error;
+    const signature = error.split(" ")[7] ?? "";
+    expect(signature).toMatch(/^[1-9A-HJ-NP-Za-km-z]{64,88}$/);
+    expect(error).toBe(`The faucet cannot tell whether the transfer ${signature} reached devnet, so check it in a devnet explorer before you ask again.`);
+    expect(error).not.toContain("no SOL arrived");
+    expect(h.node.polls).toBe(1);
+  });
+
+  it("answers 200 when the send errors after the node accepted a transfer that confirmed", async () => {
+    const h = harness(faucet);
+    h.node.sendError = "lost";
+    const response = await drip(post(recipient), h.deps);
+    expect(response).toEqual({ status: 200, body: { signature: h.node.sent[0]?.signature, lamports: "500000000" } });
+    expect(h.node.polls).toBe(1);
+  });
+
+  it("keeps confirming when the send errors after the node accepted a transfer still in flight", async () => {
+    const h = harness(faucet);
+    h.node.sendError = "lost";
+    h.node.statuses = (polls) => (polls < 3 ? { confirmationStatus: "processed" } : { confirmationStatus: "confirmed" });
+    expect((await drip(post(recipient), h.deps)).status).toBe(200);
+    expect(h.node.polls).toBe(3);
+  });
+
+  it("does not claim no SOL arrived when the node accepted the send but cannot show it yet", async () => {
+    const h = harness(faucet);
+    h.node.sendError = "lost";
+    h.node.statuses = () => null;
+    const response = await drip(post(recipient), h.deps);
+    const signature = h.node.sent[0]?.signature ?? "";
+    expect(response).toEqual({ status: 503, body: { error: unknownSend(signature) } });
+    expect(JSON.stringify(response)).not.toContain("no SOL arrived");
+    expect(h.node.polls).toBe(1);
+  });
+
+  it("says no SOL arrived when the accepted send landed with an error", async () => {
+    const h = harness(faucet);
+    h.node.sendError = "lost";
+    h.node.statuses = () => ({ confirmationStatus: "confirmed", err: { InstructionError: [0, "Custom"] } });
+    const response = await drip(post(recipient), h.deps);
+    expect(response).toEqual({ status: 503, body: { error: failedSend(h.node.sent[0]?.signature ?? "") } });
   });
 
   it("names the signature when the transfer lands with an error", async () => {

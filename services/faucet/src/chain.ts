@@ -1,15 +1,10 @@
 import {
-  AccountRole,
-  appendTransactionMessageInstruction,
-  createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
-  pipe,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
+  isSolanaError,
   signTransactionMessageWithSigners,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
   type Address,
-  type Instruction,
   type KeyPairSigner,
   type Rpc,
   type Signature,
@@ -19,12 +14,15 @@ import {
   CONFIRM_POLL_MS,
   CONFIRM_TIMEOUT_MS,
   DAILY_DRIPS,
+  DAILY_PAGE,
   DEVNET_GENESIS_HASH,
-  DRIP_LAMPORTS,
   DRIP_WINDOW_SECS,
+  MAX_HISTORY_PAGES,
   MAX_SIGNATURES_CHECKED,
+  SEND_CHECK_MS,
   SIGNATURE_PAGE,
 } from "./limits.js";
+import { dripMessage, ownDrip } from "./tag.js";
 
 export type FaucetRpc = Rpc<SolanaRpcApi>;
 
@@ -33,9 +31,6 @@ export type Clock = {
   readonly sleep: (ms: number) => Promise<void>;
   readonly signal: (ms: number) => AbortSignal;
 };
-
-export const SYSTEM_PROGRAM = "11111111111111111111111111111111" as Address;
-const TRANSFER = 2;
 
 export async function onDevnet(rpc: FaucetRpc): Promise<boolean> {
   const genesis = await rpc.getGenesisHash().send();
@@ -47,26 +42,33 @@ export async function balanceOf(rpc: FaucetRpc, owner: Address): Promise<bigint>
   return BigInt(value);
 }
 
+async function paidBy(rpc: FaucetRpc, signature: Signature, faucet: Address): Promise<boolean> {
+  const transaction = await rpc
+    .getTransaction(signature, { commitment: "confirmed", encoding: "json", maxSupportedTransactionVersion: 0 })
+    .send();
+  if (transaction === null) throw new Error("transaction listed but not found");
+  return transaction.meta?.err === null && transaction.transaction.message.accountKeys[0] === faucet;
+}
+
+const listPage = (rpc: FaucetRpc, address: Address, before: Signature | undefined) =>
+  rpc.getSignaturesForAddress(address, { commitment: "confirmed", limit: SIGNATURE_PAGE, ...(before === undefined ? {} : { before }) }).send();
+
+const blockSecs = (blockTime: bigint | number | null, nowSecs: number): number => (blockTime === null ? nowSecs : Number(blockTime));
+
 export type EarlierDrip = { readonly kind: "none" } | { readonly kind: "recent"; readonly retryAfter: number } | { readonly kind: "busy" };
 
 export async function earlierDrip(rpc: FaucetRpc, recipient: Address, faucet: Address, nowSecs: number): Promise<EarlierDrip> {
   let before: Signature | undefined;
   let checked = 0;
   for (;;) {
-    const page = await rpc
-      .getSignaturesForAddress(recipient, { commitment: "confirmed", limit: SIGNATURE_PAGE, ...(before === undefined ? {} : { before }) })
-      .send();
+    const page = await listPage(rpc, recipient, before);
     for (const entry of page) {
-      const time = entry.blockTime === null ? nowSecs : Number(entry.blockTime);
+      const time = blockSecs(entry.blockTime, nowSecs);
       if (nowSecs - time >= DRIP_WINDOW_SECS) return { kind: "none" };
       if (entry.err !== null) continue;
       checked += 1;
       if (checked > MAX_SIGNATURES_CHECKED) return { kind: "busy" };
-      const transaction = await rpc
-        .getTransaction(entry.signature, { commitment: "confirmed", encoding: "json", maxSupportedTransactionVersion: 0 })
-        .send();
-      if (transaction === null) throw new Error("transaction listed but not found");
-      if (transaction.meta?.err === null && transaction.transaction.message.accountKeys[0] === faucet) {
+      if (await paidBy(rpc, entry.signature, faucet)) {
         return { kind: "recent", retryAfter: Math.max(1, Math.ceil(time + DRIP_WINDOW_SECS - nowSecs)) };
       }
     }
@@ -76,65 +78,58 @@ export async function earlierDrip(rpc: FaucetRpc, recipient: Address, faucet: Ad
   }
 }
 
-export type DailyCount = { readonly kind: "open" } | { readonly kind: "full"; readonly retryAfter: number } | { readonly kind: "busy" };
+export type DailyCount = { readonly kind: "open" } | { readonly kind: "full"; readonly retryAfter: number };
 
-export async function dailyCount(rpc: FaucetRpc, faucet: Address, nowSecs: number): Promise<DailyCount> {
+export async function dailyCount(rpc: FaucetRpc, faucet: KeyPairSigner, nowSecs: number): Promise<DailyCount> {
   let before: Signature | undefined;
-  let seen = 0;
   let counted = 0;
-  for (;;) {
+  for (let pages = 0; pages < MAX_HISTORY_PAGES; pages += 1) {
     const page = await rpc
-      .getSignaturesForAddress(faucet, { commitment: "confirmed", limit: SIGNATURE_PAGE, ...(before === undefined ? {} : { before }) })
+      .getSignaturesForAddress(faucet.address, { commitment: "confirmed", limit: DAILY_PAGE, ...(before === undefined ? {} : { before }) })
       .send();
     for (const entry of page) {
-      seen += 1;
-      if (seen > MAX_SIGNATURES_CHECKED) return { kind: "busy" };
-      const time = entry.blockTime === null ? nowSecs : Number(entry.blockTime);
+      const time = blockSecs(entry.blockTime, nowSecs);
       if (nowSecs - time >= DRIP_WINDOW_SECS) return { kind: "open" };
-      if (entry.err !== null) continue;
+      if (entry.err !== null || !(await ownDrip(faucet, entry.signature, entry.memo))) continue;
       counted += 1;
       if (counted >= DAILY_DRIPS) return { kind: "full", retryAfter: Math.max(1, Math.ceil(time + DRIP_WINDOW_SECS - nowSecs)) };
     }
     const last = page[page.length - 1];
-    if (page.length < SIGNATURE_PAGE || last === undefined) return { kind: "open" };
+    if (page.length < DAILY_PAGE || last === undefined) return { kind: "open" };
     before = last.signature;
   }
+  return { kind: "open" };
 }
 
-export function transferInstruction(from: KeyPairSigner, to: Address, amount: bigint): Instruction {
-  const data = new Uint8Array(12);
-  const view = new DataView(data.buffer);
-  view.setUint32(0, TRANSFER, true);
-  view.setBigUint64(4, amount, true);
-  return {
-    programAddress: SYSTEM_PROGRAM,
-    accounts: [
-      { address: from.address, role: AccountRole.WRITABLE_SIGNER, signer: from },
-      { address: to, role: AccountRole.WRITABLE },
-    ],
-    data,
-  } as Instruction;
-}
+export type SendOutcome = "accepted" | "confirmed" | "failed" | "unknown";
 
-export type Sent = { readonly signature: Signature; readonly sent: boolean };
+export type Sent = { readonly signature: Signature; readonly sent: SendOutcome };
+
+async function afterSendError(rpc: FaucetRpc, signature: Signature, clock: Clock, error: unknown): Promise<SendOutcome> {
+  let status;
+  try {
+    status = (await rpc.getSignatureStatuses([signature]).send({ abortSignal: clock.signal(SEND_CHECK_MS) })).value[0];
+  } catch {
+    status = undefined;
+  }
+  if (status) {
+    if (status.err !== null) return "failed";
+    return status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized" ? "confirmed" : "accepted";
+  }
+  return isSolanaError(error, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE) ? "failed" : "unknown";
+}
 
 export async function sendDrip(rpc: FaucetRpc, signer: KeyPairSigner, recipient: Address, clock: Clock): Promise<Sent> {
   const { value: blockhash } = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(signer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstruction(transferInstruction(signer, recipient, DRIP_LAMPORTS), m),
-  );
-  const signed = await signTransactionMessageWithSigners(message);
+  const signed = await signTransactionMessageWithSigners(dripMessage(signer, recipient, blockhash));
   const signature = getSignatureFromTransaction(signed);
   try {
     await rpc
       .sendTransaction(getBase64EncodedWireTransaction(signed), { encoding: "base64", preflightCommitment: "confirmed" })
       .send({ abortSignal: clock.signal(CONFIRM_TIMEOUT_MS) });
-    return { signature, sent: true };
-  } catch {
-    return { signature, sent: false };
+    return { signature, sent: "accepted" };
+  } catch (error) {
+    return { signature, sent: await afterSendError(rpc, signature, clock, error) };
   }
 }
 

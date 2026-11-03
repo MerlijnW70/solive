@@ -30,7 +30,9 @@ export type DripDeps = {
 
 export const REASONS = {
   method: "Send a POST request to this address with a JSON body that holds your wallet address.",
-  caller: "This network already received the most drips allowed for one day, so wait retry_after seconds before you ask again.",
+  caller: "This network already received the most drips this faucet instance allows for one day, so wait retry_after seconds before you ask again.",
+  checks: "This network asked this faucet instance too often in the last hour, so wait retry_after seconds before you ask again.",
+  instance: "This faucet instance has sent its daily limit of drips, so wait retry_after seconds, or get devnet SOL at https://faucet.solana.com.",
   daily: "The faucet has reached its daily limit of drips, so wait retry_after seconds, or get devnet SOL at https://faucet.solana.com.",
   funded: "This address already holds 0.25 SOL or more, which is enough to start, so no drip was sent.",
   recent: "This address received a drip from this faucet in the last day, so wait retry_after seconds before you ask again.",
@@ -44,6 +46,8 @@ export const REASONS = {
 
 export const failedSend = (signature: string): string =>
   `The transfer ${signature} failed, so no SOL arrived and you can try again in a minute.`;
+export const unknownSend = (signature: string): string =>
+  `The faucet cannot tell whether the transfer ${signature} reached devnet, so check it in a devnet explorer before you ask again.`;
 export const unconfirmed = (signature: string): string =>
   `The transfer ${signature} did not confirm within ${CONFIRM_TIMEOUT_MS / 1000} seconds, so check it in a devnet explorer before you ask again.`;
 
@@ -67,11 +71,13 @@ async function ready(deps: DripDeps, recipient: Address): Promise<Ready | DripRe
     if (signer === undefined) return error(503, REASONS.config);
     if ((await balanceOf(rpc, recipient)) >= FUNDED_LAMPORTS) return limited(REASONS.funded, DRIP_WINDOW_SECS);
     const earlier = await earlierDrip(rpc, recipient, signer.address, Math.floor(deps.clock.now() / 1000));
-    if (earlier.kind === "recent") return limited(REASONS.recent, earlier.retryAfter);
-    if (earlier.kind === "busy") return limited(REASONS.busy, DRIP_WINDOW_SECS);
-    const day = await dailyCount(rpc, signer.address, Math.floor(deps.clock.now() / 1000));
+    if (earlier.kind !== "none") {
+      const retryAfter = earlier.kind === "recent" ? earlier.retryAfter : DRIP_WINDOW_SECS;
+      deps.callers.remember(recipient, earlier.kind, deps.clock.now() + retryAfter * 1000, deps.clock.now());
+      return limited(REASONS[earlier.kind], retryAfter);
+    }
+    const day = await dailyCount(rpc, signer, Math.floor(deps.clock.now() / 1000));
     if (day.kind === "full") return limited(REASONS.daily, day.retryAfter);
-    if (day.kind === "busy") return limited(REASONS.daily, DRIP_WINDOW_SECS);
     if ((await balanceOf(rpc, signer.address)) < FLOOR_LAMPORTS) return error(503, REASONS.floor);
     return { rpc, signer };
   } catch {
@@ -82,7 +88,14 @@ async function ready(deps: DripDeps, recipient: Address): Promise<Ready | DripRe
 async function fund(deps: DripDeps, recipient: Address): Promise<Outcome> {
   const checked = await ready(deps, recipient);
   if ("status" in checked) return { response: checked, attempted: false };
-  const { rpc, signer } = checked;
+  const slot = deps.callers.reserveSend(deps.clock.now());
+  if (!slot.ok) return { response: limited(REASONS.instance, slot.retryAfter), attempted: false };
+  const outcome = await send(deps, checked, recipient);
+  if (!outcome.attempted) slot.release();
+  return outcome;
+}
+
+async function send(deps: DripDeps, { rpc, signer }: Ready, recipient: Address): Promise<Outcome> {
   const startedAt = deps.clock.now();
   let sent;
   try {
@@ -90,8 +103,9 @@ async function fund(deps: DripDeps, recipient: Address): Promise<Outcome> {
   } catch {
     return { response: error(503, REASONS.node), attempted: false };
   }
-  if (!sent.sent) return { response: error(503, failedSend(sent.signature)), attempted: true };
-  const result = await confirm(rpc, sent.signature, deps.clock, startedAt);
+  if (sent.sent === "failed") return { response: error(503, failedSend(sent.signature)), attempted: false };
+  if (sent.sent === "unknown") return { response: error(503, unknownSend(sent.signature)), attempted: true };
+  const result = sent.sent === "confirmed" ? "confirmed" : await confirm(rpc, sent.signature, deps.clock, startedAt);
   if (result === "failed") return { response: error(503, failedSend(sent.signature)), attempted: false };
   if (result === "timeout") return { response: error(503, unconfirmed(sent.signature)), attempted: true };
   return { response: { status: 200, body: { signature: sent.signature, lamports: DRIP_LAMPORTS.toString() } }, attempted: true };
@@ -123,7 +137,10 @@ async function answer(request: DripRequest, deps: DripDeps): Promise<DripRespons
   if (!parsed.ok) return error(400, parsed.error);
   const now = deps.clock.now();
   deps.callers.forget(now);
-  const reservation = deps.callers.reserve(callerOf(request.headers, request.remote), now);
+  const known = deps.callers.recall(parsed.address, now);
+  if (known !== undefined) return limited(REASONS[known.reason], known.retryAfter);
+  const caller = callerOf(request.headers, request.remote);
+  const reservation = deps.callers.reserve(caller, now);
   if (!reservation.ok) return limited(REASONS.caller, reservation.retryAfter);
   const free = deps.callers.hold(parsed.address);
   if (free === undefined) {
@@ -131,8 +148,14 @@ async function answer(request: DripRequest, deps: DripDeps): Promise<DripRespons
     return limited(REASONS.pending, PENDING_RETRY_SECS);
   }
   try {
+    const spent = deps.callers.spend(caller, now);
+    if (!spent.ok) {
+      reservation.release();
+      return limited(REASONS.checks, spent.retryAfter);
+    }
     const outcome = await fund(deps, parsed.address);
     if (!outcome.attempted) reservation.release();
+    if (outcome.response.status === 200) deps.callers.remember(parsed.address, "recent", deps.clock.now() + DRIP_WINDOW_SECS * 1000, deps.clock.now());
     return outcome.response;
   } finally {
     free();

@@ -2,27 +2,53 @@ import { generateKeyPairSync } from "node:crypto";
 import {
   createKeyPairSignerFromBytes,
   createSolanaRpcFromTransport,
+  generateKeyPairSigner,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
+  signTransactionMessageWithSigners,
   type Address,
+  type Blockhash,
   type RpcTransport,
 } from "@solana/kit";
 import { CallerLimit } from "../src/callers.js";
 import type { Clock, FaucetRpc } from "../src/chain.js";
 import type { DripDeps } from "../src/drip.js";
 import { DEVNET_GENESIS_HASH, FLOOR_LAMPORTS } from "../src/limits.js";
+import { dripMessage, dripTag, MEMO_PROGRAM } from "../src/tag.js";
 
 export const START_MS = Date.UTC(2026, 9, 30, 12);
 export const BLOCKHASH = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY";
 
-export type Listed = { readonly signature: string; readonly blockTime: number | null; readonly err?: unknown };
+export type Listed = { readonly signature: string; readonly blockTime: number | null; readonly err?: unknown; readonly memo?: string };
 export type Landed = { readonly feePayer: string; readonly err?: unknown } | null;
 export type Status = { readonly confirmationStatus: string; readonly err?: unknown } | null;
-export type Sent = { readonly from: string; readonly to: string; readonly program: string; readonly data: Uint8Array; readonly signature: string };
+export type Sent = { readonly from: string; readonly to: string; readonly program: string; readonly data: Uint8Array; readonly signature: string; readonly memo: string | undefined };
+
+const PREFLIGHT_FAILURE = {
+  code: -32002,
+  message: "Transaction simulation failed",
+  data: { accounts: null, err: "InsufficientFundsForFee", logs: [], returnData: null, unitsConsumed: 0 },
+};
 
 export type Faucet = { readonly secret: string; readonly bytes: number[]; readonly address: Address };
+
+export const listedMemo = (text: string): string => `[${new TextEncoder().encode(text).length}] ${text}`;
+
+export type Signed = { readonly signature: string; readonly memo: string; readonly recipient: Address };
+
+export async function signedDrips(faucet: Faucet, count: number): Promise<Signed[]> {
+  const signer = await createKeyPairSignerFromBytes(Uint8Array.from(faucet.bytes));
+  const lifetime = { blockhash: BLOCKHASH as Blockhash, lastValidBlockHeight: 900n };
+  return Promise.all(
+    Array.from({ length: count }, async () => {
+      const recipient = (await generateKeyPairSigner()).address;
+      const signed = await signTransactionMessageWithSigners(dripMessage(signer, recipient, lifetime));
+      return { signature: getSignatureFromTransaction(signed), memo: listedMemo(dripTag(recipient, lifetime.blockhash)), recipient };
+    }),
+  );
+}
 
 export async function newFaucet(): Promise<Faucet> {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -41,6 +67,7 @@ export class FakeNode {
   statuses: (polls: number) => Status = () => ({ confirmationStatus: "confirmed" });
   readonly failing = new Set<string>();
   readonly failingHistory = new Set<string>();
+  sendError: "lost" | "preflight" | undefined;
   readonly calls: { method: string; params: unknown[] }[] = [];
   readonly sent: Sent[] = [];
   polls = 0;
@@ -58,6 +85,11 @@ export class FakeNode {
     this.calls.push({ method, params });
     const target = method === "getSignaturesForAddress" ? (params[0] as string) : "";
     if (this.failing.has(method) || this.failingHistory.has(target)) return { jsonrpc: "2.0", id, error: { code: -32000, message: `${method} is down` } };
+    if (method === "sendTransaction" && this.sendError === "preflight") return { jsonrpc: "2.0", id, error: PREFLIGHT_FAILURE };
+    if (method === "sendTransaction" && this.sendError === "lost") {
+      this.receive(params[0] as string);
+      throw new Error("socket hang up");
+    }
     return { jsonrpc: "2.0", id, result: this.answer(method, params) };
   }) as RpcTransport;
 
@@ -81,7 +113,7 @@ export class FakeNode {
           blockTime: entry.blockTime,
           err: entry.err ?? null,
           slot: 5,
-          memo: null,
+          memo: entry.memo ?? null,
           confirmationStatus: "finalized",
         }));
       }
@@ -101,7 +133,8 @@ export class FakeNode {
         return this.receive(params[0] as string);
       case "getSignatureStatuses": {
         this.polls += 1;
-        const status = this.statuses(this.polls);
+        const received = this.sent.some((sent) => sent.signature === (params[0] as string[])[0]);
+        const status = received ? this.statuses(this.polls) : null;
         return {
           context,
           value: [status === null ? null : { slot: 6, confirmations: 0, err: status.err ?? null, status: { Ok: null }, confirmationStatus: status.confirmationStatus }],
@@ -119,7 +152,9 @@ export class FakeNode {
     const instruction = message.instructions[0];
     const keys = message.staticAccounts;
     const signature = getSignatureFromTransaction(transaction);
-    if (instruction === undefined || message.instructions.length !== 1) throw new Error("expected one instruction");
+    if (instruction === undefined || message.instructions.length > 2) throw new Error("expected a transfer and a memo");
+    const memo = message.instructions[1];
+    if (memo !== undefined && keys[memo.programAddressIndex] !== MEMO_PROGRAM) throw new Error("expected a memo");
     const [fromIndex, toIndex] = instruction.accountIndices ?? [];
     this.sent.push({
       from: keys[fromIndex ?? -1] ?? "",
@@ -127,6 +162,7 @@ export class FakeNode {
       program: keys[instruction.programAddressIndex] ?? "",
       data: Uint8Array.from(instruction.data ?? []),
       signature,
+      memo: memo === undefined ? undefined : new TextDecoder().decode(Uint8Array.from(memo.data ?? [])),
     });
     return signature;
   }

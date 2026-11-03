@@ -137,7 +137,7 @@ describe("the try page steps", () => {
     expect(limits).toContain("DRIP_WINDOW_SECS = 86400");
     expect(HTML).toContain("Send 0.5 SOL");
     expect(limits).toContain("CALLER_DRIPS = 3");
-    expect(HTML).toContain("The faucet limits drips per address and per network each day: one per address, and at most 3 per network. An address that already holds 0.25 SOL or more gets none.");
+    expect(HTML).toContain("The faucet limits drips per address and per network each day: one per address, and at most 3 per network per faucet instance. An address that already holds 0.25 SOL or more gets none.");
     expect(HTML).toContain("asks the instant faucet for 0.5 SOL");
     expect(read("docs/quickstart.md")).toContain("it sends 0.5 SOL");
     expect(read("docs/quickstart.md")).toContain("## Devnet SOL");
@@ -168,7 +168,7 @@ describe("the try page steps", () => {
 
   it("lists the other ways to get SOL in order, with the texts the CLI prints", () => {
     const section = HTML.slice(HTML.indexOf('id="no-sol"'), HTML.indexOf("When something fails</h2>"));
-    expect(section).toContain("The instant faucet limits drips per address and per network each day.");
+    expect(section).toContain("The instant faucet limits drips per address each day, and per network for each faucet instance.");
     expect(section).toContain(`<code>${WHY_LIMITED}</code>`);
     expect(section).toContain("<code>faucet.refused</code>");
     const ways = [
