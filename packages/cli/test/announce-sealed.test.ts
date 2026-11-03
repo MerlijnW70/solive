@@ -39,7 +39,7 @@ async function copied(intent: Address, judge: Address, worker: KeyPairSigner, co
   const [signed] = await worker.signMessages([createSignableMessage(saltMessage(intent, sha(module)))]);
   const source = Uint8Array.from(signed?.[worker.address] ?? []);
   const blob = await sealDeliveryV4({ source, url, recipients: [judge] }, intent, worker.address);
-  const { salt } = await deliverySecrets(url, [judge], source);
+  const { salt } = await deliverySecrets(url, [judge], { intent, worker: worker.address }, source);
   const commitment = await announcementCommitment(intent, worker.address, { delivered: Uint8Array.from(Buffer.from(sha(module), "hex")), salt });
   nextSlot();
   const { announcement, instruction } = await buildAnnounceDelivery({ worker: copier, intent, attestor: judge, commitment, blob });

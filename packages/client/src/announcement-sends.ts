@@ -1,12 +1,10 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
 import { IntentCoreError, IntentStatus, type SealRecipient } from "@intent-engine/core";
 import {
-  announcementCommitment,
   buildCloseAnnouncement,
   buildCloseDeliveryBook,
   buildRefuteRelease,
   delivery,
-  deliverySecrets,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   keyFingerprintV4,
   openWithEsk,
@@ -14,7 +12,7 @@ import {
 } from "@intent-engine/core/internal";
 import { chainTime } from "./accounts.js";
 import { BookNotClosable, NotDeliverable, NotRefutable } from "./announce-errors.js";
-import { committeeKeys, publishedKey, secretSource, type SecretInput } from "./announce-keys.js";
+import { announcedSecrets, committeeKeys, publishedKey, type SecretInput } from "./announce-keys.js";
 import { sha256Bytes } from "./announce.js";
 import { type AnnouncementView, announcementsBy, loadAnnouncement, loadDeliveryBook } from "./announcement-reads.js";
 import type { ClientContext, ClientPlans } from "./client-types.js";
@@ -120,11 +118,11 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
       throw error;
     }
     const recipients = await sealedRecipients(transport, earlier);
-    const source = await secretSource(input, earlier.intent, hex(delivered));
-    const { salt, esk } = await deliverySecrets(input.url, recipients, source);
-    if (!equal(await announcementCommitment(earlier.intent, earlier.worker, { delivered, salt }), earlier.commitment)) {
+    const secrets = await announcedSecrets(input, earlier, { url: input.url, recipients, sha256: hex(delivered), delivered });
+    if (secrets === null) {
       throw new NotRefutable(earlier.address, `does not commit to the work ${hex(delivered)} with this worker's secret`);
     }
+    const { salt, esk } = secrets;
     if ((await openWithEsk(earlier.blob, esk, recipients, earlier.intent, earlier.worker)) === null) {
       throw new NotRefutable(earlier.address, `does not open with the url ${input.url} and this worker's secret`);
     }

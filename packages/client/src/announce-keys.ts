@@ -1,9 +1,12 @@
 import { type Address, createSignableMessage, getPublicKeyFromAddress, type Instruction, isMessagePartialSigner, type SignatureBytes, type TransactionSigner, verifySignature } from "@solana/kit";
 import { InvalidInput, type SealRecipient } from "@intent-engine/core";
 import {
+  announcementCommitment,
   buildSyncCommitteeKeys,
   COMMITTEE_DISCRIMINATOR,
   decodeCommitteeAccount,
+  DELIVERY_SCHEMES,
+  type DeliverySecrets,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   keyFingerprintV4,
   saltMessage,
@@ -111,7 +114,38 @@ async function signedBy(worker: Address, signature: Uint8Array, message: Uint8Ar
   }
 }
 
+export type AnnouncedAs = { intent: Address; worker: Address; commitment: Uint8Array };
+
+export type AnnouncedWork = { url: string; recipients: readonly SealRecipient[]; sha256: string; delivered: Uint8Array };
+
 export async function secretSource(given: SecretInput, intent: Address, sha256: string): Promise<Uint8Array> {
+  const source = await sourceUnder(given, () => saltMessage(intent, sha256));
+  if (source === null) {
+    throw new BadSaltSignature(given.worker.address);
+  }
+  return source;
+}
+
+export async function announcedSecrets(given: SecretInput, announced: AnnouncedAs, work: AnnouncedWork): Promise<DeliverySecrets | null> {
+  let signed = false;
+  for (const scheme of DELIVERY_SCHEMES) {
+    const source = await sourceUnder(given, () => scheme.message(announced.intent, work.sha256));
+    if (source === null) {
+      continue;
+    }
+    signed = true;
+    const secrets = await scheme.secrets(work.url, work.recipients, announced, source);
+    if (equal(await announcementCommitment(announced.intent, announced.worker, { delivered: work.delivered, salt: secrets.salt }), announced.commitment)) {
+      return secrets;
+    }
+  }
+  if (!signed) {
+    throw new BadSaltSignature(given.worker.address);
+  }
+  return null;
+}
+
+async function sourceUnder(given: SecretInput, messageOf: () => Uint8Array): Promise<Uint8Array | null> {
   const { worker } = given;
   if (given.secret !== undefined) {
     if (given.secret.length !== SECRET_BYTES) {
@@ -119,12 +153,9 @@ export async function secretSource(given: SecretInput, intent: Address, sha256: 
     }
     return Uint8Array.from(given.secret);
   }
-  const message = saltMessage(intent, sha256);
+  const message = messageOf();
   if (given.saltSignature !== undefined) {
-    if (!(await signedBy(worker.address, given.saltSignature, message))) {
-      throw new BadSaltSignature(worker.address);
-    }
-    return Uint8Array.from(given.saltSignature);
+    return (await signedBy(worker.address, given.saltSignature, message)) ? Uint8Array.from(given.saltSignature) : null;
   }
   if (!isSaltSigner(worker)) {
     throw new NoMessageSigner(worker.address);

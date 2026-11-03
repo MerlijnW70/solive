@@ -1,7 +1,7 @@
 import { createCipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
 import { type DeliveryKey, type SealRecipient } from "../src/index.js";
-import { newEncryptionKeyFile, readEncryptionKeyFile, SALT_TAG, saltMessage, x25519PublicOf } from "../src/internal.js";
+import { newEncryptionKeyFile, readEncryptionKeyFile, saltMessage, x25519PublicOf } from "../src/internal.js";
 
 export type Wallet = { address: Address; keypair: Uint8Array; sign: (message: Uint8Array) => Uint8Array };
 
@@ -67,11 +67,24 @@ export type Reference = {
   contentKey?: (key: Uint8Array) => Uint8Array;
   fingerprint?: (i: number, fp: Uint8Array) => Uint8Array;
   wrapEsk?: Uint8Array;
+  legacy?: boolean;
 };
 
-export function refSecrets(source: Uint8Array, url: string, binding: Uint8Array) {
+export type Parties = { intent: Address; worker: Address };
+
+export function refSecrets(source: Uint8Array, url: string, binding: Uint8Array, parties: Parties) {
+  const encoder = getAddressEncoder();
+  const bound = Buffer.concat([encoder.encode(parties.intent) as Uint8Array, encoder.encode(parties.worker) as Uint8Array]);
   return {
-    salt: digest(text(SALT_TAG), source).subarray(0, 16),
+    salt: digest(text("intent-delivery-salt-v3"), source).subarray(0, 16),
+    esk: clamp(digest(text("intent-engine-eb"), source, bound, text(url), binding)),
+    key: new Uint8Array(digest(text("intent-engine-cb"), source, bound, text(url), binding)),
+  };
+}
+
+export function refLegacySecrets(source: Uint8Array, url: string, binding: Uint8Array) {
+  return {
+    salt: digest(text("solive-delivery-salt-v3"), source).subarray(0, 16),
     esk: clamp(digest(text("intent-engine-ek"), source, text(url), binding)),
     key: new Uint8Array(digest(text("intent-engine-ck"), source, text(url), binding)),
   };
@@ -87,7 +100,7 @@ export function referenceBlob(r: Reference): Uint8Array {
     return r.fingerprint?.(i, fp) ?? fp;
   });
   const binding = Buffer.concat([Uint8Array.of(n, mask), ...fps]);
-  const { salt, esk, key } = refSecrets(r.source, r.url, binding);
+  const { salt, esk, key } = r.legacy === true ? refLegacySecrets(r.source, r.url, binding) : refSecrets(r.source, r.url, binding, r);
   const epk = refPublic(esk);
   const prefix = Buffer.concat([Uint8Array.of(4, n, mask), ...fps, epk, digest(text("intent-engine-kc"), key)]);
   const wrapEsk = r.wrapEsk ?? esk;

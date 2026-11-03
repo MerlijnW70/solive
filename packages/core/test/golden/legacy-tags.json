@@ -1,0 +1,37 @@
+{
+  "wallets": {
+    "owner": "261e9e1a83cc9cbe78242e7f57c5aa6eb52cc2827048ab6f5e3a407bd9ddda1994e3bd95f56763cec411701319be0f87f2cc7ba1b5894c9053aa44783131c067",
+    "worker": "5599780d971b3062de5eaa7c00d42ac293a3bfbe98f9d2eb2ae685e6318eaaef83bdb47e907480a3f6343d50ef36e33c49d21ad23e364cd3e94019684813e26f",
+    "judge": "76b80994a9d35a7c8e1de3d0a807ccd0c52defa0895fe2d90e18b7a1c781cf92d435deb444e429ca80cac318ab0e036b88f653e9f6c857a8bc81a2e35d669134",
+    "member": "d6a80d88a62b336058ef2896b8ac484b6b3fda56343338b184b047df71e340f099168f916d32f6cdaa912b870a662dd658fa83189db538bf1059b6efb3ed22ac"
+  },
+  "nonce": "7",
+  "intent": "CW6Jcq5P5iWxzwdrXj2ghMd2q7dk3WJTXvBdU1XQ9PhS",
+  "sha256": "8657428656c810f9a0a929740f2823fa246e0b3f65922bdd74964429cae5f98f",
+  "url": "https://example.org/legacy.tar",
+  "signed": {
+    "source": "6c3d93c3bfd747a201789692a8da45fe7e244dbeead710f3a6fbb119df6cadfd3c93a7dd139e009d8ee1130f8beff1feaefb231f6888857ed2747837abda3104",
+    "salt": "51573b5ffcbae495ff7ae00f99a53e86",
+    "esk": "309a2ec26226cc5cce98e399d807f2a47c7677c183e35ac2cc7a03df0c739853",
+    "commitment": "4cc39ac95ca69ccb588266e50d7f1f383c83f8cd5dd5df870ad128e41dba4ffb",
+    "blob": "040100f3f3605dd83eed4b4cdfa886bffa4168080079b1add6498a832f8b5ccce54eabfdf8e7143b02811633b8f8d6fc458492e73ba752bd7710535b04fd3d1de0b39553b1dce3dfeac7dfeaaa7efd243be4dbc94045e7f3502c61a2308990af45dd86b84058a35b38021868fc253e22508d5c3394013fdf498df61dae13186f2bd52dbd248e09606d1a8f54627654d6ce1dce23ba2702b9808b1c18a676d9587367fac061daba4b97",
+    "content": "26584ff4644a81eed41e1f2060c1818109001a1b97f393ccc1f1bcac88f693e7"
+  },
+  "secret": {
+    "source": "b39934e652142d531dea1ce9e6a3cbe4d617240e0126adcd779c362368e2d617",
+    "salt": "e2c5bac4641ebc19b1118b3d4e4b7f3f",
+    "esk": "a06b34eaeefa651fc522482e5c1358853fdb54a0f130876c118b61a85e74ec71",
+    "commitment": "a4ac352453cfc360242a987fca2d4f9fe7778e2b748049341653d42370c725aa",
+    "blob": "040100f3f3605dd83eed4b32d065d671fcb4323a93cc42e30fd183ee5ccfd5ca1722241440722276b41d2bfbf96b48253db60e37243d3a4011d532d79bd43d3b7ef9054502d7525ff9d2138889406f26cbee580e3a693d0cc7df8c67a3164a8429bf5c7b8b2c3a50fa45d3dbd585d2fea3dcee6d5c2caa06cb3a7366a2280a9c62959c5002dad4c7b50e30e7ce885338aab93b27f1a301a7745dc08ac76f9daa99eedac0890402cf3c",
+    "content": "fe2adae6f285788d3f126dc61191f779cfd2120f90756d4d73fce7e5d31b3f66"
+  },
+  "encryptionKeyFile": "{\n  \"kind\": \"solive-encryption-key\",\n  \"public_key\": \"445TUHyhg7NyX3as1JddYhQ43mpR4qhenYrsR8Wrzdnp\",\n  \"secret_key\": \"8bD98fRbGmicWN9excW5zXztJZmjbHABcTHDxpnghjGL\"\n}\n",
+  "sealed": {
+    "plain": "the legacy sealed spec\n",
+    "file": "{\"solive-sealed\":2,\"to\":[{\"wallet\":\"FHP5LXsqc1u39E4NSLiLUj77QgZrCce8TLXzpvpGKsFZ\",\"pk\":\"g3LI9RMiYvQ9d82GDfxgx2ROqImHp0m0H7+w68YP3QY=\",\"epk\":\"nrdPNmD8V9jf/ddTnzbAHud9sRRNeZ6N9NgjBJ+Z108=\",\"iv\":\"Xbc/tvwHXb7NlvaW\",\"key\":\"GIafjqLsCuj0hUpeEnOKRiXPseoDq3rH2CGuNm7sjetGCZtlQ1pCc7PCCftcMNE1\"},{\"wallet\":\"BJbLBKhCk4NzybpXwti58PwPPiRWEWNfGp9f8PJz1ECj\",\"pk\":\"LVzXkVZ82ogUEjVSeIu3/tLIHEeyEWRqfMwBhheaUUk=\",\"epk\":\"jvlXy7zAmc+NzO6cUGlRFWg1LGMk6mhgwWe3ScS4MwE=\",\"iv\":\"+uugg1rfXi1tD3r4\",\"key\":\"NZ213/vI6ThacIHx70JHYod2UMymxIY6RMRib2pfkoGIw3YuuJMR12pVedBuczx6\"}],\"iv\":\"e4//RVjfJMGY9Ko/\",\"data\":\"hQZFVvsm43wRF2FkEChpQees8IlKq0vZfsQur2BdwGbOB6548EyI\"}\n"
+  },
+  "memos": {
+    "spec": "solive-spec:https://example.org/legacy.tar",
+    "feedback": "solive-feedback:CW6Jcq5P5iWxzwdrXj2ghMd2q7dk3WJTXvBdU1XQ9PhS:87:8657428656c810f9a0a929740f2823fa246e0b3f65922bdd74964429cae5f98f"
+  }
+}

@@ -1,10 +1,12 @@
 import { type Address, isAddress } from "@solana/kit";
-import { PRODUCT_SLUG } from "../generated/identity.js";
 import { InvalidInput } from "./errors.js";
 
-export const SPEC_MEMO_PREFIX = `${PRODUCT_SLUG}-spec:`;
+export const SPEC_MEMO_MARK = "-spec:";
+export const SPEC_MEMO_PREFIX = `intent${SPEC_MEMO_MARK}`;
+export const LEGACY_SPEC_MEMO_PREFIX = `solive${SPEC_MEMO_MARK}`;
 export const RELEASE_MEMO_PREFIX = "delivery sha256:";
-export const FEEDBACK_MEMO_PREFIX = `${PRODUCT_SLUG}-feedback:`;
+export const FEEDBACK_MEMO_PREFIX = "intent-feedback:";
+export const LEGACY_FEEDBACK_MEMO_PREFIX = "solive-feedback:";
 export const MAX_FEEDBACK_SCORE = 100;
 export const MAX_MEMO_URL = 200;
 
@@ -67,11 +69,14 @@ export function specMemo(url: string): string {
   return `${SPEC_MEMO_PREFIX}${url}`;
 }
 
+const prefixOf = (text: string, prefixes: readonly string[]): string | undefined => prefixes.find((prefix) => text.startsWith(prefix));
+
 export function parseSpecMemo(text: string): SpecMemo | null {
-  if (text.length > SPEC_MEMO_PREFIX.length + MAX_MEMO_URL || !text.startsWith(SPEC_MEMO_PREFIX)) {
+  const prefix = prefixOf(text, [SPEC_MEMO_PREFIX, LEGACY_SPEC_MEMO_PREFIX]);
+  if (prefix === undefined || text.length > prefix.length + MAX_MEMO_URL) {
     return null;
   }
-  const url = text.slice(SPEC_MEMO_PREFIX.length);
+  const url = text.slice(prefix.length);
   return isLegacyMemoUrl(url) ? { url } : null;
 }
 
@@ -116,10 +121,11 @@ export function feedbackMemo({ intent, score, note }: FeedbackMemo): string {
 }
 
 export function parseFeedbackMemo(text: string): FeedbackMemo | null {
-  if (!text.startsWith(FEEDBACK_MEMO_PREFIX)) {
+  const prefix = prefixOf(text, [FEEDBACK_MEMO_PREFIX, LEGACY_FEEDBACK_MEMO_PREFIX]);
+  if (prefix === undefined) {
     return null;
   }
-  const [intent = "", score = "", note, ...rest] = text.slice(FEEDBACK_MEMO_PREFIX.length).split(":");
+  const [intent = "", score = "", note, ...rest] = text.slice(prefix.length).split(":");
   if (rest.length > 0 || !isAddress(intent) || !SCORE.test(score) || Number(score) > MAX_FEEDBACK_SCORE) {
     return null;
   }

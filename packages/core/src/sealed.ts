@@ -1,13 +1,16 @@
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
-import type { DeliveryOpener } from "./encryption-key.js";
+import { type DeliveryOpener, isUsableKey } from "./encryption-key.js";
 import { SdkError } from "./errors.js";
 
 export const SEALED_VERSION = 2;
-export const SEALED_TAG = "solive-sealed";
+export const SEALED_TAG = "intent-sealed";
+export const LEGACY_SEALED_TAG = "solive-sealed";
 export const MAX_SEALED_RECIPIENTS = 32;
 
-const INFO = new TextEncoder().encode("solive-sealed-v1");
-const LIST_INFO = new TextEncoder().encode(`${SEALED_TAG}-v${SEALED_VERSION}`);
+const TAGS = [SEALED_TAG, LEGACY_SEALED_TAG] as const;
+type Tag = (typeof TAGS)[number];
+const listInfo = (tag: Tag): Uint8Array<ArrayBuffer> => new TextEncoder().encode(`${tag}-v${SEALED_VERSION}`);
+const LIST_INFO = listInfo(SEALED_TAG);
 const P = 2n ** 255n - 19n;
 const D = (((P - 121665n) % P) * modPow(121666n, P - 2n)) % P;
 export const PKCS8_X25519 = Uint8Array.from([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20]);
@@ -38,7 +41,8 @@ export class NotInvited extends SdkError {
 export type SealRecipient = Address | { wallet: Address; encryptionKey: Uint8Array | null };
 
 type Recipient = { wallet: Address; pk: string; epk: string; iv: string; key: string };
-type Envelope = { [SEALED_TAG]: number; to: Recipient[]; iv: string; data: string };
+type Envelope = { to: Recipient[]; iv: string; data: string };
+type Opened = { envelope: Envelope; info: Uint8Array<ArrayBuffer> };
 
 const CHUNK = 0x8000;
 
@@ -107,7 +111,7 @@ export async function x25519SecretOf(keypair: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("pkcs8", Uint8Array.from([...PKCS8_X25519, ...hashed.slice(0, 32)]), { name: "X25519" }, false, ["deriveBits"]);
 }
 
-export async function wrapKey(shared: Uint8Array, salt: Uint8Array, info: Uint8Array = INFO): Promise<CryptoKey> {
+export async function wrapKey(shared: Uint8Array, salt: Uint8Array, info: Uint8Array = LIST_INFO): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey("raw", shared.slice(), "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: salt.slice(), info: info.slice() }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
@@ -117,8 +121,8 @@ const random = (length: number): Uint8Array<ArrayBuffer> => crypto.getRandomValu
 function targetOf(recipient: SealRecipient): { wallet: Address; pk: Uint8Array<ArrayBuffer> } {
   const [wallet, key] = typeof recipient === "string" ? [recipient, null] : [recipient.wallet, recipient.encryptionKey];
   if (key !== null) {
-    if (key.length !== KEY_BYTES) {
-      throw new SealedError(`${wallet}'s encryption key is not ${KEY_BYTES} bytes`);
+    if (!isUsableKey(key)) {
+      throw new SealedError(`${wallet}'s encryption key is not a usable X25519 public key`);
     }
     return { wallet, pk: Uint8Array.from(key) };
   }
@@ -128,9 +132,9 @@ function targetOf(recipient: SealRecipient): { wallet: Address; pk: Uint8Array<A
   return { wallet, pk: x25519PublicOf(wallet) };
 }
 
-function listData(to: readonly { wallet: Address; pk: Uint8Array }[]): Uint8Array<ArrayBuffer> {
+function listData(info: Uint8Array, to: readonly { wallet: Address; pk: Uint8Array }[]): Uint8Array<ArrayBuffer> {
   const encoder = getAddressEncoder();
-  return Uint8Array.from([...LIST_INFO, to.length, ...to.flatMap(({ wallet, pk }) => [...encoder.encode(wallet), ...pk])]);
+  return Uint8Array.from([...info, to.length, ...to.flatMap(({ wallet, pk }) => [...encoder.encode(wallet), ...pk])]);
 }
 
 export async function seal(plain: Uint8Array, recipients: readonly SealRecipient[]): Promise<Uint8Array> {
@@ -145,7 +149,7 @@ export async function seal(plain: Uint8Array, recipients: readonly SealRecipient
   if (list.length === 0 || list.length > MAX_SEALED_RECIPIENTS) {
     throw new SealedError(`seal to between 1 and ${MAX_SEALED_RECIPIENTS} wallets`);
   }
-  const bound = listData(list);
+  const bound = listData(LIST_INFO, list);
   const contentKey = random(KEY_BYTES);
   const iv = random(IV_BYTES);
   const content = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["encrypt"]);
@@ -166,18 +170,23 @@ export async function seal(plain: Uint8Array, recipients: readonly SealRecipient
     const key = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: keyIv, additionalData: bound }, wrapping, contentKey));
     to.push({ wallet, pk: b64(pk), epk: b64(epk), iv: b64(keyIv), key: b64(key) });
   }
-  const envelope: Envelope = { [SEALED_TAG]: SEALED_VERSION, to, iv: b64(iv), data: b64(data) };
+  const envelope = { [SEALED_TAG]: SEALED_VERSION, to, iv: b64(iv), data: b64(data) };
   return new TextEncoder().encode(`${JSON.stringify(envelope)}\n`);
 }
 
-function tagged(bytes: Uint8Array): Record<string, unknown> | null {
+function tagged(bytes: Uint8Array): { parsed: Record<string, unknown>; tag: Tag } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     return null;
   }
-  return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && SEALED_TAG in parsed ? (parsed as Record<string, unknown>) : null;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  const tag = TAGS.find((t) => t in record);
+  return tag === undefined ? null : { parsed: record, tag };
 }
 
 function canonical(wallet: string): boolean {
@@ -197,13 +206,14 @@ function recipientOf(entry: unknown): Recipient | null {
   return sized && canonical(r.wallet) ? (r as Recipient) : null;
 }
 
-function envelopeOf(bytes: Uint8Array): Envelope {
-  const parsed = tagged(bytes);
-  if (parsed === null) {
+function envelopeOf(bytes: Uint8Array): Opened {
+  const found = tagged(bytes);
+  if (found === null) {
     throw new SealedError("this is not a sealed file");
   }
-  if (parsed[SEALED_TAG] !== SEALED_VERSION) {
-    throw new SealedError(parsed[SEALED_TAG] === 1 ? OLD_SEALED : "this sealed file has a version this release does not read");
+  const { parsed, tag } = found;
+  if (parsed[tag] !== SEALED_VERSION) {
+    throw new SealedError(parsed[tag] === 1 ? OLD_SEALED : "this sealed file has a version this release does not read");
   }
   const { to, iv, data } = parsed;
   if (!Array.isArray(to) || typeof iv !== "string" || typeof data !== "string" || b64Of(iv, IV_BYTES) === null || b64Of(data) === null) {
@@ -217,13 +227,13 @@ function envelopeOf(bytes: Uint8Array): Envelope {
   if (to.length === 0 || to.length > MAX_SEALED_RECIPIENTS || wallets.size !== to.length) {
     throw new SealedError(`this sealed file is refused: ${SEALED_LIMIT}`);
   }
-  return parsed as Envelope;
+  return { envelope: parsed as Envelope, info: listInfo(tag) };
 }
 
 export const isSealed = (bytes: Uint8Array): boolean => tagged(bytes) !== null;
 
 export function sealedTo(bytes: Uint8Array): Address[] {
-  return envelopeOf(bytes).to.map((r) => r.wallet);
+  return envelopeOf(bytes).envelope.to.map((r) => r.wallet);
 }
 
 type Opener = { wallet: Address | null; publicKey: Uint8Array; secret: CryptoKey };
@@ -241,12 +251,12 @@ async function openerOf(opener: DeliveryOpener): Promise<Opener> {
 
 const same = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
-async function contentKeyOf(entry: Recipient, opener: Opener, bound: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer> | null> {
+async function contentKeyOf(entry: Recipient, opener: Opener, info: Uint8Array, bound: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer> | null> {
   try {
     const epk = unb64(entry.epk);
     const peer = await crypto.subtle.importKey("raw", epk.slice(), { name: "X25519" }, false, []);
     const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: peer }, opener.secret, 256));
-    const wrapping = await wrapKey(shared, Uint8Array.from([...epk, ...opener.publicKey]), LIST_INFO);
+    const wrapping = await wrapKey(shared, Uint8Array.from([...epk, ...opener.publicKey]), info);
     return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(entry.iv), additionalData: bound }, wrapping, unb64(entry.key)));
   } catch {
     return null;
@@ -254,9 +264,9 @@ async function contentKeyOf(entry: Recipient, opener: Opener, bound: Uint8Array<
 }
 
 export async function unseal(bytes: Uint8Array, given: DeliveryOpener | readonly DeliveryOpener[]): Promise<Uint8Array> {
-  const envelope = envelopeOf(bytes);
+  const { envelope, info } = envelopeOf(bytes);
   const openers = await Promise.all((Array.isArray(given) ? (given as readonly DeliveryOpener[]) : [given as DeliveryOpener]).map(openerOf));
-  const bound = listData(envelope.to.map(({ wallet, pk }) => ({ wallet, pk: unb64(pk) })));
+  const bound = listData(info, envelope.to.map(({ wallet, pk }) => ({ wallet, pk: unb64(pk) })));
   const pairs = openers.flatMap((opener) => envelope.to.filter((entry) => same(unb64(entry.pk), opener.publicKey)).map((entry) => ({ entry, opener })));
   if (pairs.length === 0) {
     const listed = openers.find(({ wallet }) => wallet !== null && envelope.to.some((entry) => entry.wallet === wallet));
@@ -266,7 +276,7 @@ export async function unseal(bytes: Uint8Array, given: DeliveryOpener | readonly
     throw new NotInvited(openers.length === 1 ? (openers[0]?.wallet ?? null) : null);
   }
   for (const { entry, opener } of pairs) {
-    const contentKey = await contentKeyOf(entry, opener, bound);
+    const contentKey = await contentKeyOf(entry, opener, info, bound);
     if (contentKey === null) {
       continue;
     }

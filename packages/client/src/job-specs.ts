@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { type DeliveryOpener, type EngineEvent, NotInvited, SealedError } from "@intent-engine/core";
-import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_PREFIX, type UnreadableAccount, unseal } from "@intent-engine/core/internal";
+import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_MARK, type UnreadableAccount, unseal } from "@intent-engine/core/internal";
 import { loadConfig } from "./accounts.js";
 import { type PayTerms, releaseNet } from "./job-pay.js";
 import { memosSignedBy } from "./job-memos.js";
@@ -86,7 +86,7 @@ export async function specUrlOf(transport: Transport, intent: Address, createdAt
   const known = createdAt !== undefined && owner !== undefined ? null : await intentAt(transport, intent);
   const floor = createdAt ?? known?.createdAt ?? null;
   const created = (transaction: EngineTransaction) => !transaction.failed && createdIn(transaction.emitted, intent);
-  const { transactions } = await scan(transport, intent, { floor, memo: SPEC_MEMO_PREFIX, until: created });
+  const { transactions } = await scan(transport, intent, { floor, memo: SPEC_MEMO_MARK, until: created });
   const tx = transactions.find(created);
   const signer = owner ?? known?.owner ?? (tx === undefined ? null : createdOwner(tx, intent));
   if (tx === undefined || signer === null) {

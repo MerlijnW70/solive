@@ -18,7 +18,6 @@ import {
   SALT_TAG,
   saltMessage,
   sealDeliveryV4,
-  PRODUCT_SLUG,
 } from "../src/internal.js";
 import { clamp, committee, profileMember, refBinding, referenceBlob, refSecrets, saltSignature, urlOf, type Wallet, wallet, walletMember, WORK } from "./sealed-v4-reference.js";
 import { InvalidInput } from "../src/errors.js";
@@ -37,7 +36,7 @@ async function job() {
 }
 
 async function seal(url: string, recipients: readonly SealRecipient[], intent: Address, worker: Address, source?: Uint8Array) {
-  const secrets = await deliverySecrets(url, recipients, source);
+  const secrets = await deliverySecrets(url, recipients, { intent, worker }, source);
   return { secrets, blob: await sealDeliveryV4(secrets, intent, worker) };
 }
 
@@ -47,7 +46,7 @@ describe("sealed delivery v4", () => {
     const members = await committee(8, (i) => i % 3 === 0);
     const { secrets, blob } = await seal(URL_A, members.map((m) => m.recipient), intent, worker, sig);
     const opened = await Promise.all(members.map((m) => openDeliveryV4(blob, m.opener, intent, worker)));
-    const salt = hex(refSecrets(sig, URL_A, secrets.binding).salt);
+    const salt = hex(refSecrets(sig, URL_A, secrets.binding, { intent, worker }).salt);
     for (const o of opened) {
       expect(o).not.toBeNull();
       expect(o?.url).toBe(URL_A);
@@ -74,7 +73,7 @@ describe("sealed delivery v4", () => {
       expect(await openDeliveryV4(forged, m.opener, intent, worker)).toBeNull();
     }
     expect(await openWithContentKey(forged, other, intent, worker)).toBeNull();
-    const { esk } = refSecrets(sig, URL_A, refBinding(forged));
+    const { esk } = refSecrets(sig, URL_A, refBinding(forged), { intent, worker });
     expect(await openWithEsk(forged, esk, members.map((m) => m.recipient), intent, worker)).toBeNull();
   });
 
@@ -148,16 +147,16 @@ describe("sealed delivery v4", () => {
   it("keeps the random bytes a device-signed worker uses in place of the signature", async () => {
     const { intent, worker } = await job();
     const member = await profileMember();
-    const first = await deliverySecrets(URL_A, [member.recipient]);
-    const second = await deliverySecrets(URL_A, [member.recipient]);
+    const first = await deliverySecrets(URL_A, [member.recipient], { intent, worker });
+    const second = await deliverySecrets(URL_A, [member.recipient], { intent, worker });
     expect(first.source.length).toBe(RANDOM_SOURCE_LEN);
     expect(hex(first.source)).not.toBe(hex(second.source));
-    const kept = await deliverySecrets(URL_A, [member.recipient], first.source);
+    const kept = await deliverySecrets(URL_A, [member.recipient], { intent, worker }, first.source);
     expect(kept).toEqual(first);
     const blob = await sealDeliveryV4(first, intent, worker);
     expect(hex(await sealDeliveryV4(kept, intent, worker))).toBe(hex(blob));
     expect((await openDeliveryV4(blob, member.opener, intent, worker))?.url).toBe(URL_A);
-    await expect(deliverySecrets(URL_A, [member.recipient], new Uint8Array(33))).rejects.toThrow(InvalidInput);
+    await expect(deliverySecrets(URL_A, [member.recipient], { intent, worker }, new Uint8Array(33))).rejects.toThrow(InvalidInput);
   });
 
   it("lets a third party rebuild every wrap from the revealed ephemeral secret", async () => {
@@ -172,7 +171,7 @@ describe("sealed delivery v4", () => {
     const garbage = Uint8Array.from(blob, (b, i) => (i < 3 + 8 * 8 ? b : crypto.getRandomValues(new Uint8Array(1))[0] ?? b));
     expect(delivery.blobHead(garbage).count).toBe(8);
     expect(await openWithEsk(garbage, secrets.esk, recipients, intent, worker)).toBeNull();
-    const otherEsk = (await deliverySecrets(URL_B, recipients, sig)).esk;
+    const otherEsk = (await deliverySecrets(URL_B, recipients, { intent, worker }, sig)).esk;
     expect(await openWithEsk(blob, otherEsk, recipients, intent, worker)).toBeNull();
     expect(await openWithEsk(blob, secrets.esk, [...recipients].reverse(), intent, worker)).toBeNull();
     expect(await openWithEsk(blob, secrets.esk, recipients.slice(1), intent, worker)).toBeNull();
@@ -217,7 +216,7 @@ describe("sealed delivery v4", () => {
     const keys = members.map((m) => ({ key: m.key, profile: m.profile }));
     const base = { source: sig, url: URL_A, intent, worker };
     const honest = referenceBlob({ ...base, recipients: keys });
-    const eskOf = (blob: Uint8Array) => refSecrets(sig, URL_A, refBinding(blob)).esk;
+    const eskOf = (blob: Uint8Array) => refSecrets(sig, URL_A, refBinding(blob), { intent, worker }).esk;
     expect((await openWithEsk(honest, eskOf(honest), recipients, intent, worker))?.url).toBe(URL_A);
     const other = crypto.getRandomValues(new Uint8Array(32));
     const fake = clamp(crypto.getRandomValues(new Uint8Array(32)));
@@ -260,14 +259,14 @@ describe("sealed delivery v4", () => {
     if (one === undefined) {
       throw new Error("no member");
     }
-    await expect(deliverySecrets(URL_A, [], sig)).rejects.toThrow(SealedError);
-    await expect(deliverySecrets(URL_A, nine.map((m) => m.recipient), sig)).rejects.toThrow(SealedError);
-    await expect(deliverySecrets(URL_A, [one.recipient, one.recipient], sig)).rejects.toThrow(SealedError);
+    await expect(deliverySecrets(URL_A, [], { intent, worker }, sig)).rejects.toThrow(SealedError);
+    await expect(deliverySecrets(URL_A, nine.map((m) => m.recipient), { intent, worker }, sig)).rejects.toThrow(SealedError);
+    await expect(deliverySecrets(URL_A, [one.recipient, one.recipient], { intent, worker }, sig)).rejects.toThrow(SealedError);
     const weak = { wallet: wallet().address, encryptionKey: new Uint8Array(32) };
-    await expect(deliverySecrets(URL_A, [weak], sig)).rejects.toThrow(SealedError);
-    await expect(deliverySecrets("http://example.org/plain", [one.recipient], sig)).rejects.toThrow(InvalidInput);
-    await expect(deliverySecrets(urlOf(201), [one.recipient], sig)).rejects.toThrow(InvalidInput);
-    const secrets = await deliverySecrets(URL_A, [one.recipient], sig);
+    await expect(deliverySecrets(URL_A, [weak], { intent, worker }, sig)).rejects.toThrow(SealedError);
+    await expect(deliverySecrets("http://example.org/plain", [one.recipient], { intent, worker }, sig)).rejects.toThrow(InvalidInput);
+    await expect(deliverySecrets(urlOf(201), [one.recipient], { intent, worker }, sig)).rejects.toThrow(InvalidInput);
+    const secrets = await deliverySecrets(URL_A, [one.recipient], { intent, worker }, sig);
     await expect(sealDeliveryV4({ ...secrets, url: urlOf(201) }, intent, worker)).rejects.toThrow(InvalidInput);
     await expect(sealDeliveryV4({ ...secrets, recipients: [] }, intent, worker)).rejects.toThrow(SealedError);
     const relabelled = await sealDeliveryV4({ ...secrets, url: URL_B }, intent, worker);
@@ -299,7 +298,7 @@ describe("sealed delivery v4", () => {
 
 describe("delivery salts", () => {
   const saltOf = async (signer: Wallet, intent: Address, sha256: string): Promise<Uint8Array> =>
-    (await deliverySecrets(URL_A, [wallet().address], saltSignature(signer, intent, sha256))).salt;
+    (await deliverySecrets(URL_A, [wallet().address], { intent, worker: signer.address }, saltSignature(signer, intent, sha256))).salt;
 
   it("derive the salt from the worker's own signature of the salt message, so only its key recomputes it", async () => {
     const [worker, other] = [wallet(), wallet()];
@@ -310,7 +309,7 @@ describe("delivery salts", () => {
     expect(hex(await saltOf(other, intent, WORK))).not.toBe(salt);
     expect(hex(await saltOf(worker, wallet().address, WORK))).not.toBe(salt);
     expect(hex(await saltOf(worker, intent, YES))).not.toBe(salt);
-    expect(SALT_TAG).toBe(`${PRODUCT_SLUG}-delivery-salt-v3`);
+    expect(SALT_TAG).toBe("intent-delivery-salt-v3");
     expect(saltMessage(intent, WORK)).toEqual(Uint8Array.from([...Buffer.from(SALT_TAG), ...getAddressEncoder().encode(intent), ...Buffer.from(WORK, "hex")]));
     expect(() => saltMessage(intent, "zz")).toThrow(InvalidInput);
     expect(() => saltMessage(intent, WORK.toUpperCase())).toThrow(InvalidInput);

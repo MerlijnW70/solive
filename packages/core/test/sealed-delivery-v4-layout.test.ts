@@ -24,6 +24,10 @@ import {
   x25519PublicOf,
   SALT_TAG,
   SEALED_TAG,
+  LEGACY_CK_TAG,
+  LEGACY_ESK_TAG,
+  LEGACY_SALT_TAG,
+  LEGACY_SEALED_TAG,
 } from "../src/internal.js";
 import { clamp, refBinding, refPublic, referenceBlob, refSecrets, urlOf } from "./sealed-v4-reference.js";
 
@@ -42,12 +46,14 @@ const member = (i: number, profile: boolean) => {
   return { key: k, profile, recipient: profile ? { wallet, encryptionKey: k } : wallet };
 };
 const GOLDEN_RECIPIENTS = [member(0, true), member(1, false), member(2, true)];
-const GOLDEN_SHA256 = "1476ef924eab8ff5c97353067d630b0696928b19c1bedd396ad1bd8850bc056a";
+const GOLDEN_SHA256 = "28095198a37f6f486e64dcfaa7105e8ff79e33291aeb1264a4a33987259ced88";
+const LEGACY_GOLDEN_SHA256 = "1476ef924eab8ff5c97353067d630b0696928b19c1bedd396ad1bd8850bc056a";
 
 const sealed = (source: Uint8Array, url: string, recipients: readonly ReturnType<typeof member>[]) =>
   deliverySecrets(
     url,
     recipients.map((r) => r.recipient),
+    { intent: INTENT, worker: WORKER },
     source,
   ).then((secrets) => sealDeliveryV4(secrets, INTENT, WORKER));
 
@@ -57,7 +63,7 @@ describe("the v4 blob layout", () => {
     const blob = await sealed(SIG, URL, all);
     const n = 3;
     const u = URL.length;
-    const { esk, key: contentKey, salt } = refSecrets(SIG, URL, refBinding(blob));
+    const { esk, key: contentKey, salt } = refSecrets(SIG, URL, refBinding(blob), { intent: INTENT, worker: WORKER });
     expect(blob.length).toBe(99 + 40 * n + u);
     expect(blob.length).toBe(sealedBlobLength(n, u));
     expect([...blob.subarray(0, 3)]).toEqual([4, 3, 0b111]);
@@ -96,16 +102,19 @@ describe("the v4 blob layout", () => {
     const blob = await sealed(SIG, URL, GOLDEN_RECIPIENTS);
     expect(hex(blob.subarray(0, 3))).toBe("040305");
     expect(createHash("sha256").update(blob).digest("hex")).toBe(GOLDEN_SHA256);
+    const legacy = referenceBlob({ source: SIG, url: URL, recipients: GOLDEN_RECIPIENTS, intent: INTENT, worker: WORKER, legacy: true });
+    expect(createHash("sha256").update(legacy).digest("hex")).toBe(LEGACY_GOLDEN_SHA256);
   });
 
-  it("derives its secrets from the salt signature, the url and the recipient bytes of the head", async () => {
-    const secrets = await deliverySecrets(URL, GOLDEN_RECIPIENTS.map((r) => r.recipient), SIG);
+  it("derives its secrets from the salt signature, the intent, the worker, the url and the recipient bytes of the head", async () => {
+    const secrets = await deliverySecrets(URL, GOLDEN_RECIPIENTS.map((r) => r.recipient), { intent: INTENT, worker: WORKER }, SIG);
     const blob = await sealed(SIG, URL, GOLDEN_RECIPIENTS);
     expect(hex(secrets.binding)).toBe(hex(blob.subarray(1, 3 + 8 * 3)));
-    const ref = refSecrets(SIG, URL, refBinding(blob));
-    const digest = (tag: string) => createHash("sha256").update(Buffer.concat([Buffer.from(tag), SIG, Buffer.from(URL), blob.subarray(1, 27)])).digest("hex");
-    expect(hex(secrets.key)).toBe(digest("intent-engine-ck"));
-    expect(hex(secrets.esk)).toBe(hex(clamp(Buffer.from(digest("intent-engine-ek"), "hex"))));
+    const ref = refSecrets(SIG, URL, refBinding(blob), { intent: INTENT, worker: WORKER });
+    const parties = Buffer.concat([fixed(0x11), fixed(0x22)]);
+    const digest = (tag: string) => createHash("sha256").update(Buffer.concat([Buffer.from(tag), SIG, parties, Buffer.from(URL), blob.subarray(1, 27)])).digest("hex");
+    expect(hex(secrets.key)).toBe(digest("intent-engine-cb"));
+    expect(hex(secrets.esk)).toBe(hex(clamp(Buffer.from(digest("intent-engine-eb"), "hex"))));
     expect(hex(secrets.salt)).toBe(hex(ref.salt));
     expect(hex(secrets.esk)).toBe(hex(ref.esk));
     expect(hex(secrets.key)).toBe(hex(ref.key));
@@ -114,7 +123,7 @@ describe("the v4 blob layout", () => {
   });
 
   it("uses tags of its own, distinct from every tag already in core", () => {
-    const ours = [KC_TAG, WRAP_INFO, BLOB_INFO, ESK_TAG, CK_TAG].map((t) => new TextDecoder().decode(t));
+    const ours = [KC_TAG, WRAP_INFO, BLOB_INFO, ESK_TAG, CK_TAG, LEGACY_ESK_TAG, LEGACY_CK_TAG].map((t) => new TextDecoder().decode(t));
     const existing = [
       INTENT_TAG,
       ATTEST_TAG,
@@ -128,8 +137,8 @@ describe("the v4 blob layout", () => {
       delivery.FINGERPRINT_TAG,
     ]
       .map((t) => new TextDecoder().decode(t))
-      .concat([SALT_TAG, SEALED_TAG]);
-    expect(ours).toEqual(["intent-engine-kc", "intent-engine-wk", "intent-engine-bl", "intent-engine-ek", "intent-engine-ck"]);
+      .concat([SALT_TAG, SEALED_TAG, LEGACY_SALT_TAG, LEGACY_SEALED_TAG]);
+    expect(ours).toEqual(["intent-engine-kc", "intent-engine-wk", "intent-engine-bl", "intent-engine-eb", "intent-engine-cb", "intent-engine-ek", "intent-engine-ck"]);
     expect(new Set([...ours, ...existing]).size).toBe(ours.length + existing.length);
     expect(ours.every((t) => /^[\x20-\x7e]+$/.test(t))).toBe(true);
   });

@@ -63,7 +63,7 @@ async function job(w?: World) {
 async function unopenable(client: ReturnType<typeof createClient>, worker: KeyPairSigner, judge: Keyed, intent: Address) {
   const source = crypto.getRandomValues(new Uint8Array(32));
   const recipients = [judge.signer.address];
-  const { salt, esk } = await deliverySecrets(workUrl("unopenable"), recipients, source);
+  const { salt, esk } = await deliverySecrets(workUrl("unopenable"), recipients, { intent, worker: worker.address }, source);
   const blob = await sealDeliveryV4({ source, url: workUrl("unopenable"), recipients }, intent, worker.address);
   const wrapped = blobLayout(1, blob.length).wrapped;
   blob[wrapped] = (blob[wrapped] ?? 0) ^ 1;

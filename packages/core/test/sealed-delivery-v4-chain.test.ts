@@ -215,15 +215,15 @@ describe("sealed v4 blobs on the deployed program", () => {
   it("accepts a sealed blob whose fingerprint the program derives from the judge's profile key", async () => {
     const sig = saltSignature(wallet(), intent);
     const url = urlOf(delivery.MAX_BLOB_URL);
-    const blob = await sealDeliveryV4(await deliverySecrets(url, [judgeKey.recipient], sig), intent, worker.address);
+    const blob = await sealDeliveryV4(await deliverySecrets(url, [judgeKey.recipient], { intent, worker: worker.address }, sig), intent, worker.address);
     expect(chainVerdict(await announce(blob))).toBe("accepted");
     expect((await openDeliveryV4(blob, judgeKey.opener, intent, worker.address))?.url).toBe(url);
   });
 
   it("refuses exactly the bytes blobHead refuses", async () => {
     const sig = saltSignature(wallet(), intent);
-    const short = await sealDeliveryV4(await deliverySecrets(urlOf(24), [judgeKey.recipient], sig), intent, worker.address);
-    const long = await sealDeliveryV4(await deliverySecrets(urlOf(delivery.MAX_BLOB_URL), [judgeKey.recipient], sig), intent, worker.address);
+    const short = await sealDeliveryV4(await deliverySecrets(urlOf(24), [judgeKey.recipient], { intent, worker: worker.address }, sig), intent, worker.address);
+    const long = await sealDeliveryV4(await deliverySecrets(urlOf(delivery.MAX_BLOB_URL), [judgeKey.recipient], { intent, worker: worker.address }, sig), intent, worker.address);
     const set = (blob: Uint8Array, at: number, value: number) => Uint8Array.from(blob, (b, i) => (i === at ? value : b));
     const cases: Uint8Array[] = [
       new Uint8Array(0),

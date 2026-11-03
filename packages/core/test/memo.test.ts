@@ -8,7 +8,6 @@ import {
   parseRelease,
   parseReleaseMemo,
   parseSpecMemo,
-  PRODUCT_SLUG,
   RELEASE_MEMO_PREFIX,
   releaseMemo,
   SPEC_MEMO_PREFIX,
@@ -20,9 +19,9 @@ const URL_OK = "https://example.org/spec.md";
 const HASH = "ab".repeat(32);
 
 describe("spec and release memos", () => {
-  it("name the product in their prefixes and round-trip", () => {
-    expect(SPEC_MEMO_PREFIX).toBe(`${PRODUCT_SLUG}-spec:`);
-    expect(specMemo(URL_OK)).toBe(`${PRODUCT_SLUG}-spec:${URL_OK}`);
+  it("carry a fixed neutral prefix and round-trip", () => {
+    expect(SPEC_MEMO_PREFIX).toBe("intent-spec:");
+    expect(specMemo(URL_OK)).toBe(`intent-spec:${URL_OK}`);
     expect(parseSpecMemo(specMemo(URL_OK))).toEqual({ url: URL_OK });
     const local = "http://127.0.0.1:8080/a:b?c=d#e";
     expect(parseSpecMemo(specMemo(local))).toEqual({ url: local });

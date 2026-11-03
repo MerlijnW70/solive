@@ -1,9 +1,10 @@
 import { getAddressDecoder, getBase58Decoder, getBase58Encoder } from "@solana/kit";
-import { PRODUCT_SLUG } from "../generated/identity.js";
 import { InvalidInput, SdkError } from "./errors.js";
 import { PKCS8_X25519, x25519PublicOf, x25519SecretOf } from "./sealed.js";
 
-export const ENCRYPTION_KEY_KIND = `${PRODUCT_SLUG}-encryption-key`;
+export const ENCRYPTION_KEY_KIND = "intent-encryption-key";
+export const LEGACY_ENCRYPTION_KEY_KIND = "solive-encryption-key";
+const KINDS: ReadonlySet<unknown> = new Set([ENCRYPTION_KEY_KIND, LEGACY_ENCRYPTION_KEY_KIND]);
 export const ENCRYPTION_KEY_BYTES = 32;
 export const NO_ENCRYPTION_KEY = "none";
 export const ENCRYPTION_KEY_RULE = `an X25519 public key: ${ENCRYPTION_KEY_BYTES} bytes in base58, canonical and not of small order`;
@@ -98,7 +99,7 @@ export async function readEncryptionKeyFile(text: string): Promise<DeliveryKey> 
   }
   const file = (parsed ?? {}) as { kind?: unknown; public_key?: unknown; secret_key?: unknown };
   const secret = typeof file.secret_key === "string" ? decoded(file.secret_key) : null;
-  if (file.kind !== ENCRYPTION_KEY_KIND || typeof file.public_key !== "string" || !isEncryptionKeyText(file.public_key) || secret?.length !== ENCRYPTION_KEY_BYTES) {
+  if (!KINDS.has(file.kind) || typeof file.public_key !== "string" || !isEncryptionKeyText(file.public_key) || secret?.length !== ENCRYPTION_KEY_BYTES) {
     throw new EncryptionKeyError(NOT_ENCRYPTION_KEY_FILE);
   }
   const key = await importSecret(secret);

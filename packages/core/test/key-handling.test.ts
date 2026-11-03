@@ -66,7 +66,7 @@ describe("key handling", () => {
     let secrets: DeliverySecrets | null = null;
     let blob = new Uint8Array();
     const sealing = await keysMadeBy(async () => {
-      secrets = await deliverySecrets(URL, recipients);
+      secrets = await deliverySecrets(URL, recipients, { intent, worker });
       blob = await sealDeliveryV4(secrets, intent, worker);
     });
     const kept = secrets as DeliverySecrets | null;

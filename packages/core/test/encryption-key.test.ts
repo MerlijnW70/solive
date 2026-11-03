@@ -38,7 +38,7 @@ const URL = "https://example.org/work.tar";
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
 async function sealTo(recipients: readonly SealRecipient[], intent: Address, worker: Address): Promise<Uint8Array> {
-  return sealDeliveryV4(await deliverySecrets(URL, recipients), intent, worker);
+  return sealDeliveryV4(await deliverySecrets(URL, recipients, { intent, worker }), intent, worker);
 }
 
 const urlOpened = async (blob: Uint8Array, opener: DeliveryOpener, intent: Address, worker: Address): Promise<string | null> =>
@@ -138,7 +138,7 @@ describe("judge encryption keys", () => {
     const [judge, member] = [wallet(), wallet()];
     const sealed = await encryptionKey();
     const recipients = [{ wallet: judge.address, encryptionKey: sealed.publicKey }, member.address];
-    const secrets = await deliverySecrets(URL, recipients);
+    const secrets = await deliverySecrets(URL, recipients, { intent, worker });
     const blob = await sealDeliveryV4(secrets, intent, worker);
     const tampered = (at: number, value: (byte: number) => number) => Uint8Array.from(blob, (byte, i) => (i === at ? value(byte) : byte));
     const heads = [

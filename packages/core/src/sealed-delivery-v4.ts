@@ -1,5 +1,4 @@
 import type { Address } from "@solana/kit";
-import { PRODUCT_SLUG } from "../generated/identity.js";
 import { ascii, key } from "./bytes.js";
 import {
   BLOB_FIXED_LEN,
@@ -18,12 +17,15 @@ import { isMemoUrl, isSha256Hex, MEMO_URL_RULE } from "./memo.js";
 import { PKCS8_X25519, type SealRecipient, SealedError, x25519PublicOf } from "./sealed.js";
 import { InvalidInput } from "./errors.js";
 
-export const SALT_TAG = `${PRODUCT_SLUG}-delivery-salt-v3`;
+export const SALT_TAG = "intent-delivery-salt-v3";
+export const LEGACY_SALT_TAG = "solive-delivery-salt-v3";
 export const KC_TAG = ascii("intent-engine-kc");
 export const WRAP_INFO = ascii("intent-engine-wk");
 export const BLOB_INFO = ascii("intent-engine-bl");
-export const ESK_TAG = ascii("intent-engine-ek");
-export const CK_TAG = ascii("intent-engine-ck");
+export const ESK_TAG = ascii("intent-engine-eb");
+export const CK_TAG = ascii("intent-engine-cb");
+export const LEGACY_ESK_TAG = ascii("intent-engine-ek");
+export const LEGACY_CK_TAG = ascii("intent-engine-ck");
 export const SIGNATURE_SOURCE_LEN = 64;
 export const RANDOM_SOURCE_LEN = 32;
 export const CONTENT_KEY_LEN = 32;
@@ -43,6 +45,15 @@ export type DeliverySecrets = {
 };
 
 export type SecretSource = Pick<DeliverySecrets, "source" | "url" | "recipients">;
+
+export type DeliveryParties = { intent: Address; worker: Address };
+
+export type DeliveryScheme = {
+  message: (intent: Address, sha256: string) => Uint8Array<ArrayBuffer>;
+  secrets: (url: string, recipients: readonly SealRecipient[], parties: DeliveryParties, source: Uint8Array) => Promise<DeliverySecrets>;
+};
+
+type Tags = { salt: string; esk: Uint8Array; ck: Uint8Array };
 
 export type OpenedDelivery = { salt: Uint8Array; url: string; key: Uint8Array };
 
@@ -77,12 +88,19 @@ const hexBytes = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(text
 
 export const isSaltHex = (text: string): boolean => SALT_HEX.test(text);
 
-export function saltMessage(intent: Address, sha256: string): Uint8Array<ArrayBuffer> {
+const CURRENT: Tags = { salt: SALT_TAG, esk: ESK_TAG, ck: CK_TAG };
+const LEGACY: Tags = { salt: LEGACY_SALT_TAG, esk: LEGACY_ESK_TAG, ck: LEGACY_CK_TAG };
+
+function messageOf(tag: string, intent: Address, sha256: string): Uint8Array<ArrayBuffer> {
   if (!isSha256Hex(sha256)) {
     throw new InvalidInput("sha256", "format", "a salt binds a sha256 of 64 lowercase hex digits");
   }
-  return bytesOf([ascii(SALT_TAG), key(intent), hexBytes(sha256)]);
+  return bytesOf([ascii(tag), key(intent), hexBytes(sha256)]);
 }
+
+export const saltMessage = (intent: Address, sha256: string): Uint8Array<ArrayBuffer> => messageOf(SALT_TAG, intent, sha256);
+
+export const legacySaltMessage = (intent: Address, sha256: string): Uint8Array<ArrayBuffer> => messageOf(LEGACY_SALT_TAG, intent, sha256);
 
 export const sealedBlobLength = (recipients: number, urlBytes: number): number => BLOB_FIXED_LEN + BLOB_PER_RECIPIENT_LEN * recipients + urlBytes;
 
@@ -127,7 +145,7 @@ async function bindingOf(listed: readonly Recipient[]): Promise<Uint8Array<Array
   return bytesOf([[listed.length, mask], ...fps]);
 }
 
-export async function deliverySecrets(url: string, recipients: readonly SealRecipient[], source?: Uint8Array): Promise<DeliverySecrets> {
+async function derived(tags: Tags, url: string, recipients: readonly SealRecipient[], bound: readonly ArrayLike<number>[], source?: Uint8Array): Promise<DeliverySecrets> {
   const urlBytes = urlBytesOf(url);
   const binding = await recipientBinding(recipients);
   const kept = source === undefined ? crypto.getRandomValues(new Uint8Array(RANDOM_SOURCE_LEN)) : Uint8Array.from(source);
@@ -135,12 +153,22 @@ export async function deliverySecrets(url: string, recipients: readonly SealReci
     throw new InvalidInput("source", "length", `delivery secrets come from a ${SIGNATURE_SOURCE_LEN}-byte salt signature or ${RANDOM_SOURCE_LEN} kept random bytes`);
   }
   const [salt, esk, contentKey] = await Promise.all([
-    sha256([ascii(SALT_TAG), kept]),
-    sha256([ESK_TAG, kept, urlBytes, binding]),
-    sha256([CK_TAG, kept, urlBytes, binding]),
+    sha256([ascii(tags.salt), kept]),
+    sha256([tags.esk, kept, ...bound, urlBytes, binding]),
+    sha256([tags.ck, kept, ...bound, urlBytes, binding]),
   ]);
   return { source: kept, url, recipients: [...recipients], binding, salt: salt.slice(0, SALT_LEN), esk: clampScalar(esk), key: contentKey };
 }
+
+export const deliverySecrets = (url: string, recipients: readonly SealRecipient[], parties: DeliveryParties, source?: Uint8Array): Promise<DeliverySecrets> =>
+  derived(CURRENT, url, recipients, [key(parties.intent), key(parties.worker)], source);
+
+export const legacyDeliverySecrets = (url: string, recipients: readonly SealRecipient[], source: Uint8Array): Promise<DeliverySecrets> => derived(LEGACY, url, recipients, [], source);
+
+export const DELIVERY_SCHEMES: readonly DeliveryScheme[] = [
+  { message: saltMessage, secrets: deliverySecrets },
+  { message: legacySaltMessage, secrets: (url, recipients, _parties, source) => legacyDeliverySecrets(url, recipients, source) },
+];
 
 const importSecret = (scalar: Uint8Array): Promise<CryptoKey> =>
   crypto.subtle.importKey("pkcs8", bytesOf([PKCS8_X25519, scalar]), { name: "X25519" }, false, ["deriveBits"]);
@@ -187,7 +215,7 @@ function recipientsOf(recipients: readonly SealRecipient[]): Recipient[] {
 }
 
 export async function sealDeliveryV4(from: SecretSource, intent: Address, worker: Address): Promise<Uint8Array<ArrayBuffer>> {
-  const secrets = await deliverySecrets(from.url, from.recipients, from.source);
+  const secrets = await deliverySecrets(from.url, from.recipients, { intent, worker }, from.source);
   const urlBytes = urlBytesOf(secrets.url);
   const listed = recipientsOf(secrets.recipients);
   const count = listed.length;

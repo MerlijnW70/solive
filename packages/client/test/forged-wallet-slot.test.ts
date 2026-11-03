@@ -38,7 +38,7 @@ async function forge(w: World, intent: Address, attestor: Address, recipients: r
   const blob = await sealDeliveryV4({ source, url, recipients }, intent, griefer.address);
   const { announcement, instruction } = await buildAnnounceDelivery({ worker: griefer, intent, attestor, committee, commitment: new Uint8Array(32).fill(7), blob });
   await client.send([instruction], griefer);
-  return { griefer, announcement, blob, esk: (await deliverySecrets(url, recipients, source)).esk };
+  return { griefer, announcement, blob, esk: (await deliverySecrets(url, recipients, { intent, worker: griefer.address }, source)).esk };
 }
 
 async function publish(w: World, wallet: KeyPairSigner, encryptionKey: string, update = false): Promise<void> {

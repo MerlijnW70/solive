@@ -125,7 +125,7 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
     throw new UrlTooLong(bytes, maxUrl, recipients.length);
   }
   const source = await secretSource(input, intent, sha256);
-  const { salt } = await deliverySecrets(input.url, recipients, source);
+  const { salt } = await deliverySecrets(input.url, recipients, { intent, worker: worker.address }, source);
   const blob = await sealDeliveryV4({ source, url: input.url, recipients }, intent, worker.address);
   const commitment = await announcementCommitment(intent, worker.address, { delivered, salt });
   const existing = await loadAnnouncement(transport, await announcementAddress(intent, worker.address, blob));
