@@ -23,7 +23,7 @@ export async function openedSpec(ctx: AgentContext, bytes: Uint8Array, given?: r
   if (!isSealed(bytes)) {
     return bytes;
   }
-  const openers = given ?? (await walletOpeners(ctx).catch(() => []));
+  const openers = given ?? (await walletOpeners(ctx));
   return openers.length === 0 ? undefined : unseal(bytes, openers).catch(() => undefined);
 }
 

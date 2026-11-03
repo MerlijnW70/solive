@@ -13,6 +13,7 @@ import { InvalidInput, account, amount, flag, integer, list, object, optional, t
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
 import { rentFor, rentRate } from "../budget.js";
+import { SIGNATURE_FORMAT, signatureBytes } from "../../delivery-shared.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
@@ -171,10 +172,11 @@ export const walletCommitteeRelease = define({
     const signer = await signerOf(ctx);
     const { client, target, ballot, delivered, opening, skipped } = await ballotOf(ctx, input, signer.address, false, false);
     const votes = input.votes.map((vote, i) => {
-      if (!/^[0-9a-fA-F]{128}$/.test(vote.signature)) {
-        throw new InvalidInput([{ path: `votes.${i}.signature`, message: "give the signature as 128 hex digits" }]);
+      const signature = signatureBytes(vote.signature);
+      if (signature === undefined) {
+        throw new InvalidInput([{ path: `votes.${i}.signature`, message: SIGNATURE_FORMAT }]);
       }
-      return { member: vote.member, signature: Uint8Array.from(Buffer.from(vote.signature, "hex")) };
+      return { member: vote.member, signature };
     });
     let release;
     try {

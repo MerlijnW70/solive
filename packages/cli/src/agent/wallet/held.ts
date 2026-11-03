@@ -3,6 +3,7 @@ import { formatAmount } from "@intent-engine/core";
 import { type HeldShare, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { mintOf } from "@intent-engine/client/internal";
+import { NOTHING_HELD } from "../../delivery-shared.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -17,7 +18,7 @@ export const MAX_HELD_LISTED = 16;
 
 export const CLAIM_HELD_CHANGED = "this claim differs from its preview: the share, its amount or the receiving account changed, or no approval was given; preview it again and show the user";
 
-export const NOTHING_HELD = "no split share is held for this wallet; a release holds a co-author's share only when its token account cannot take it";
+export { NOTHING_HELD } from "../../delivery-shared.js";
 
 export const pickHeld = (count: number): string => `${count} shares are held for this wallet; pass announcement, and index if one announcement holds more, to claim one`;
 

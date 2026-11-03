@@ -14,6 +14,7 @@ import {
 import { createClient } from "@intent-engine/client/node";
 import { chainTime, confirmOnBoth, type ConfirmTarget, loadAnnouncement, memoized, secretInputOf, unmemoized } from "@intent-engine/client/internal";
 import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
+import { ALREADY_ANNOUNCED, type AnnounceFee, announceFeeKept, announceFeeOf, announceFeePaid, SIGNATURE_FORMAT, signatureBytes } from "../../delivery-shared.js";
 import { execute } from "../../flows.js";
 import { deliverNotInvited, sealedInvites } from "../../invites.js";
 import { type AgentContext, define, specReach } from "../actions.js";
@@ -29,6 +30,7 @@ import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, sent, sha256Of, signerOf, WA
 import { NO_CLOCK, poll } from "./wait.js";
 
 export { ANNOUNCE_FIRST } from "../../announcement-views.js";
+export { ALREADY_ANNOUNCED } from "../../delivery-shared.js";
 
 export const UNGUESSABLE_URL =
   "without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting";
@@ -37,13 +39,19 @@ export const DELIVER_NEXT = `${PREVIEW_ONLY}; the commitment is shown only, neve
 
 export const SYNC_FIRST = "the committee's key snapshot is out of date, so this sends the key sync first and then the announcement";
 
-export const ALREADY_ANNOUNCED = "this work is already announced to this escrow with this url; nothing was sent";
+export const SYNC_ONLY = "the committee's key snapshot is out of date, so on this Ledger wallet this previews and sends only the key sync; the announcement gets its own preview in the next call";
+
+export const SYNC_FIRST_FIELD =
+  "true when the committee's key sync goes before the announcement: with a key file one send sends both and signature is the announcement's; on a Ledger a send sends only the sync, signature is the sync's, and next says to call again";
+
+export const SYNCED_NEXT = "the committee's key sync is sent and nothing is announced yet; call again with the same arguments, without send, to preview the announcement";
 
 export const DELIVERED_NEEDED = "a proof escrow pays the first announcement that opens to the work it releases for, so give that work's sha256";
 
 export const MAX_LISTED = 64;
 
-export const notAttestor = (attestor: string) => `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
+export const notAttestor = (attestor: string) =>
+  `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it, or, when ${attestor} is a committee, its members vote with ${tool("wallet_committee_vote")} and anyone releases with ${tool("wallet_committee_release")}`;
 
 export const escrowClosed = (intent: Address, owner: Address, nonce: bigint, receipt: string) =>
   `the escrow ${intent} is closed: it was released, cancelled or expired; call ${tool(receipt)} with owner ${owner} and nonce ${nonce} to see whether it was released and to whom`;
@@ -114,11 +122,11 @@ export async function planOf(ctx: AgentContext, input: Announcing, saltHint = fa
   }
 }
 
-function announcing(plan: AnnouncementPlan, sha256: string, url: string, from: string): string[] {
+function announcing(plan: AnnouncementPlan, sha256: string, url: string, from: string, fee: AnnounceFee): string[] {
   return [
     `Announces: the work with sha256 ${sha256} to the proof escrow ${plan.intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${from} and a salt only its key derives`,
     `Seals: the salt and the url ${url} to ${sealedToText(plan.sealedTo)}, so only they can open it`,
-    `Pays: the announcement's rent and the transaction fee from ${from}; the rent returns when the announcement closes, and no tokens move`,
+    `Pays: the announcement's rent and the transaction fee${announceFeePaid(fee)}, from ${from}; the rent returns when the announcement closes${announceFeeKept(fee)}, and the escrow's tokens do not move`,
     ...(plan.setup.length === 0 ? [] : [`Syncs first, in its own transaction: the key snapshot of committee ${plan.attestor}`]),
   ];
 }
@@ -152,6 +160,7 @@ export const walletDeliver = define({
     owner: account("the wallet that made the escrow, for the receipt"),
     nonce: amount("the escrow intent's nonce, for the receipt"),
     seq: optional(amount("the announcement's place among the escrow's announcements; a release pays the first that opens to the work")),
+    sync_first: optional(flag(SYNC_FIRST_FIELD)),
     ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
@@ -177,7 +186,7 @@ export const walletDeliver = define({
       url: input.url,
       commitment: plan.commitment,
       sealed_to: plan.sealedTo.map(walletOf),
-      summary: announcing(plan, sha256, input.url, "this wallet"),
+      summary: announcing(plan, sha256, input.url, "this wallet", await announceFeeOf(ctx.transport)),
       warnings: [
         ...(invited === undefined || invited.includes(signer.address) ? [] : [deliverNotInvited(signer.address, input.intent)]),
         ...deliverClaimWarnings(await claimOf(ctx.transport, input.intent), signer.address),
@@ -187,16 +196,20 @@ export const walletDeliver = define({
     if (plan.existing !== null) {
       return { ...shown, seq: plan.existing.seq, sent: false, next: ALREADY_ANNOUNCED };
     }
-    const first = plan.setup.length > 0 ? plan.setup : plan.instructions;
-    const view = { ...shown, prepared: preparedView(await prepare(ctx.transport, first, signer.address)) };
+    const syncing = plan.setup.length > 0;
+    const device = signer.device !== undefined;
+    const view = { ...shown, sync_first: syncing, prepared: preparedView(await prepare(ctx.transport, syncing ? plan.setup : plan.instructions, signer.address)) };
     const done = await sent(ctx, signer, view, input.send, call, {
-      preview: plan.setup.length > 0 ? `${DELIVER_NEXT}; ${SYNC_FIRST}` : DELIVER_NEXT,
+      preview: syncing ? `${DELIVER_NEXT}; ${device ? SYNC_ONLY : SYNC_FIRST}` : DELIVER_NEXT,
       done: `announced to ${plan.attestor}; ${tool("wallet_receipt")} with owner ${held.owner} and nonce ${held.nonce} shows when it is paid; give it wait, in seconds, to wait for the pay`,
     });
     if (!("signature" in done)) {
       return done;
     }
-    if (plan.setup.length > 0) {
+    if (device && "sync_first" in done && done.sync_first === true) {
+      return { ...done, next: SYNCED_NEXT };
+    }
+    if (syncing && !device) {
       const after = await planOf(ctx, announce);
       const announced = preparedView(await prepare(ctx.transport, after.instructions, signer.address));
       const signature = await execute(ctx.transport, announced, signer);
@@ -356,7 +369,7 @@ export const prepareDeliver = define({
       url: input.url,
       commitment: plan.commitment,
       sealed_to: plan.sealedTo.map(walletOf),
-      summary: announcing(plan, sha256, input.url, input.worker),
+      summary: announcing(plan, sha256, input.url, input.worker, await announceFeeOf(ctx.transport)),
       warnings: [ANNOUNCE_FIRST],
       sync_first: syncFirst,
       prepared: preparedView(await prepare(ctx.transport, syncFirst ? plan.setup : plan.instructions, input.worker)),
@@ -366,8 +379,9 @@ export const prepareDeliver = define({
 });
 
 function signatureOf(text: string): Uint8Array {
-  if (!/^[0-9a-fA-F]{128}$/.test(text)) {
-    throw new InvalidInput([{ path: "salt_signature", message: "give the signature as 128 hex digits" }]);
+  const bytes = signatureBytes(text);
+  if (bytes === undefined) {
+    throw new InvalidInput([{ path: "salt_signature", message: SIGNATURE_FORMAT }]);
   }
-  return Uint8Array.from(Buffer.from(text, "hex"));
+  return bytes;
 }

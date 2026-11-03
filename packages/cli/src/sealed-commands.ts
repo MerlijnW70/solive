@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address } from "@solana/kit";
 import { type DeliveryKey } from "@intent-engine/core";
-import { newEncryptionKeyFile, readEncryptionKeyFile, seal, sealedTo, unseal } from "@intent-engine/core/internal";
+import { newEncryptionKeyFile, seal, sealedTo, unseal } from "@intent-engine/core/internal";
 import { isSdkError, SpecUnreadable, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client/internal";
 import { tool } from "./agent/names.js";
 import type { Command } from "./command-types.js";
+import { encryptionKeyFile } from "./delivery-shared.js";
 import { FlowRefused } from "./flows.js";
 import type { Runtime } from "./runtime.js";
 
@@ -32,7 +33,7 @@ export async function loadEncryptionKeys(runtime: Runtime, paths: readonly strin
 
 export async function loadEncryptionKey(runtime: Runtime, path: string): Promise<DeliveryKey> {
   try {
-    return await readEncryptionKeyFile(await runtime.readText(path));
+    return await encryptionKeyFile((at) => runtime.readText(at), runtime.home, path);
   } catch (error) {
     throw isSdkError(error, "encryption-key-error") ? new FlowRefused(`--encryption-keypair ${path}: ${error.message}`) : error;
   }

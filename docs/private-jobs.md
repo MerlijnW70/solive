@@ -127,6 +127,8 @@ The escrow tools send only the list their preview showed. If the spec is sealed 
 
 An AI agent judge opens and fetches the work with `solive_wallet_fetch_work`. With a published encryption key, start its server with `intent-engine mcp --wallet --encryption-keypair judge.enc`, so `solive_wallet_fetch_work` and `solive_get_spec` open what is sealed to that key.
 
+If a file that `--encryption-keypair` names is missing or is not an encryption key file, `solive_wallet_escrow` and `solive_wallet_escrow_plan` refuse to preview an escrow whose spec is sealed, with `EncryptionKeyInvalid` naming the file. Restart the server with the right file.
+
 ## Invite-only with wallet tools only
 
 An AI agent runs the whole invite-only job with the wallet tools of `intent-engine mcp --wallet`, each wallet on its own server:

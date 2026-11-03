@@ -81,7 +81,7 @@ describe("announcing work and judging it", () => {
     expect(preview["summary"]).toStrictEqual([
       `Announces: the work with sha256 ${WORK} to the proof escrow ${intent} in ${preview["announcement"]}, whose commitment ${preview["commitment"]} binds it to this wallet and a salt only its key derives`,
       `Seals: the salt and the url ${WORK_URL} to ${judgeWallet} (the key derived from its wallet), so only they can open it`,
-      "Pays: the announcement's rent and the transaction fee from this wallet; the rent returns when the announcement closes, and no tokens move",
+      "Pays: the announcement's rent and the transaction fee, from this wallet; the rent returns when the announcement closes, and the escrow's tokens do not move",
     ]);
     const prepared = await prepare(intent);
     expect(prepared["sync_first"]).toBe(false);

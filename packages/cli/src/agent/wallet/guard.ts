@@ -12,11 +12,11 @@ import {
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { type DeliveryOpener, formatAmount, parseAmount } from "@intent-engine/core";
-import { readEncryptionKeyFile } from "@intent-engine/core/internal";
 import { isSdkError, LedgerError } from "@intent-engine/client";
 import { ledgerSigner, messageHash, openUsb } from "@intent-engine/client/node";
 import { type DeviceSigner, isLedgerPath, neverLanded } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
+import { encryptionKeyFile } from "../../delivery-shared.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { rpcCause } from "../../rpc-failure.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
@@ -123,9 +123,13 @@ export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | und
   }
 }
 
+export const encryptionKeyUnread = (path: string): string =>
+  `${path}, which mcp --encryption-keypair names, cannot be read, so nothing sealed to it can be opened; start the server with an encryption key file that profile encryption-key new writes`;
+
 async function encryptionKeyAt(files: Files, path: string): Promise<DeliveryOpener> {
+  const unread = (error: unknown) => new AgentRefusal("EncryptionKeyInvalid", encryptionKeyUnread(path), error instanceof Error ? error.message : String(error));
   try {
-    return await readEncryptionKeyFile(await files.readText(expandHome(path, files.home)));
+    return await encryptionKeyFile((at) => files.readText(at), files.home, path, unread);
   } catch (error) {
     throw isSdkError(error, "encryption-key-error") ? new AgentRefusal("EncryptionKeyInvalid", `${path}: ${error.message}`) : error;
   }

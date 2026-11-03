@@ -8,6 +8,7 @@ import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, keptLines, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
 import { artifactSha256 } from "./artifact.js";
 import type { Command } from "./command-types.js";
+import { ALREADY_ANNOUNCED, announceFeeKept, announceFeeOf, announceFeePaid, NOTHING_HELD } from "./delivery-shared.js";
 import { FlowRefused } from "./flows.js";
 import { deliverNotInvited, sealedInvites } from "./invites.js";
 import { transactionSigner } from "./ledger-keys.js";
@@ -17,7 +18,7 @@ import { keptSecret, savedSecret, secretFor, secretsPath, signsMessages } from "
 
 type AnnounceCommand = Extract<Command, { name: "deliver" | "deliveries" | "refute" | "reclaim" | "claim-held" | "close-book" }>;
 
-export const ALREADY_ANNOUNCED = "this work is already announced to this escrow with this url; nothing was sent";
+export { ALREADY_ANNOUNCED, NOTHING_HELD } from "./delivery-shared.js";
 
 export const NOTHING_TO_RECLAIM = "none of this wallet's announcements can close now: its Keeps lines say why each one stays; nothing was sent";
 
@@ -39,6 +40,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
   const input: AnnounceInput = { payer, intent, sha256, url: workUrl, ...secretInputOf(worker, { secret: kept?.secret }) };
   const plan = await client.plan.announce(input);
   const invited = await sealedInvites(transport, runtime.specFetch, intent, { lookup: runtime.lookup, rpcUrl: command.url });
+  const fee = await announceFeeOf(transport);
   const keptAt = kept === undefined ? undefined : secretsPath(runtime.home, worker.address, intent, sha256);
   const shown = {
     intent,
@@ -51,7 +53,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
     summary: [
       `Announces: the work with sha256 ${sha256} to the proof escrow ${intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${worker.address} and the salt ${plan.salt}`,
       `Seals: the salt and the url ${workUrl} to ${sealedToText(plan.sealedTo)}, so only they can open it`,
-      `Pays: the announcement's rent and the fee, from ${payer.address}; the rent returns to it when the announcement closes`,
+      `Pays: the announcement's rent and the fee${announceFeePaid(fee)}, from ${payer.address}; the rent returns to it when the announcement closes${announceFeeKept(fee)}`,
       ...(plan.setup.length === 0 ? [] : [`Syncs first, in its own transaction: the key snapshot of committee ${plan.attestor}, which its announcements are sealed to`]),
       ...(keptAt === undefined ? [] : [`Keeps: the delivery secrets in ${keptAt}, which refute reads; this wallet cannot sign messages, so they cannot be derived again`]),
     ],
@@ -135,8 +137,6 @@ async function reclaim(command: Extract<AnnounceCommand, { name: "reclaim" }>, r
   const done = await createClient({ url: command.url, transport }).reclaim({ worker, payer });
   return { ...shown, closed: done.closed, kept: done.kept, reasons: done.reasons, sent: true, signatures: done.signatures };
 }
-
-export const NOTHING_HELD = "no split share is held for this wallet; a release holds a co-author's share only when its token account cannot take it";
 
 export const CLAIM_ONE = "pass --announcement, and --index when one announcement holds more than one share, to preview the claim";
 
