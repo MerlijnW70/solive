@@ -42,6 +42,8 @@ import {
   RateLimited,
   TimedOut,
   Cancelled,
+  ReplyTooLarge,
+  WrongReplyLength,
   TransactionUnread,
   NoMessageSigner,
   NotAMint,
@@ -124,6 +126,8 @@ const SAMPLES: { [C in SdkErrorCode]: () => SdkErrors[C] } = {
   "rate-limited": () => new RateLimited("getTransaction", 10_000),
   "timed-out": () => new TimedOut("getTransaction", 2_500),
   cancelled: () => new Cancelled("getTransaction"),
+  "reply-too-large": () => new ReplyTooLarge("getProgramAccounts", 1_000_000),
+  "wrong-reply-length": () => new WrongReplyLength("getMultipleAccounts", 3, 2),
   "transaction-unread": () => new TransactionUnread(SIG),
 };
 

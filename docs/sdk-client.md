@@ -14,8 +14,12 @@ const client = createClient({ url: "https://api.devnet.solana.com" });
 
 - `timeoutMs` ends each RPC call that runs longer with `TimedOut`, which names the `method` and the `timeoutMs`. Unset, a call waits as long as the node takes.
 - `retry: false` stops the client retrying rate-limited calls: a 429 rejects at once with `RateLimited`, whose `retryAfterMs` is the node's `retry-after` in milliseconds, or `null` when it sent none. Unset, the client retries.
-- `rpcTransport` reads through a `@solana/kit` `RpcTransport` instead of one built from `url`, with `timeoutMs`, `retry` and `signal` applied to it. A `transport` replaces all four.
+- `rpcTransport` reads through a `@solana/kit` `RpcTransport` instead of one built from `url`, with `timeoutMs`, `retry` and `signal` applied to it. A `transport` replaces all five.
 - `signal` takes an `AbortSignal`. Once it aborts, the client issues no further RPC call and abandons one in flight or a retry wait; these reject with `Cancelled`, which names the `method`.
+- `maxReplyBytes` caps each HTTP RPC reply. The client reads the reply as a stream, counts its bytes after the platform decompresses them, and stops reading once they pass the cap; that rejects with `ReplyTooLarge`, which names the `method` and the `maxReplyBytes`. Bytes on the wire are at most that count. Unset, a reply can be any size. It does not cover websocket subscriptions. It needs the transport built from `url`, so it cannot be combined with `rpcTransport`.
+- With `maxReplyBytes` set, the client does not merge identical requests in flight at the same time, and sends no `solana-client` header.
+- A send the node never received rejects unchanged: `Cancelled` when the signal aborted before the send was issued, `RateLimited` when the node refused it under `retry: false`. A send that may have reached the node rejects with `MaybeSent`.
+- A node that answers a read of several accounts or signature statuses with a list of another length rejects with `WrongReplyLength`, which names the `method`, the entries `asked` and the entries `answered`.
 
 ## Create a swap intent
 

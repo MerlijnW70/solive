@@ -1,5 +1,5 @@
 import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND } from "@solana/kit";
-import { isSdkError } from "@intent-engine/core";
+import { isSdkError, type SdkError } from "@intent-engine/core";
 import type { RetryEvent } from "./observe.js";
 import { scopedStop } from "./stop-scope.js";
 
@@ -90,6 +90,9 @@ export const jittered = (base: number, random: () => number): number => base - M
 
 export type Retry = Omit<RetryEvent, "method">;
 
+const UNISSUED = new WeakSet<object>();
+const AFTER_ISSUED = new WeakSet<object>();
+
 export async function patiently<T>(
   call: (attempt: number) => Promise<T>,
   wait: (ms: number) => Promise<void> = sleep,
@@ -101,6 +104,9 @@ export async function patiently<T>(
     try {
       return await call(attempt);
     } catch (error) {
+      if (attempt > 1 && typeof error === "object" && error !== null) {
+        AFTER_ISSUED.add(error);
+      }
       const limited = rateLimited(error);
       if (!(limited || behindMinSlot(error)) || attempt >= RATE_LIMIT_ATTEMPTS) {
         throw error;
@@ -131,9 +137,17 @@ const UNSENT_CODES: ReadonlySet<unknown> = new Set(["ECONNREFUSED", "ENOTFOUND",
 const JSON_RPC_FIRST = -32_000;
 const JSON_RPC_LAST = -32_768;
 
+export function unissued<E extends SdkError>(error: E): E {
+  UNISSUED.add(error);
+  return error;
+}
+
 export function refusedUnsent(error: unknown): boolean {
-  if (isSdkError(error)) {
+  if (typeof error === "object" && error !== null && AFTER_ISSUED.has(error)) {
     return false;
+  }
+  if (isSdkError(error)) {
+    return UNISSUED.has(error) || (isSdkError(error, "rate-limited") && refusedUnsent(error.cause));
   }
   for (const link of causes(error)) {
     if (isSolanaError(link, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {

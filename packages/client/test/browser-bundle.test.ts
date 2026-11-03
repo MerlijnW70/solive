@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bundled, NODE_MODULE, PACKAGES, packageDir, webOnly } from "./bundle.js";
@@ -41,6 +43,38 @@ describe("the client root in a browser bundle", () => {
     expect(code).not.toMatch(NODE_MODULE);
     expect(inputs.filter((input) => input.endsWith(".json"))).toEqual([]);
     expect(webOnly(code)["names"]).toEqual({ client: valuesOf("client"), core: valuesOf("core") });
+  });
+
+  it("caps replies in a browser bundle without a header the browser forbids", async () => {
+    const seen: string[] = [];
+    const server = createServer((request, response) => {
+      seen.push(String(request.headers["accept-encoding"]));
+      let body = "";
+      request.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
+      request.on("end", () => {
+        const { id } = JSON.parse(body) as { id: unknown };
+        response.writeHead(200, { "content-type": "application/json" }).end(`{"jsonrpc":"2.0","id":${JSON.stringify(id)},"result":"${"1".repeat(64)}"}`);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const url = "http://127.0.0.1:" + String((server.address() as AddressInfo).port);
+      const app = [
+        'import { createClient } from "@intent-engine/client";',
+        "const real = fetch;",
+        "const asked = [];",
+        "globalThis.fetch = (to, init) => { asked.push(Object.keys(init.headers).sort()); return real(to, init); };",
+        `const read = (cap) => createClient({ url: ${JSON.stringify(url)}, maxReplyBytes: cap }).transport.genesisHash().then((hash) => hash.length, (error) => error.name);`,
+        "globalThis.done = Promise.all([read(4096), read(16)]).then((results) => ({ results, asked }));",
+      ].join("\n");
+      const { code } = await bundled(app);
+      const done = await (webOnly(code)["done"] as Promise<unknown>);
+      expect(done).toEqual({ results: [64, "ReplyTooLarge"], asked: [["accept", "content-type"], ["accept", "content-type"]] });
+      expect(seen).toHaveLength(2);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it(`keeps a bundle of one small helper under ${SMALL_BUDGET} bytes`, async () => {

@@ -45,7 +45,7 @@ import { LedgerError, LedgerPathError } from "./ledger-path.js";
 import { FetchFailed } from "./fetch-failed.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, MaybeSent, SubscriptionEnded } from "./send-errors.js";
 import { TransactionUnread } from "./client-activity.js";
-import { Cancelled, RateLimited, TimedOut } from "./rpc-limits.js";
+import { Cancelled, RateLimited, ReplyTooLarge, TimedOut, WrongReplyLength } from "./rpc-limits.js";
 import { NotASignature } from "./signatures.js";
 import { MainnetNotAllowed } from "./simple-tokens.js";
 import { NoKeyAtCreation, ProfileHistoryIncomplete } from "./unopened.js";
@@ -95,6 +95,8 @@ declare module "@intent-engine/core" {
     "rate-limited": RateLimited;
     "timed-out": TimedOut;
     cancelled: Cancelled;
+    "reply-too-large": ReplyTooLarge;
+    "wrong-reply-length": WrongReplyLength;
     "transaction-unread": TransactionUnread;
   }
 }
@@ -175,5 +177,11 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
   },
   "timed-out": { error: TimedOut, fields: ["method", "timeoutMs"], meaning: "the node did not answer a call within the client's timeoutMs" },
   cancelled: { error: Cancelled, fields: ["method"], meaning: "the client's signal aborted before this call was issued or answered" },
+  "reply-too-large": { error: ReplyTooLarge, fields: ["method", "maxReplyBytes"], meaning: "the node's HTTP reply to a call was longer than the client's maxReplyBytes, so the client stopped reading it" },
+  "wrong-reply-length": {
+    error: WrongReplyLength,
+    fields: ["method", "asked", "answered"],
+    meaning: "the node answered a call for several entries with a list of another length, so no entry of it is trusted",
+  },
   "transaction-unread": { error: TransactionUnread, fields: ["signature"], meaning: "the node did not serve the transaction, so what it created is unknown" },
 };

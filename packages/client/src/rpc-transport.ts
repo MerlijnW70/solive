@@ -18,6 +18,7 @@ import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRE
 import { confirmSent, type SignatureWatch, signatureStatus } from "./confirmation.js";
 import { joined, type Observer, QUIET } from "./observe.js";
 import { askedOf, delivering, observable, wireSend } from "./observe-transport.js";
+import { answeredEach } from "./rpc-limits.js";
 import { refusedUnsent, staleBlockhash } from "./rpc-retry.js";
 import { BehindMinSlot, BlockhashExpired, MaybeSent } from "./send-errors.js";
 import { askedSignature, isTransactionSignature, nodeSignature, NotASignature } from "./signatures.js";
@@ -129,7 +130,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       return slot === undefined ? {} : { minContextSlot: slot };
     };
     const confirmed = async (signature: Signature, lastValidBlockHeight: bigint) => {
-      const { slot } = await confirmSent(rpc, signature, lastValidBlockHeight, wait, watch, by);
+      const { slot } = await confirmSent(rpc, signature, lastValidBlockHeight, wait, watch, by, retry);
       if (slot !== undefined && (reached === undefined || slot > reached)) {
         reached = slot;
       }
@@ -154,7 +155,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           );
         }
         const { value } = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
-        if (value[0]) {
+        if (answeredEach("getSignatureStatuses", 1, value)[0]) {
           return signature;
         }
         throw new BlockhashExpired("the node refused the transaction because its blockhash expired; nothing was charged, so sign it again with a fresh blockhash", { cause: error });
@@ -304,7 +305,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         for (let at = 0; at < addresses.length; at += MULTIPLE_ACCOUNTS_LIMIT) {
           const chunk = addresses.slice(at, at + MULTIPLE_ACCOUNTS_LIMIT);
           const { value } = await ask("getMultipleAccounts", () => rpc.getMultipleAccounts([...chunk], { encoding: "base64", ...atLeast() }).send());
-          found.push(...chunk.map((_, i) => viewOf(value[i] ?? null)));
+          found.push(...answeredEach("getMultipleAccounts", chunk.length, value).map(viewOf));
         }
         return found;
       },
@@ -392,11 +393,11 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         for (let at = 0; at < asked.length; at += SIGNATURE_STATUSES_LIMIT) {
           const chunk = asked.slice(at, at + SIGNATURE_STATUSES_LIMIT);
           const { value } = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([...chunk]).send());
-          found.push(...chunk.map((_, i) => landingOf(value[i])));
+          found.push(...answeredEach("getSignatureStatuses", chunk.length, value).map(landingOf));
         }
         return found;
       },
-      sendStatus: async (signature, lastValidBlockHeight) => signatureStatus(rpc, askedSignature(signature), lastValidBlockHeight, wait, by),
+      sendStatus: async (signature, lastValidBlockHeight) => signatureStatus(rpc, askedSignature(signature), lastValidBlockHeight, wait, by, retry),
       ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => ask("getFirstAvailableBlock", () => firstBlock().send()) }),
       ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
       async engineAccounts(filter) {

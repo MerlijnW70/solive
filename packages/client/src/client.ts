@@ -31,6 +31,7 @@ import { firstOpening, openings } from "./first-opening.js";
 import { heldSharesOf } from "./held-shares.js";
 import { observerOf } from "./observe.js";
 import { observedFetch, observedTransport } from "./observe-transport.js";
+import { cappedTransport } from "./capped-transport.js";
 import { checkedLimits, limitedTransport, waitUnless } from "./rpc-limits.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 
@@ -101,11 +102,11 @@ export {
 
 export function createClient(options: ClientOptions): Client {
   const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
-  const { timeoutMs, retry = true, signal } = options;
-  checkedLimits(timeoutMs, retry, signal);
+  const { timeoutMs, retry = true, signal, maxReplyBytes } = options;
+  checkedLimits(timeoutMs, retry, signal, maxReplyBytes, options.rpcTransport);
   const observer = observerOf(options.hooks, options.debug);
   const limited = timeoutMs !== undefined || signal !== undefined;
-  const node = options.rpcTransport ?? (limited ? createDefaultRpcTransport({ url }) : undefined);
+  const node = options.rpcTransport ?? (maxReplyBytes !== undefined ? cappedTransport(url, maxReplyBytes) : limited ? createDefaultRpcTransport({ url }) : undefined);
   const rpc = node === undefined ? createSolanaRpc(url) : createSolanaRpcFromTransport(limited ? limitedTransport(node, timeoutMs, signal) : node);
   const transport =
     options.transport === undefined

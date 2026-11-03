@@ -3,6 +3,7 @@ import { isSdkError } from "@intent-engine/core";
 import { socketUrl } from "./intent-notifications.js";
 import { type Observer, QUIET } from "./observe.js";
 import { askedOf } from "./observe-transport.js";
+import { answeredEach } from "./rpc-limits.js";
 import { POLL_MS, sleep } from "./rpc-retry.js";
 import type { RpcLike, Status } from "./rpc-shapes.js";
 import { BlockhashExpired, FailedOnChain, type Failure, failure, MaybeSent, type SendStatus, SubscriptionEnded } from "./send-errors.js";
@@ -68,9 +69,10 @@ export async function confirm(
   wait: (ms: number) => Promise<void> = sleep,
   watch?: SignatureWatch,
   observer: Observer = QUIET,
+  retry = true,
 ): Promise<Confirmed> {
   if (watch === undefined) {
-    return polled(rpc, signature, lastValidBlockHeight, wait, observer);
+    return polled(rpc, signature, lastValidBlockHeight, wait, observer, retry);
   }
   const controller = new AbortController();
   const heard = watch(signature, controller.signal).then(
@@ -86,7 +88,7 @@ export async function confirm(
     },
   );
   try {
-    return await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, observer, controller.signal)]);
+    return await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, observer, retry, controller.signal)]);
   } finally {
     controller.abort();
   }
@@ -109,9 +111,10 @@ export async function confirmSent(
   wait: (ms: number) => Promise<void> = sleep,
   watch?: SignatureWatch,
   observer: Observer = QUIET,
+  retry = true,
 ): Promise<Confirmed> {
   try {
-    return await confirm(rpc, signature, lastValidBlockHeight, wait, watch, observer);
+    return await confirm(rpc, signature, lastValidBlockHeight, wait, watch, observer, retry);
   } catch (error) {
     if (isSdkError(error, "maybe-sent") || isSdkError(error, "failed-on-chain") || isSdkError(error, "blockhash-expired")) {
       throw error;
@@ -131,11 +134,12 @@ async function polled(
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void>,
   observer: Observer,
+  retry: boolean,
   stop?: AbortSignal,
 ): Promise<Confirmed> {
-  const ask = askedOf(observer, wait);
+  const ask = askedOf(observer, wait, retry);
   for (let poll = 1; stop?.aborted !== true; poll++) {
-    const [status] = (await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature]).send())).value;
+    const [status] = answeredEach("getSignatureStatuses", 1, (await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature]).send())).value);
     const confirmed = await settled(rpc, signature, status, observer);
     if (confirmed !== null) {
       return confirmed;
@@ -143,7 +147,7 @@ async function polled(
     const epoch = await ask("getEpochInfo", () => rpc.getEpochInfo().send());
     if (epoch.blockHeight > lastValidBlockHeight) {
       const late = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
-      const [found] = late.value;
+      const [found] = answeredEach("getSignatureStatuses", 1, late.value);
       const landed = await settled(rpc, signature, found, observer);
       if (landed !== null) {
         return landed;
@@ -173,11 +177,12 @@ export async function signatureStatus(
   lastValidBlockHeight?: bigint,
   wait: (ms: number) => Promise<void> = sleep,
   observer: Observer = QUIET,
+  retry = true,
 ): Promise<SendStatus> {
-  const ask = askedOf(observer, wait);
+  const ask = askedOf(observer, wait, retry);
   const epoch = lastValidBlockHeight === undefined ? undefined : await ask("getEpochInfo", () => rpc.getEpochInfo().send());
   const late = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
-  const [found] = late.value;
+  const [found] = answeredEach("getSignatureStatuses", 1, late.value);
   if (found && (found.confirmationStatus === "confirmed" || found.confirmationStatus === "finalized")) {
     if (found.err === null) {
       return { status: "confirmed", signature, ...(found.slot === undefined ? {} : { slot: found.slot }) };

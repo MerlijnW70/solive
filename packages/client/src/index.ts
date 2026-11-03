@@ -126,7 +126,7 @@ export type {
 } from "./observe.js";
 export type { Plan } from "./plan.js";
 export type { RefutationRecord, RefutationStanding } from "./refutation-standing.js";
-export { Cancelled, RateLimited, TimedOut } from "./rpc-limits.js";
+export { Cancelled, RateLimited, ReplyTooLarge, TimedOut, WrongReplyLength } from "./rpc-limits.js";
 export { SDK_ERRORS, type SdkErrorEntry, type SdkErrorFields } from "./sdk-errors.js";
 export type { Earned, FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 export type {

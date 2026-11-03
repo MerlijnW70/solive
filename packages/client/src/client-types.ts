@@ -40,6 +40,7 @@ export type ClientOptions = {
   timeoutMs?: number;
   retry?: boolean;
   signal?: AbortSignal;
+  maxReplyBytes?: number;
 };
 
 export type IntentAccount = { address: Address; intent: Intent };

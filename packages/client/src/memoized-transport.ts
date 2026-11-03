@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { answeredEach } from "./rpc-limits.js";
 import type { AccountView, Transport } from "./rpc-shapes.js";
 
 export function boundMembers<T extends object>(inner: T): T {
@@ -42,7 +43,7 @@ export function memoized(inner: Transport): Transport {
     if (missing.length === 0) {
       return;
     }
-    const fetched = members.getAccounts(missing);
+    const fetched = members.getAccounts(missing).then((views) => answeredEach("getAccounts", missing.length, views));
     missing.forEach((address, i) => keep(address, fetched.then((views) => views[i] ?? null)));
     await fetched;
   };

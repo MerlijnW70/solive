@@ -7,7 +7,7 @@ import { graph } from "./import-graph.js";
 const KIT = "@solana/kit";
 const WEB_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   core: [KIT, "@solana-program/token"],
-  client: [KIT, "@solana-program/token", "@solana-program/system", "@intent-engine/core"],
+  client: [KIT, "@solana-program/token", "@solana-program/system", "@intent-engine/core", "@solana/rpc-spec-types"],
 };
 
 type Entry = { types: string; import: string; default: string };

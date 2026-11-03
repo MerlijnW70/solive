@@ -310,4 +310,6 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `rate-limited` | `RateLimited` | `method`, `retryAfterMs` | the node rate limited a read and the client was made with retry: false; retryAfterMs is the node's retry-after, or null when it sent none |
 | `timed-out` | `TimedOut` | `method`, `timeoutMs` | the node did not answer a call within the client's timeoutMs |
 | `cancelled` | `Cancelled` | `method` | the client's signal aborted before this call was issued or answered |
+| `reply-too-large` | `ReplyTooLarge` | `method`, `maxReplyBytes` | the node's HTTP reply to a call was longer than the client's maxReplyBytes, so the client stopped reading it |
+| `wrong-reply-length` | `WrongReplyLength` | `method`, `asked`, `answered` | the node answered a call for several entries with a list of another length, so no entry of it is trusted |
 | `transaction-unread` | `TransactionUnread` | `signature` | the node did not serve the transaction, so what it created is unknown |
