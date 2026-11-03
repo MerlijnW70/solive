@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
 import { ACCOUNT_LAYOUTS, findIntentPda, INTENT_VERSION } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
+import { unpricedFloor } from "@intent-engine/solver";
 import { EXIT_OK } from "../src/main.js";
 import { intentLeftOut } from "../src/treasury.js";
 import { ata, cli, funded, h, NOW, transport, world } from "./harness.js";
@@ -93,6 +94,7 @@ describe("scans over intents of a layout this version cannot read", () => {
         { intent: i4, reason: "no route" },
       ],
       failed: [],
+      warnings: [unpricedFloor(outputMint)],
     });
     expect(h.fetched).toHaveLength(1);
   });

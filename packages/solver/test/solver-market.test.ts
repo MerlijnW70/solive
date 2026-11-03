@@ -25,6 +25,7 @@ import {
   tooLarge,
   WAITING_FOR_TARGET,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 import {
   AMOUNT,
   deployEngine,
@@ -124,6 +125,7 @@ describe("solver against the deployed engine", () => {
         { intent: second, reason },
       ],
       failed: [],
+      warnings: unpricedWarning(outputMint),
     });
     expect(asked).toBe(1);
   });
@@ -173,6 +175,7 @@ describe("solver against the deployed engine", () => {
       sent: [],
       skipped: [{ intent, reason: `the route pays ${MIN_OUT - 1n}, less than the ${MIN_OUT} the intent requires` }],
       failed: [],
+      warnings: unpricedWarning(outputMint),
     });
     expect(asked).toEqual([undefined, true]);
     expect([balance(receiver), balance(solverOutput)]).toEqual([0n, 0n]);

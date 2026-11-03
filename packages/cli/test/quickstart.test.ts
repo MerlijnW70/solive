@@ -18,6 +18,7 @@ import { FAUCET_INTERVAL_MINUTES, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetWa
 import { VERSION } from "../src/version.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
+import { unpricedFloor } from "@intent-engine/solver";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -61,6 +62,12 @@ function preset(at: Address, mintAuthority: Address | null): void {
 }
 
 const nativeMint = () => preset(NATIVE_MINT, null);
+
+async function filling(keys: Record<string, KeyPairSigner>): Promise<Record<string, unknown> | undefined> {
+  const [warned, ...scans] = (await cli(fillerSolve(), keys)).each();
+  expect(warned).toEqual({ at: expect.any(String), warnings: [unpricedFloor(TEST_TOKEN)] });
+  return scans[0];
+}
 
 function fillerSolve(): string[] {
   const line = FILLER.split("\n").find((l) => l.trim().startsWith('"${cli[@]}" solve')) ?? "";
@@ -168,7 +175,7 @@ describe("the quickstart", () => {
         h.watched.push(outputs[0]?.["address"] as Address);
       }
       if (index === 2) {
-        expect((await cli(fillerSolve(), keys)).json()).toMatchObject({ sent: [{ intent: outputs[2]?.["intent"] }], failed: [] });
+        expect(await filling(keys)).toMatchObject({ sent: [{ intent: outputs[2]?.["intent"] }], failed: [] });
       }
     }
     expect(commands.map((c) => c.split(" ").slice(1, 3).join(" "))).toEqual([
@@ -243,7 +250,7 @@ describe("the sdk page", () => {
       expect(run.err, line).toBe("");
       created.push(run.json()["intent"]);
     }
-    const filled = (await cli(fillerSolve(), keys)).json() as { sent: { intent: string }[] };
+    const filled = (await filling(keys)) as { sent: { intent: string }[] };
     expect(filled.sent.map((s) => s.intent)).toEqual([created[0]]);
     const received = await findAssociatedTokenAddress({ owner: owner.address, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(received)).toBe(5n * LAMPORTS_PER_SOL);

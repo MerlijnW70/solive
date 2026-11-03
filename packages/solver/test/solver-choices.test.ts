@@ -21,6 +21,7 @@ import {
   type Quote,
   tick,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 import {
   AMOUNT,
   deployEngine,
@@ -310,7 +311,7 @@ describe("solver against the deployed engine", () => {
     const partner = await funded();
     const loner = await open(8n, partner.address);
     const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 9_000n));
-    expect(report).toEqual({ filled: [], sent: [], skipped: [{ intent: loner, reason: "no partner account to pay into" }], failed: [] });
+    expect(report).toEqual({ filled: [], sent: [], skipped: [{ intent: loner, reason: "no partner account to pay into" }], failed: [], warnings: unpricedWarning(outputMint) });
     const nofee = await mint(authority);
     await ata(authority, owner.address, nofee, 1_000_000n);
     await send(owner, [

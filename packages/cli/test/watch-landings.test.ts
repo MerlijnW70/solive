@@ -163,7 +163,7 @@ async function watch(setup: Setup): Promise<Run> {
       }),
     },
     solver,
-    strategy: { minProfit: new Map([[output, 2n]]), maxFeeBps: 100 },
+    strategy: { minProfit: new Map([[output, 2n]]), maxFeeBps: 100, solValue: new Map([[output, { raw: 1n, lamports: 1_000_000n }]]) },
     tip: null,
     held: heldBy(inFlight),
     unitPrice: async () => 0n,

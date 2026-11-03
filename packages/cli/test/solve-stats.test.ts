@@ -180,7 +180,7 @@ async function market(): Promise<Market> {
     chain,
     pricer,
     solver,
-    strategy: { minProfit: new Map([[output, 2n]]), maxFeeBps: 100 },
+    strategy: { minProfit: new Map([[output, 2n]]), maxFeeBps: 100, solValue: new Map([[output, { raw: 1n, lamports: 1_000_000n }]]) },
     tip: null,
     unitPrice: async () => 0n,
     simulate: async (wire) => ({ err: intentOf(wire) === named.refused ? "refused" : null, unitsConsumed: null, balances: [PLENTY, PLENTY] }),

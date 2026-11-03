@@ -7,6 +7,9 @@ export const NET_BELOW_FLOOR = "the fill's profit less its sol cost is below the
 export const netBelowFloor = (profit: bigint, cost: bigint, lamports: bigint, floor: bigint): string =>
   `${NET_BELOW_FLOOR}: profit ${profit} less a cost of ${cost} (${lamports} lamports) is below the floor of ${floor}`;
 
+export const unpricedFloor = (mint: Address): string =>
+  `--min-profit names ${mint}, which has no way to be priced in SOL, so its fills are not netted against their SOL cost; add --sol-value ${mint}=<raw>/<lamports>`;
+
 export const badSolValue = (mint: Address): string => `the sol value of ${mint} must be positive on both sides`;
 
 export function solValueFits(solValue: SolValue | undefined): string | null {
@@ -29,4 +32,8 @@ export function costIn(mint: Address, lamports: bigint, solValue: SolValue | und
 export function netShort(plan: Pick<Plan, "intent" | "profit">, floor: bigint, lamports: bigint, solValue: SolValue | undefined): string | null {
   const cost = costIn(plan.intent.outputMint, lamports, solValue);
   return cost === null || plan.profit - cost >= floor ? null : netBelowFloor(plan.profit, cost, lamports, floor);
+}
+
+export function unpricedFloors(minProfit: ReadonlyMap<Address, bigint>, solValue: SolValue | undefined): string[] {
+  return [...minProfit.keys()].filter((mint) => mint !== NATIVE_MINT && solValue?.has(mint) !== true).map(unpricedFloor);
 }

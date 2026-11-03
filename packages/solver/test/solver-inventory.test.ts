@@ -15,6 +15,7 @@ import {
   type Pricer,
   tick,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 import {
   AMOUNT,
   deployEngine,
@@ -114,7 +115,7 @@ describe("solver against the deployed engine", () => {
     );
     const fees = splitFees(AMOUNT, 5, 0, 0);
     const report = await solve(pricer);
-    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
+    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String) }], sent: [], skipped: [], failed: [], warnings: unpricedWarning(outputMint) });
     expect([balance(receiver), balance(solverOutput), balance(solverInput), balance(feeTo)]).toEqual([MIN_OUT, AMOUNT - MIN_OUT, fees.net, fees.protocol]);
   });
 

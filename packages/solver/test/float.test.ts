@@ -61,6 +61,7 @@ import {
   tick,
   TOKEN_ACCOUNT_BASE,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 const NOW = 1_700_000_000n;
@@ -328,7 +329,7 @@ describe("a solver that fills from an inventory owner's float", () => {
     await float(2n * AMOUNT);
     const fees = splitFees(AMOUNT, 5, 0, 0);
     const report = await solve(floatPricer());
-    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String), rent: expect.any(BigInt) }], sent: [], skipped: [], failed: [] });
+    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String), rent: expect.any(BigInt) }], sent: [], skipped: [], failed: [], warnings: unpricedWarning(outputMint) });
     expect([balance(receiver), balance(holderOutput), balance(holderInput), balance(feeTo)]).toEqual([MIN_OUT, 10n * AMOUNT - MIN_OUT, fees.net, fees.protocol]);
     expect(allowance(holderOutput)).toBe(2n * AMOUNT - MIN_OUT);
     expect([balance(await ataOf(solver.address, inputMint)), balance(await ataOf(solver.address, outputMint))]).toEqual([-1n, -1n]);
@@ -345,6 +346,7 @@ describe("a solver that fills from an inventory owner's float", () => {
       skipped: [{ intent, reason: `${ALLOWANCE_SPENT}: ${MIN_OUT - 1n} left, ${MIN_OUT} needed` }],
       failed: [],
       low: [{ account: holderOutput, left: MIN_OUT - 1n, needed: MIN_OUT, warning: `${ALLOWANCE_LOW}: ${MIN_OUT - 1n} left, ${MIN_OUT} needed` }],
+      warnings: unpricedWarning(outputMint),
     });
     expect(sends).toBe(0);
     expect([balance(receiver), balance(holderOutput), allowance(holderOutput)]).toEqual([0n, 10n * AMOUNT, MIN_OUT - 1n]);
@@ -424,7 +426,7 @@ describe("a solver that fills from an inventory owner's float", () => {
       simulate: simulated,
       send: landed,
     });
-    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
+    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String) }], sent: [], skipped: [], failed: [], warnings: unpricedWarning(outputMint) });
     expect([balance(ownOutput), balance(ownInput), balance(holderOutput), allowance(holderOutput)]).toEqual([AMOUNT - MIN_OUT, fees.net, 10n * AMOUNT, 2n * AMOUNT]);
     expect(allowanceReads).toEqual([]);
   });

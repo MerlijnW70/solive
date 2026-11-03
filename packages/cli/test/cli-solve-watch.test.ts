@@ -24,7 +24,7 @@ describe("cli against the deployed engine", () => {
 
   const watching = async (issued: Address, solver: KeyPairSigner) =>
     cli(
-      ["solve", "--keypair", "s.json", "--issue", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--url", "http://cluster", "--watch", "--interval", "3"],
+      ["solve", "--keypair", "s.json", "--issue", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--sol-value", `${issued}=1/1000000`, "--url", "http://cluster", "--watch", "--interval", "3"],
       { "s.json": solver },
     );
 
@@ -124,7 +124,7 @@ describe("cli against the deployed engine", () => {
     h.steps = [3n, IN_FLIGHT_SECONDS - 3n];
     h.changed = [];
     const run = await cli(
-      ["solve", "--keypair", "s.json", "--inventory", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--url", "http://cluster", "--watch", "--interval", "3"],
+      ["solve", "--keypair", "s.json", "--inventory", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--sol-value", `${issued}=1/1000000`, "--url", "http://cluster", "--watch", "--interval", "3"],
       { "s.json": solver },
     );
     h.dropSubmits = false;

@@ -14,6 +14,7 @@ import {
   SIMULATION_REFUSED,
   type Simulated,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 import {
   AMOUNT,
   deployEngine,
@@ -63,7 +64,7 @@ describe("solver against the deployed engine", () => {
     const state = getIntentDecoder().decode(stored.exists ? stored.data : new Uint8Array());
     expect(state.status).toBe(IntentStatus.Filled);
     const again = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n));
-    expect(again).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: "not open" }], failed: [] });
+    expect(again).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: "not open" }], failed: [], warnings: unpricedWarning(outputMint) });
   });
 
   it("asks only for the compute a simulation measured, padded, and the maximum when it cannot measure", async () => {
@@ -108,7 +109,7 @@ describe("solver against the deployed engine", () => {
       },
     });
     expect(SIMULATION_REFUSED).toBe("the fill failed in simulation, so it was not sent");
-    expect(report).toEqual({ filled: [], sent: [], skipped: [], failed: [{ intent, error: `${SIMULATION_REFUSED}: InstructionError` }] });
+    expect(report).toEqual({ filled: [], sent: [], skipped: [], failed: [{ intent, error: `${SIMULATION_REFUSED}: InstructionError` }], warnings: unpricedWarning(outputMint) });
     expect(sent).toEqual([]);
     expect(balance(receiver)).toBe(0n);
   });
@@ -129,7 +130,7 @@ describe("solver against the deployed engine", () => {
       },
     });
     const refused = await solve(market(), hooked("the second node disagrees"));
-    expect(refused).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: "the second node disagrees" }], failed: [] });
+    expect(refused).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: "the second node disagrees" }], failed: [], warnings: unpricedWarning(outputMint) });
     expect([asked, sent]).toEqual([[[intent, [solverInput, solverOutput]]], []]);
     const agreed = await solve(market(), hooked(null));
     expect(agreed.filled.map((f) => f.intent)).toEqual([intent]);
@@ -156,6 +157,7 @@ describe("solver against the deployed engine", () => {
       sent: [],
       skipped: [],
       failed: [{ intent: tight, error: `${SIMULATION_REFUSED}: ComputationalBudgetExceeded` }],
+      warnings: unpricedWarning(outputMint),
     });
     expect(refusedSims).toHaveLength(2);
     expect(refusedSends).toEqual([]);

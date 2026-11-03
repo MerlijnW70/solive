@@ -57,16 +57,16 @@ intent-engine create swap --input-mint SOL --output-mint $env:TOKEN --units toke
 ## 4. Solve
 
 ```sh
-intent-engine solve --keypair ~/solive-solver.json --issue So11111111111111111111111111111111111111112:$TOKEN=200/1 --min-profit $TOKEN=1
+intent-engine solve --keypair ~/solive-solver.json --issue So11111111111111111111111111111111111111112:$TOKEN=200/1 --min-profit $TOKEN=1 --sol-value $TOKEN=200/1
 ```
 
 In PowerShell:
 
 ```powershell
-intent-engine solve --keypair $HOME/solive-solver.json --issue "So11111111111111111111111111111111111111112:$env:TOKEN=200/1" --min-profit "$env:TOKEN=1"
+intent-engine solve --keypair $HOME/solive-solver.json --issue "So11111111111111111111111111111111111111112:$env:TOKEN=200/1" --min-profit "$env:TOKEN=1" --sol-value "$env:TOKEN=200/1"
 ```
 
-`--issue` prices 200 of your token per wrapped SOL and mints them into the fill. `--min-profit` skips fills that leave the solver less than 1 raw unit. Add `--watch` to keep solving: it solves again when an intent changes and at least every `--interval` seconds (default 5).
+`--issue` prices 200 of your token per wrapped SOL and mints them into the fill. `--min-profit` skips fills that leave the solver less than 1 raw unit. `--sol-value` counts 200 raw units of your token as worth 1 lamport, so a fill nets its SOL cost against that profit. Add `--watch` to keep solving: it solves again when an intent changes and at least every `--interval` seconds (default 5).
 
 While watching, it reuses a price quote for `--quote-ttl` seconds (default 10, `0` turns this off). It never fills from a reused quote: it asks for a fresh one first.
 
@@ -84,7 +84,7 @@ Add `--stats` to print one JSON line after every full scan, counting the orders,
 
 The solver fills from and is paid into the owner's token accounts, and skips a fill the allowance left cannot cover. It reports `low` when what is left cannot cover another fill as large as the largest it was asked to make.
 
-`--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.
+`--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most valuable first: by profit in lamports where the output mint is wrapped SOL or has a `--sol-value`. Fills in mints without a `--sol-value` come after those, by raw profit. Within one mint the order is raw profit, then soonest expiry, then lowest address.
 
 With `--jito`, a solve sends its fills together in Jito bundles, and only the last transaction of each bundle pays the `--tip`. `--bundle-size` sets how many fills share a bundle (default 5, from 1 to 5).
 
@@ -109,7 +109,9 @@ Your wallet prints `5`. The solver keeps the rest of what it minted as its profi
 ## Costs
 
 - `--max-sol-cost` (default 0.01 SOL) skips a fill whose network fee, priority fee and tip cost more.
-- A fill paid in wrapped SOL is skipped when its profit less that SOL cost is below `--min-profit`. `--sol-value <mint>=<raw>/<lamports>,...` does the same for other tokens, counting `raw` units as worth `lamports` lamports. Each filled or sent fill reports its `cost` in lamports.
+- A fill's profit is paid in the order's output mint, and `--min-profit` is in that mint. The fill is skipped when its profit less its SOL cost is below `--min-profit`. For wrapped SOL the cost is counted in lamports. For other mints `--sol-value <mint>=<raw>/<lamports>,...` counts `raw` units as worth `lamports` lamports. Each filled or sent fill reports its `cost` in lamports.
+- A `--min-profit` mint that is neither wrapped SOL nor in `--sol-value` has no way to be priced in SOL, so its fills are not netted. The report lists a `warnings` entry for it.
+- A node rate limit, like the aggregator's, stops the scan and skips the orders it did not reach. It adds no backoff to them.
 - `--max-rent` (default 0.01 SOL) caps the rent of token accounts a fill opens for the solver, priced at the cluster's live rent rate. The solver keeps those accounts.
 - With `--watch`, a fill that failed waits 1 interval, then 2, 4 and so on up to 32, before the solver tries it again.
 - With `--watch` and no `--jito`, every scan asks the node whether each sent fill landed. A fill that failed on chain counts as failed at once and frees the tokens it held. A fill the node does not know yet stays in flight as before.

@@ -129,6 +129,7 @@ export async function watchSolveWith(
   const statuses = command.jito === undefined ? transport.signatureStatuses?.bind(transport) : undefined;
   const changes = runtime.intentChanges(command.url);
   const failing = new Map<Address, bigint>();
+  const warned = new Set<string>();
   let scannedAt: bigint | null = null;
   let acted = 0;
   try {
@@ -170,6 +171,11 @@ export async function watchSolveWith(
             ...(holds === undefined ? {} : { holds }),
             ...(order === undefined ? {} : { intent: order }),
           });
+        }
+        const unwarned = (report.warnings ?? []).filter((warning) => !warned.has(warning));
+        if (unwarned.length > 0) {
+          unwarned.forEach((warning) => warned.add(warning));
+          emit({ at: now, warnings: unwarned });
         }
         if (report.low !== undefined) {
           emit({ at: now, low: report.low });

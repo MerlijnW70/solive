@@ -13,7 +13,7 @@ import { findAssociatedTokenAddress } from "@intent-engine/core";
 import { findIntentPda, splitFee } from "@intent-engine/core/internal";
 import { ENV_JUPITER_KEY, JUPITER_DOMAIN, jupiterHost, stillOpen, SOLVER_TABLE_NEXT } from "../src/commands.js";
 import { EXIT_OK } from "../src/main.js";
-import { JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, NET_BELOW_FLOOR, SIMULATION_REFUSED } from "@intent-engine/solver";
+import { JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, NET_BELOW_FLOOR, SIMULATION_REFUSED, unpricedFloor } from "@intent-engine/solver";
 import { ata, balance, cli, ESCROW, FEE_BPS, funded, h, mint, NOW, send, transport, world } from "./harness.js";
 import { createSwap, type Json, unitLimitOf } from "./cli-kit.js";
 
@@ -95,6 +95,7 @@ describe("cli against the deployed engine", () => {
       sent: [],
       skipped: [{ intent: i9, reason: "no route" }],
       failed: [],
+      warnings: [unpricedFloor(outputMint)],
     });
     expect(h.wires).toHaveLength(1);
     const statics = getCompiledTransactionMessageDecoder().decode(
@@ -154,6 +155,7 @@ describe("cli against the deployed engine", () => {
         { intent: i9, reason: "no route" },
       ],
       failed: [],
+      warnings: [unpricedFloor(issued), unpricedFloor(outputMint)],
     });
     const foreign = await issuing("1/1", stranger);
     expect(foreign.failed.map((f) => [f.intent, f.error.startsWith(SIMULATION_REFUSED)])).toEqual([[i8, true]]);
@@ -166,6 +168,7 @@ describe("cli against the deployed engine", () => {
       sent: [],
       skipped: [{ intent: i9, reason: "no route" }],
       failed: [],
+      warnings: [unpricedFloor(issued), unpricedFloor(outputMint)],
     });
     expect(h.wires).toHaveLength(1);
     expect(h.fetched).toEqual([]);
@@ -198,13 +201,14 @@ describe("cli against the deployed engine", () => {
       return run.json();
     };
     const rate = `${inputMint}:${issued}=1/1`;
-    expect(await solving(["--inventory", rate])).toEqual({ filled: [], sent: [], skipped: [{ intent: i8, reason: "no route" }], failed: [] });
+    expect(await solving(["--inventory", rate])).toEqual({ filled: [], sent: [], skipped: [{ intent: i8, reason: "no route" }], failed: [], warnings: [unpricedFloor(issued)] });
     await send(solver, [getMintToInstruction({ mint: issued, token: solverOutput, mintAuthority: solver, amount: 1n })]);
     expect(await solving(["--inventory", rate, "--issue", rate])).toEqual({
       filled: [{ intent: i8, profit: String(net - 300n), cost: expect.any(String), signature: expect.any(String) }],
       sent: [],
       skipped: [],
       failed: [],
+      warnings: [unpricedFloor(issued)],
     });
     expect(h.wires).toHaveLength(1);
     expect([balance(receiver), balance(solverOutput), balance(solverInput)]).toEqual([300n, net - 300n, net]);
@@ -243,6 +247,7 @@ describe("cli against the deployed engine", () => {
     const profit = String(splitFee(ESCROW, FEE_BPS).net - 300n);
     const timing = { at: String(NOW + 1_000n), ms: expect.any(Number) };
     expect(run.each()).toEqual([
+      { at: String(NOW + 1_000n), warnings: [unpricedFloor(issued)] },
       { ...timing, scan: "full", filled: [], sent: [{ intent: i7, profit, cost: expect.any(String), signature: expect.any(String) }], failed: [] },
       { ...timing, scan: "changed", filled: [], sent: [{ intent: i12, profit, cost: expect.any(String), signature: expect.any(String) }], failed: [] },
     ]);

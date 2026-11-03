@@ -26,6 +26,7 @@ import {
   SIMULATION_REFUSED,
   tick,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 import {
   AMOUNT,
   deployEngine,
@@ -74,7 +75,7 @@ describe("solver against the deployed engine", () => {
         return { signature: "bundle-1", confirmed: false };
       },
     });
-    expect(report).toEqual({ filled: [], sent: [{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: "bundle-1" }], skipped: [], failed: [] });
+    expect(report).toEqual({ filled: [], sent: [{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: "bundle-1" }], skipped: [], failed: [], warnings: unpricedWarning(outputMint) });
     expect(priced).toHaveLength(1);
     expect(sent.map((wire) => budgetOf(wire, 3))).toEqual([7_000n]);
     const free = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {

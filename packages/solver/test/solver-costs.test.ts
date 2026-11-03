@@ -27,6 +27,7 @@ import {
   netBelowFloor,
   tick,
 } from "../src/index.js";
+import { unpricedWarning } from "./unpriced-warning.js";
 import {
   deployEngine,
   type Engine,
@@ -77,7 +78,7 @@ describe("solver against the deployed engine", () => {
     const cost = signers * LAMPORTS_PER_SIGNATURE + (5_000_000n * BigInt(MAX_COMPUTE_UNITS)) / 1_000_000n;
     expect(cost).toBeLessThan(DEFAULT_MAX_SOL_COST);
     const capped = await solve(pricer(), { ...priced(5_000_000n), maxSolCost: cost - 1n });
-    expect(capped).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: tooCostly(cost, cost - 1n) }], failed: [] });
+    expect(capped).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: tooCostly(cost, cost - 1n) }], failed: [], warnings: unpricedWarning(outputMint) });
     const dear = signers * LAMPORTS_PER_SIGNATURE + (10_000_000n * BigInt(MAX_COMPUTE_UNITS)) / 1_000_000n;
     const unbounded = await solve(pricer(), priced(10_000_000n));
     expect(unbounded.skipped).toEqual([{ intent, reason: tooCostly(dear, DEFAULT_MAX_SOL_COST) }]);
@@ -225,7 +226,7 @@ describe("solver against the deployed engine", () => {
     expect(paid.filled).toEqual([{ intent, profit: 4_000n, cost, signature: expect.any(String) }]);
     const plain = await open(64n);
     const unpriced = await solve(market(), valued(4_000n, inputMint, 1n, 1_000_000n));
-    expect(unpriced).toEqual({ filled: [{ intent: plain, profit: 4_000n, cost, signature: expect.any(String) }], sent: [], skipped: [{ intent, reason: "not open" }], failed: [] });
+    expect(unpriced).toEqual({ filled: [{ intent: plain, profit: 4_000n, cost, signature: expect.any(String) }], sent: [], skipped: [{ intent, reason: "not open" }], failed: [], warnings: unpricedWarning(outputMint) });
     expect(balance(receiver)).toBe(2n * MIN_OUT);
   });
 });
