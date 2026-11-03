@@ -79,7 +79,9 @@ The server without a wallet holds no keys, so it has `solive_prepare_deliver` in
 
 ## Where a spec is uploaded
 
-After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public and permanent: anyone can read it, and it cannot be deleted. The preview says what will happen, a preview uploads nothing, and the upload adds up to 20 seconds to the send's answer. Its retries count against the mirror's rate limit.
+After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
+
+The preview says what will happen, a preview uploads nothing, and the upload adds up to 20 seconds to the send's answer. Its retries count against the mirror's rate limit.
 
 - With `spec_url`, it uploads the bytes at that url when they hash to `spec_hash` and are not sealed.
 - With `spec_text`, a wrong hash is refused before anything is sent. It is uploaded unless `spec_url` is sealed or cannot be read.
@@ -87,7 +89,7 @@ After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the 
 - Off devnet nothing is uploaded unless `INTENT_ENGINE_SPEC_MIRROR` names a mirror. A mirror url with credentials or a query is not used.
 - In a plan, a spec_hash that any piece's url holds sealed is uploaded for no piece.
 - The result holds `spec_published`, with `spec_mirror_url` or the reason in `spec_not_published`. In a plan, each piece holds them. A failed upload never fails the send.
-- `solive_prepare_create`, `solive_prepare_signed_intent` and `solive_submit_signed_intent` do not upload, and say so. The CLI command `create attested` uploads as the wallet does. Its `--spec-file` is uploaded publicly and for good unless you pass `--no-publish-spec`.
+- `solive_prepare_create`, `solive_prepare_signed_intent` and `solive_submit_signed_intent` do not upload, and say so. The CLI command `create attested` uploads as the wallet does. Its `--spec-file` is uploaded publicly unless you pass `--no-publish-spec`, and kept only while SOL escrows back it.
 
 ## A local worker
 

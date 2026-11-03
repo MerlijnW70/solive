@@ -127,7 +127,7 @@ describe("the spec goes to the mirror when an escrow is sent", () => {
     expect(puts).toStrictEqual([]);
     expect(preview).toMatchObject({ sent: false });
     expect(preview["spec_published"]).toBeUndefined();
-    expect(line(preview["summary"], "Mirror:")).toStrictEqual([`Mirror: after the send, the spec goes to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read it for good; publish_spec: false keeps it off`]);
+    expect(line(preview["summary"], "Mirror:")).toStrictEqual([`Mirror: after the send, the spec goes to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored; publish_spec: false keeps it off`]);
   });
 
   it("uploads nothing for a url whose bytes do not match", async () => {
@@ -341,7 +341,7 @@ describe("the spec goes to the mirror when an escrow is sent", () => {
       const preview = await ok(client, "wallet_escrow_plan", plan());
       expect(puts).toStrictEqual([]);
       expect(line(preview["summary"], "Mirror:")).toStrictEqual([
-        `Mirror: after the send, the specs of pieces 1, 2, 3 go to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read them for good; publish_spec: false keeps them off`,
+        `Mirror: after the send, the specs of pieces 1, 2, 3 go to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read each while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored; publish_spec: false keeps them off`,
         `Mirror: not uploaded: piece 4: spec_url hashes to ${sha(SPEC)}, not spec_hash ${SOME_HASH}`,
       ]);
     });
@@ -397,7 +397,7 @@ describe("the spec goes to the mirror when an escrow is sent", () => {
     it("says piece, not pieces, for one upload", async () => {
       const one = { sell: "SOL", attestor: judge, pieces: [{ name: "a", amount: "0.01", spec_hash: HASH, spec_text: SPEC }, { name: "b", amount: "0.01" }] };
       const preview = await ok(client, "wallet_escrow_plan", one);
-      expect(line(preview["summary"], "Mirror:")).toStrictEqual([`Mirror: after the send, the spec of piece 1 goes to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read it for good; publish_spec: false keeps it off`]);
+      expect(line(preview["summary"], "Mirror:")).toStrictEqual([`Mirror: after the send, the spec of piece 1 goes to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored; publish_spec: false keeps it off`]);
     });
 
     it("refuses a send whose publish_spec or mirror changed since its preview", async () => {

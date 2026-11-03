@@ -1,12 +1,13 @@
 import { getAddressDecoder, getBase58Decoder } from "@solana/kit";
 import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
-import { IntentStatus, Kind } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { describe, expect, it, vi } from "vitest";
 import { CallerLimit } from "../src/callers.js";
+import { openEscrowsOf } from "../src/chain.js";
 import { NODE_TIMEOUT_MS, PUT_WINDOW_SECS } from "../src/limits.js";
 import { mirror, REASONS } from "../src/mirror.js";
-import { DEVNET_GENESIS, errorOf, harness, key, MAINNET_GENESIS, MAX_NODE_FILTERS, proofIntent, send, sha } from "./harness.js";
+import { DEVNET_GENESIS, ESCROWED, errorOf, harness, key, MAINNET_GENESIS, MAX_NODE_FILTERS, OWNER, proofIntent, send, sha } from "./harness.js";
 
 const SPEC = "deliver a module whose tests pass\n";
 const HEX = sha(SPEC);
@@ -184,13 +185,13 @@ describe("PUT /sha256/{hex} refuses and stores nothing", () => {
 });
 
 describe("the escrow lookup", () => {
-  it("sends one lookup to the program with the kind, status and hash filters, asking for no account data", async () => {
+  it("sends one lookup to the program with the kind, status and hash filters, asking for the owner, mint and amount only", async () => {
     const h = open();
     await send(h.deps, "PUT", path(), SPEC);
     expect(h.node.lookups).toHaveLength(1);
     const lookup = h.node.lookups[0];
     expect(lookup?.program).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
-    expect(lookup?.config.dataSlice).toStrictEqual({ offset: 0, length: 0 });
+    expect(lookup?.config.dataSlice).toStrictEqual({ offset: 8, length: 144 });
     const base58 = getBase58Decoder();
     expect(lookup?.config.filters.length).toBeLessThanOrEqual(MAX_NODE_FILTERS);
     expect(lookup?.signal).toBeInstanceOf(AbortSignal);
@@ -205,6 +206,15 @@ describe("the escrow lookup", () => {
     ]);
     expect(Kind.AttestedResult).toBe(4);
     expect(IntentStatus.Open).toBe(0);
+  });
+
+  it("decodes the owner, mint and amount of each open escrow from its slice", async () => {
+    const h = harness();
+    h.node.holds(proofIntent(HEX, { owner: key(31), inputMint: DEVNET_TEST_MINT, escrowed: 123_456_789_012n }), proofIntent(HEX));
+    expect(await openEscrowsOf(h.deps.rpc(), HEX)).toStrictEqual([
+      { owner: key(31), inputMint: DEVNET_TEST_MINT, escrowed: 123_456_789_012n },
+      { owner: OWNER, inputMint: NATIVE_MINT, escrowed: ESCROWED },
+    ]);
   });
 
   it("reads the hash at the offset the encoded account holds it", () => {

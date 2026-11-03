@@ -28,19 +28,41 @@ const RETRIED: ReadonlySet<number> = new Set([403, 429, 503]);
 const ANSWERS: Readonly<Record<number, string>> = {
   400: "it refused these bytes",
   403: "it sees no open escrow with this spec hash",
+  402: "it keeps only specs whose open escrows lock enough SOL",
   413: "it refused a spec this large",
   429: "it is limiting uploads from this network",
   507: "it holds as much as it may store in total",
   503: "it or its node is not available",
 };
 
+const OWNER_FULL = "each owner of the open escrows with this spec hash holds as many spec bytes there as one owner may";
+
+const LAMPORTS = 1_000_000_000n;
+const LAMPORT_DIGITS = /^[1-9]\d{0,18}$/;
+
+const solOf = (lamports: bigint): string => {
+  const fraction = (lamports % LAMPORTS).toString().padStart(9, "0").replace(/0+$/, "");
+  return `${lamports / LAMPORTS}${fraction === "" ? "" : `.${fraction}`}`;
+};
+
 const askedSeconds = ({ retryAfter }: SendAnswer): number | null => {
   return retryAfter !== null && /^[1-9]\d*$/.test(retryAfter) ? Number(retryAfter) : null;
 };
 
+const explained = (answer: SendAnswer): string | undefined => {
+  if (answer.status === 402 && answer.minEscrowed !== null && LAMPORT_DIGITS.test(answer.minEscrowed)) {
+    return `it keeps only specs whose open escrows lock at least ${solOf(BigInt(answer.minEscrowed))} SOL together`;
+  }
+  if (answer.status === 507 && answer.limit === "owner") {
+    return OWNER_FULL;
+  }
+  return ANSWERS[answer.status];
+};
+
 const refusal = (url: string, answer: SendAnswer): string => {
   const seconds = askedSeconds(answer);
-  return `${url} answered ${answer.status}${ANSWERS[answer.status] === undefined ? "" : `: ${ANSWERS[answer.status]}`}${answer.status === 429 && seconds !== null ? `; retry after ${seconds} seconds` : ""}`;
+  const why = explained(answer);
+  return `${url} answered ${answer.status}${why === undefined ? "" : `: ${why}`}${answer.status === 429 && seconds !== null ? `; retry after ${seconds} seconds` : ""}`;
 };
 
 const paused = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

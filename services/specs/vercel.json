@@ -5,8 +5,17 @@
   "functions": {
     "api/specs.ts": {
       "maxDuration": 30
+    },
+    "api/sweep.ts": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/sweep",
+      "schedule": "17 4 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/sha256/:hex",

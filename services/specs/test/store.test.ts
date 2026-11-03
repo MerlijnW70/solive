@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const blob = vi.hoisted(() => ({ BlobNotFoundError: class extends Error {}, get: vi.fn(), head: vi.fn(), put: vi.fn() }));
+const blob = vi.hoisted(() => ({ BlobNotFoundError: class extends Error {}, del: vi.fn(), get: vi.fn(), head: vi.fn(), list: vi.fn(), put: vi.fn() }));
 vi.mock("@vercel/blob", () => blob);
 
 const { blobStore, blobStoreWith } = await import("../src/store.js");
@@ -11,6 +11,8 @@ beforeEach(() => {
   blob.get.mockReset();
   blob.head.mockReset();
   blob.put.mockReset();
+  blob.del.mockReset();
+  blob.list.mockReset();
 });
 
 describe("the blob store", () => {
@@ -61,5 +63,37 @@ describe("the blob store", () => {
     const down = new Error("down");
     blob.head.mockRejectedValueOnce(down);
     await expect(blobStore.has(HEX)).rejects.toBe(down);
+  });
+
+  it("marks a path once, never over an existing blob, and throws when a refused mark finds nothing there", async () => {
+    blob.put.mockResolvedValueOnce({});
+    await blobStore.mark("idle/x");
+    const [path, body, options] = blob.put.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect([path, body]).toStrictEqual(["idle/x", "1"]);
+    expect(options).toMatchObject({ access: "public", addRandomSuffix: false, allowOverwrite: false });
+    const failure = new Error("refused");
+    blob.put.mockRejectedValue(failure);
+    blob.head.mockResolvedValueOnce({});
+    await expect(blobStore.mark("idle/x")).resolves.toBeUndefined();
+    blob.head.mockRejectedValueOnce(new blob.BlobNotFoundError());
+    await expect(blobStore.mark("idle/x")).rejects.toBe(failure);
+  });
+
+  it("removes paths in batches of at most 100", async () => {
+    blob.del.mockResolvedValue(undefined);
+    const paths = Array.from({ length: 205 }, (_, i) => `idle/${i}`);
+    await blobStore.remove(paths);
+    expect(blob.del.mock.calls.map(([batch]) => (batch as string[]).length)).toStrictEqual([100, 100, 5]);
+    expect(blob.del.mock.calls.flatMap(([batch]) => batch as string[])).toStrictEqual(paths);
+    await blobStore.remove([]);
+    expect(blob.del).toHaveBeenCalledTimes(3);
+  });
+
+  it("lists the path, size and upload time under a prefix, and fails closed on a blob without a usable time", async () => {
+    blob.list.mockResolvedValueOnce({ blobs: [{ pathname: "idle/a", size: 1, uploadedAt: new Date(5_000) }], hasMore: false });
+    expect(await blobStore.list("idle/")).toStrictEqual([{ pathname: "idle/a", size: 1, uploadedAt: 5_000 }]);
+    expect(blob.list.mock.calls[0]?.[0]).toMatchObject({ prefix: "idle/" });
+    blob.list.mockResolvedValueOnce({ blobs: [{ pathname: "idle/a", size: 1, uploadedAt: new Date(Number.NaN) }], hasMore: false });
+    await expect(blobStore.list("idle/")).rejects.toThrow("usable time");
   });
 });

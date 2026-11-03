@@ -1,5 +1,7 @@
 import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BodyBuffer, callerOf, createHandler, envDeps, readBody } from "../src/http.js";
@@ -115,14 +117,25 @@ describe("the caller and the body", () => {
 });
 
 describe("an oversize body in memory", () => {
-  it("holds nothing once the limit is passed, however much more arrives", () => {
+  it("keeps the pieces under the limit and lets go of them once the limit is passed, however much more arrives", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    const settled = async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      collect();
+    };
     const buffer = new BodyBuffer(10);
-    buffer.add(Buffer.alloc(10));
-    expect(buffer.held).toBe(10);
+    const piece = ((): WeakRef<Buffer> => {
+      const added = Buffer.alloc(10);
+      buffer.add(added);
+      return new WeakRef(added);
+    })();
+    await settled();
+    expect(piece.deref()).toBeDefined();
     buffer.add(Buffer.alloc(1));
-    expect(buffer.held).toBe(0);
+    await settled();
+    expect(piece.deref()).toBeUndefined();
     buffer.add(Buffer.alloc(1));
-    expect(buffer.held).toBe(0);
     expect(buffer.bytes()).toBeNull();
   });
 });

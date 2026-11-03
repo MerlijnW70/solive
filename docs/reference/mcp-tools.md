@@ -110,7 +110,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Locks payment until its attestor (the judge) approves; this wallet may be the attestor. spec_url lists it in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. allow_wrong_spec sends a mismatched spec_url. Spec uploads are public and permanent. Previews only; after the user says yes, call with send: true and its approval.
+Locks payment until its attestor (the judge) approves; this wallet may be the attestor. spec_url lists it in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. allow_wrong_spec sends a mismatched spec_url. Spec uploads are public, SOL-backed only. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -126,7 +126,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
-| `spec_text` | string | no | the spec's exact text; its sha256 must equal spec_hash. It is uploaded to the public mirror after the send, publicly and for good, so workers can read it when spec_url fails |
+| `spec_text` | string | no | the spec's exact text; its sha256 must equal spec_hash. It is uploaded publicly to the mirror after the send, so workers can read it when spec_url fails; the mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored |
 | `publish_spec` | boolean | no | false keeps the spec off the public mirror; default true |
 | `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least 0.00089088, the rent-exempt minimum of a wallet; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
@@ -138,7 +138,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Pays for a larger task in pieces: one preview and send lock a payment per piece, each like solive_wallet_escrow; cancel one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs; allow_wrong_spec sends a mismatched spec_url. Workers deliver to the attestor. Spec uploads are public and permanent. Previews only; after the user says yes, call with send: true and its approval.
+Pays for a larger task in pieces: one preview and send lock a payment per piece, each like solive_wallet_escrow; cancel one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs; allow_wrong_spec sends a mismatched spec_url. Workers deliver to the attestor. Spec uploads are public, SOL-backed only. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -148,7 +148,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `attestor` | address | yes | the wallet that releases every piece that names no attestor of its own |
 | `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec of every piece that names none; it binds each release to that spec |
 | `spec_url` | string | no | where that spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; needs spec_hash; for every piece that names none |
-| `spec_text` | string | no | the spec's exact text; its sha256 must equal spec_hash. It is uploaded to the public mirror after the send, publicly and for good, so workers can read it when spec_url fails |
+| `spec_text` | string | no | the spec's exact text; its sha256 must equal spec_hash. It is uploaded publicly to the mirror after the send, so workers can read it when spec_url fails; the mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored |
 | `publish_spec` | boolean | no | false keeps the spec off the public mirror; default true |
 | `pieces` | list of object, 2 to 12 | yes | the pieces, in order |
 | `expires_in` | integer 60..31536000 | no | least seconds each escrow stays open once sent; default 86400 |

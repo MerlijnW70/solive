@@ -19,12 +19,13 @@ export const CLUSTER_UNKNOWN = "the node did not say which cluster this is, so t
 export const SEALED_SIBLING = "another piece's spec_url holds this spec_hash sealed, and a sealed spec is never uploaded";
 export const UNREAD_SIBLING = "another piece's spec_url with this spec_hash could not be read, so it could not be checked for sealing";
 export const SPEC_OVERSIZE = `the spec is larger than ${MAX_SPEC_BYTES} bytes`;
-export const UPLOAD_PUBLIC = "Spec uploads are public and permanent.";
+const KEPT = "while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored";
+export const UPLOAD_PUBLIC = "Spec uploads are public, SOL-backed only.";
 export const UNREAD_NOT_UPLOADED = "so it could not be checked for sealing, and the spec is not uploaded";
 export const NOT_ON_MIRROR = "this path does not upload the spec to the mirror, so workers depend on its url; publishSpec in the SDK uploads it";
 
 export const uploadInputs = {
-  spec_text: optional(text("the spec's exact text; its sha256 must equal spec_hash. It is uploaded to the public mirror after the send, publicly and for good, so workers can read it when spec_url fails")),
+  spec_text: optional(text(`the spec's exact text; its sha256 must equal spec_hash. It is uploaded publicly to the mirror after the send, so workers can read it when spec_url fails; the mirror keeps it ${KEPT}`)),
   publish_spec: optional(flag("false keeps the spec off the public mirror; default true")),
 };
 
@@ -114,7 +115,7 @@ export const readerLines = (plan: UploadPlan | undefined, hasUrl: boolean): stri
 export const uploadBound = (plan: UploadPlan | undefined): string | null => (plan !== undefined && "mirror" in plan ? plan.mirror : null);
 
 export const uploadLine = (plan: UploadPlan, off = "publish_spec: false"): string =>
-  "mirror" in plan ? `Mirror: after the send, the spec goes to the public mirror ${plan.mirror}, where anyone can read it for good; ${off} keeps it off` : `Mirror: the spec is not uploaded: ${plan.reason}`;
+  "mirror" in plan ? `Mirror: after the send, the spec goes to the public mirror ${plan.mirror}, where anyone can read it ${KEPT}; ${off} keeps it off` : `Mirror: the spec is not uploaded: ${plan.reason}`;
 
 export function planLines(plans: readonly (UploadPlan | undefined)[], off = "publish_spec: false"): string[] {
   const pieces = (wanted: (plan: UploadPlan) => boolean) => plans.flatMap((plan, i) => (plan !== undefined && wanted(plan) ? [i + 1] : []));
@@ -126,8 +127,8 @@ export function planLines(plans: readonly (UploadPlan | undefined)[], off = "pub
       ? []
       : [
           going.length === 1
-            ? `Mirror: after the send, the spec of piece ${going[0]} goes to the public mirror ${first.mirror}, where anyone can read it for good; ${off} keeps it off`
-            : `Mirror: after the send, the specs of pieces ${going.join(", ")} go to the public mirror ${first.mirror}, where anyone can read them for good; ${off} keeps them off`,
+            ? `Mirror: after the send, the spec of piece ${going[0]} goes to the public mirror ${first.mirror}, where anyone can read it ${KEPT}; ${off} keeps it off`
+            : `Mirror: after the send, the specs of pieces ${going.join(", ")} go to the public mirror ${first.mirror}, where anyone can read each ${KEPT}; ${off} keeps them off`,
         ]),
     ...(skipped.length === 0 ? [] : [`Mirror: not uploaded: ${skipped.join("; ")}`]),
   ];

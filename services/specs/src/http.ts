@@ -1,9 +1,11 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createSolanaRpc } from "@solana/kit";
 import { CallerLimit } from "./callers.js";
-import { DEFAULT_RPC_URL, REQUEST_DEADLINE_MS } from "./limits.js";
+import { DEFAULT_RPC_URL, REQUEST_DEADLINE_MS, SWEEP_STORE_TIMEOUT_MS } from "./limits.js";
 import { mirror, type MirrorDeps } from "./mirror.js";
-import { blobStore } from "./store.js";
+import { blobStore, blobStoreWith } from "./store.js";
+import { sweep, type SweepDeps } from "./sweep.js";
 
 type Headers = IncomingMessage["headers"];
 
@@ -17,10 +19,6 @@ export class BodyBuffer {
     this.#size += piece.length;
     if (this.#size > this.limit) this.#chunks = [];
     else this.#chunks.push(piece);
-  }
-
-  get held(): number {
-    return this.#chunks.reduce((total, chunk) => total + chunk.length, 0);
   }
 
   bytes(): Uint8Array | null {
@@ -44,15 +42,21 @@ export function callerOf(headers: Headers, fallback?: string): string {
   return first(headers["x-forwarded-for"]) ?? first(headers["x-real-ip"]) ?? fallback ?? "unknown";
 }
 
+const rpcOf = () => createSolanaRpc(process.env["SPECS_RPC_URL"] || DEFAULT_RPC_URL);
+
 export function envDeps(callers: CallerLimit = new CallerLimit()): MirrorDeps {
   return {
-    rpc: () => createSolanaRpc(process.env["SPECS_RPC_URL"] || DEFAULT_RPC_URL),
+    rpc: rpcOf,
     store: blobStore,
     callers,
     now: () => Date.now(),
     deadlineMs: REQUEST_DEADLINE_MS,
     log: (line) => console.log(line),
   };
+}
+
+export function envSweepDeps(): SweepDeps {
+  return { rpc: rpcOf, store: blobStoreWith(SWEEP_STORE_TIMEOUT_MS), now: () => Date.now() };
 }
 
 export function createHandler(deps: MirrorDeps): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
@@ -69,5 +73,30 @@ export function createHandler(deps: MirrorDeps): (request: IncomingMessage, resp
     response.statusCode = answer.status;
     for (const [name, value] of Object.entries(answer.headers)) response.setHeader(name, value);
     response.end(answer.body);
+  };
+}
+
+const digest = (text: string): Buffer => createHash("sha256").update(text).digest();
+
+export function authorized(header: string | undefined, secret: string | undefined): boolean {
+  if (secret === undefined || secret === "" || header === undefined) return false;
+  return timingSafeEqual(digest(header), digest(`Bearer ${secret}`));
+}
+
+export function createSweepHandler(deps: SweepDeps, secret: () => string | undefined = () => process.env["CRON_SECRET"]): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
+  return async (request, response) => {
+    const answer = (status: number, body: unknown) => {
+      response.statusCode = status;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      response.setHeader("cache-control", "no-store");
+      response.end(JSON.stringify(body));
+    };
+    if (request.method !== "GET") return answer(405, { error: "The sweep takes GET only." });
+    if (!authorized(request.headers.authorization, secret())) return answer(401, { error: "The sweep needs the cron secret." });
+    try {
+      answer(200, await sweep(deps));
+    } catch {
+      answer(503, { error: "The sweep stopped because the node or the store did not answer." });
+    }
   };
 }

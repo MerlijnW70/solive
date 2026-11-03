@@ -73,7 +73,7 @@ describe("create attested", () => {
     expect(run.code, run.err).toBe(EXIT_OK);
     expect(puts).toStrictEqual([]);
     expect(shown(run)).toMatchObject({ sent: false });
-    expect(shown(run).summary.filter((line) => line.startsWith("Mirror:"))).toStrictEqual([`Mirror: after the send, the spec goes to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read it for good; --no-publish-spec keeps it off`]);
+    expect(shown(run).summary.filter((line) => line.startsWith("Mirror:"))).toStrictEqual([`Mirror: after the send, the spec goes to the public mirror ${DEFAULT_SPEC_MIRROR}, where anyone can read it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored; --no-publish-spec keeps it off`]);
   });
 
   it("uploads nothing for bytes that do not match or are sealed", async () => {
@@ -135,20 +135,24 @@ describe("what the docs and help say about --spec-file", () => {
   const page = (name: string) => readFileSync(new URL(`../../../docs/${name}`, import.meta.url), "utf8");
 
   it("says plainly that the file is uploaded publicly unless --no-publish-spec", () => {
-    const usage = "after the send the file, or the bytes at --spec-url, is uploaded to the public mirror, publicly and for good, unless --no-publish-spec";
+    const usage = "after the send the file, or the bytes at --spec-url, is uploaded to the public mirror, which keeps it only while SOL escrows back it, unless --no-publish-spec";
     expect(SHAPES["create"]).toContain(usage);
     expect(page("reference/cli.md")).toContain(usage);
-    expect(page("mcp.md")).toContain("Its `--spec-file` is uploaded publicly and for good unless you pass `--no-publish-spec`.");
+    expect(page("mcp.md")).toContain("Its `--spec-file` is uploaded publicly unless you pass `--no-publish-spec`, and kept only while SOL escrows back it.");
   });
 
-  it("says plainly that the upload is public and permanent, in the docs and both tool descriptions, and notes the wider request type", () => {
-    expect(page("mcp.md")).toContain("The upload is public and permanent");
-    expect(page("sdk-client.md")).toContain("The upload is public and permanent");
+  it("says plainly that the upload is public, in the docs and both tool descriptions, how long the tools say the mirror keeps it, and notes the wider request type", () => {
+    const kept = "while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored";
+    expect(page("mcp.md")).toContain(`The upload is public: anyone can read it. The mirror keeps it ${kept}.`);
+    expect(page("sdk-client.md")).toContain(`The upload is public, and the mirror keeps it ${kept}; a spec whose escrows lock less is refused with 402.`);
+    for (const name of ["mcp.md", "sdk-client.md", "reference/cli.md", "reference/mcp-tools.md"]) {
+      expect([name, /permanent|for good|cannot be deleted/.test(page(name))]).toStrictEqual([name, false]);
+    }
     expect(page("sdk-client.md")).toContain("`SpecRequest` now allows the method `PUT` and a `Uint8Array` body");
     for (const action of [walletEscrow, walletEscrowPlan]) {
       expect((action as unknown as { description: string }).description).toContain(UPLOAD_PUBLIC);
     }
-    expect(UPLOAD_PUBLIC).toContain("public and permanent");
+    expect(UPLOAD_PUBLIC).toBe("Spec uploads are public, SOL-backed only.");
   });
 
   it("tells the user in the wallet notice that specs leave this computer", () => {

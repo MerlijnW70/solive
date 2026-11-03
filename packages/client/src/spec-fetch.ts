@@ -98,11 +98,12 @@ export function guardedRead(transport: Transport, get: SpecFetch, url: string, l
   return guarded({ transport, get, lookup, rpcUrl, request, deadline, failed: SPEC_FETCH_FAILED }, url, (response, signal) => bounded(response, url, signal));
 }
 
-export type SendAnswer = { status: number; retryAfter: string | null };
+export type SendAnswer = { status: number; retryAfter: string | null; minEscrowed: string | null; limit: string | null };
 
 export function guardedSend(transport: Transport, get: SpecFetch, url: string, lookup: Lookup | null, rpcUrl: string | undefined, request: SpecRequest, deadline: AbortSignal): Promise<SendAnswer> {
   return guarded({ transport, get, lookup, rpcUrl, request, deadline, failed: SPEC_SEND_FAILED }, url, async (response) => {
     await discarded(response);
-    return { status: response.status, retryAfter: response.headers.get("retry-after") };
+    const { headers } = response;
+    return { status: response.status, retryAfter: headers.get("retry-after"), minEscrowed: headers.get("x-min-escrowed"), limit: headers.get("x-spec-limit") };
   });
 }

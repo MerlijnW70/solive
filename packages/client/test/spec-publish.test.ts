@@ -142,6 +142,26 @@ describe("publishSpec", () => {
     expect(done).toStrictEqual({ published: false, sha256: HASH, reason: `${PUT_URL} answered 507: it holds as much as it may store in total` });
   });
 
+  it("does not retry a 402 and names the SOL the mirror asks to see locked", async () => {
+    const asked: Asked[] = [];
+    const done = await publishSpec(BYTES, options(answering([[402, { "x-min-escrowed": "20000000" }], 201], asked), 2_000));
+    expect(asked).toHaveLength(1);
+    expect(done).toStrictEqual({ published: false, sha256: HASH, reason: `${PUT_URL} answered 402: it keeps only specs whose open escrows lock at least 0.02 SOL together` });
+    const whole = await publishSpec(BYTES, options(answering([[402, { "x-min-escrowed": "1000000000" }]]), 2_000));
+    expect(whole).toMatchObject({ reason: `${PUT_URL} answered 402: it keeps only specs whose open escrows lock at least 1 SOL together` });
+    for (const header of [{}, { "x-min-escrowed": "0x10" }, { "x-min-escrowed": "-5" }, { "x-min-escrowed": "1".repeat(20) }]) {
+      const vague = await publishSpec(BYTES, options(answering([[402, header]]), 2_000));
+      expect(vague).toMatchObject({ reason: `${PUT_URL} answered 402: it keeps only specs whose open escrows lock enough SOL` });
+    }
+  });
+
+  it("tells an owner over its quota apart from a full mirror", async () => {
+    const owner = await publishSpec(BYTES, options(answering([[507, { "x-spec-limit": "owner" }]]), 2_000));
+    expect(owner).toMatchObject({ reason: `${PUT_URL} answered 507: each owner of the open escrows with this spec hash holds as many spec bytes there as one owner may` });
+    const total = await publishSpec(BYTES, options(answering([[507, { "x-spec-limit": "total" }]]), 2_000));
+    expect(total).toMatchObject({ reason: `${PUT_URL} answered 507: it holds as much as it may store in total` });
+  });
+
   it("retries a 503, and a 429 no sooner than retry-after says", async () => {
     const asked: Asked[] = [];
     expect(await publishSpec(BYTES, options(answering([503, 201], asked), 400))).toMatchObject({ published: true });
@@ -335,6 +355,15 @@ describe("a spec published to the real mirror handler", () => {
     };
     const done = await publishSpec(BYTES, { transport: chain(), fetch: slowed, mirror: base, rpcUrl: "http://127.0.0.1:8899", lookup: async () => ["127.0.0.1"] });
     expect(done).toMatchObject({ published: false, reason: expect.stringContaining("answered 403") });
+    expect(h.store.writes).toBe(0);
+  });
+
+  it("is told by the real handler how much SOL an escrow below the cost must lock", async () => {
+    const h = harness();
+    h.node.holds(mirrorIntent(HASH, { escrowed: 1n }));
+    const base = await running(h.deps);
+    const done = await publishSpec(BYTES, { transport: chain(), fetch: pinnedFetch, mirror: base, rpcUrl: "http://127.0.0.1:8899", lookup: async () => ["127.0.0.1"] });
+    expect(done).toStrictEqual({ published: false, sha256: HASH, reason: `${base}/sha256/${HASH} answered 402: it keeps only specs whose open escrows lock at least 0.01 SOL together` });
     expect(h.store.writes).toBe(0);
   });
 

@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { specHashOfCid } from "@intent-engine/client";
 import type { CallerLimit } from "./callers.js";
-import { onDevnet, openEscrowHolds, type MirrorRpc } from "./chain.js";
-import { IMMUTABLE_SECS, MAX_STORED_BYTES } from "./limits.js";
+import { onDevnet, openEscrowsOf, type MirrorRpc } from "./chain.js";
+import { COST_STEP_BYTES, IMMUTABLE_SECS, MAX_OWNER_BYTES, MAX_STORED_BYTES, MIN_ESCROW_UNITS } from "./limits.js";
+import { backs, costOf, counted, idleMarks, lockedBy, ownerMark, payerOf } from "./owners.js";
 import type { SpecStore } from "./store.js";
+import { makeRoom } from "./sweep.js";
 import { within } from "./within.js";
 
 export type MirrorRequest = {
@@ -42,6 +44,8 @@ export const REASONS = {
   cluster: "The node of this service is not on devnet, so nothing was stored and its owner needs to fix the node url.",
   corrupt: "The stored bytes do not match this hash, so they were not served.",
   full: "The mirror holds as much as it may store in total, so nothing was stored.",
+  owner: `Each owner of the open escrows with this spec hash holds ${MAX_OWNER_BYTES} bytes of specs here or would pass that, so nothing was stored.`,
+  cost: `The open escrows with this spec hash lock less than min_escrowed lamports of SOL together, ${MIN_ESCROW_UNITS} for each ${COST_STEP_BYTES} bytes begun, so nothing was stored.`,
   down: "The node or the store did not answer, so try again in a minute.",
 } as const;
 
@@ -110,10 +114,21 @@ async function stored(hex: string, request: MirrorRequest, deps: MirrorDeps): Pr
   if (sha256Of(bytes) !== hex) return refused(400, REASONS.mismatch);
   const rpc = deps.rpc();
   if (!(await onDevnet(rpc))) return refused(503, REASONS.cluster);
-  if (!(await openEscrowHolds(rpc, hex))) return refused(403, REASONS.noEscrow);
-  if (await deps.store.has(hex)) return kept(200, hex);
+  const escrows = await openEscrowsOf(rpc, hex);
+  if (escrows.length === 0) return refused(403, REASONS.noEscrow);
+  const backed = backs(lockedBy(escrows), bytes.length);
+  if (await deps.store.has(hex)) {
+    if (backed) await deps.store.remove(idleMarks(hex));
+    return kept(200, hex);
+  }
+  const cost = String(costOf(bytes.length));
+  if (!backed) return refused(402, REASONS.cost, { "x-min-escrowed": cost }, { min_escrowed: Number(cost) });
   const held = await deps.store.total();
-  if (held >= MAX_STORED_BYTES || held + bytes.length > MAX_STORED_BYTES) return refused(507, REASONS.full);
+  const over = Math.max(held + bytes.length - MAX_STORED_BYTES, held - MAX_STORED_BYTES + 1);
+  if (over > 0 && (await makeRoom(rpc, deps.store, over, deps.now())) < over) return refused(507, REASONS.full, { "x-spec-limit": "total" });
+  const payer = await payerOf(deps.store, counted(escrows), bytes.length);
+  if (payer === null) return refused(507, REASONS.owner, { "x-spec-limit": "owner" });
+  await deps.store.mark(ownerMark(payer, hex, bytes.length));
   return kept((await deps.store.write(hex, bytes)) ? 201 : 200, hex);
 }
 
