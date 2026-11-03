@@ -6,3 +6,6 @@ export const NODE_TIMEOUT_MS = 10_000;
 export const STORE_TIMEOUT_MS = 5_000;
 export const REQUEST_DEADLINE_MS = 25_000;
 export const IMMUTABLE_SECS = 31_536_000;
+export const MAX_STORED_BYTES = 536870912;
+export const LIST_PAGE_SIZE = 1000;
+export const MAX_LIST_PAGES = 200;

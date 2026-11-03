@@ -30,6 +30,7 @@ const ANSWERS: Readonly<Record<number, string>> = {
   403: "it sees no open escrow with this spec hash",
   413: "it refused a spec this large",
   429: "it is limiting uploads from this network",
+  507: "it holds as much as it may store in total",
   503: "it or its node is not available",
 };
 

@@ -135,6 +135,13 @@ describe("publishSpec", () => {
     expect(done).toStrictEqual({ published: false, sha256: HASH, reason: `${PUT_URL} answered 403: it sees no open escrow with this spec hash` });
   });
 
+  it("does not retry a 507 and reports why", async () => {
+    const asked: Asked[] = [];
+    const done = await publishSpec(BYTES, options(answering([507, 201], asked), 2_000));
+    expect(asked).toHaveLength(1);
+    expect(done).toStrictEqual({ published: false, sha256: HASH, reason: `${PUT_URL} answered 507: it holds as much as it may store in total` });
+  });
+
   it("retries a 503, and a 429 no sooner than retry-after says", async () => {
     const asked: Asked[] = [];
     expect(await publishSpec(BYTES, options(answering([503, 201], asked), 400))).toMatchObject({ published: true });

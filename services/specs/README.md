@@ -14,11 +14,12 @@ Serves job specs by their sha256 from public Vercel Blob, under `sha256/<hex>`. 
 | `PUT` | 400 | bad hex, or the body's sha256 is not `{hex}` |
 | `PUT` | 403 | no open AttestedResult escrow holds this hash, also when the bytes are already stored |
 | `PUT` | 429 | caller over 20 uploads an hour, with `retry-after`; each function instance counts its own |
-| `PUT` | 503 | the node is not on devnet, or the node or the store failed |
+| `PUT` | 507 | the store holds 536870912 bytes (512 MiB) or more, or this spec would pass that; a spec already stored still answers 200 |
+| `PUT` | 503 | the node is not on devnet, or the node or the store failed, also when the stored total cannot be counted |
 
 ## Before wide public use
 
-Nothing caps total storage yet. The rate limit is per function instance, so it does not bound a caller across instances, and an open escrow is the only other gate. Add a global quota or a firewall rule before wide public use.
+Total storage is capped at 536870912 bytes (`MAX_STORED_BYTES`). Before a new write the service sums the sizes of the blobs under `sha256/` and answers 507 at or over the cap, or when the write would pass it. The cap is soft: instances count at the same time, so together they can pass it by a few writes of at most 1048576 bytes each. A count that cannot finish answers 503 and stores nothing. Reads have no limit, and the rate limit is per function instance, so it does not bound a caller across instances. Add a firewall rule before wide public use.
 
 ## Sealed specs
 

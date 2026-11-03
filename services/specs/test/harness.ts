@@ -79,8 +79,18 @@ export class MemoryStore implements SpecStore {
   readonly blobs = new Map<string, Uint8Array>();
   writes = 0;
   raceLost = false;
+  counts = 0;
+  held = 0;
+  totalFails: Error | null = null;
   read = async (hex: string): Promise<Uint8Array | null> => this.blobs.get(hex) ?? null;
   has = async (hex: string): Promise<boolean> => this.blobs.has(hex);
+  total = async (): Promise<number> => {
+    this.counts += 1;
+    if (this.totalFails !== null) throw this.totalFails;
+    let sum = this.held;
+    for (const bytes of this.blobs.values()) sum += bytes.length;
+    return sum;
+  };
   write = async (hex: string, bytes: Uint8Array): Promise<boolean> => {
     if (this.raceLost) return false;
     this.writes += 1;

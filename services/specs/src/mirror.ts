@@ -3,7 +3,7 @@ import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { specHashOfCid } from "@intent-engine/client";
 import type { CallerLimit } from "./callers.js";
 import { onDevnet, openEscrowHolds, type MirrorRpc } from "./chain.js";
-import { IMMUTABLE_SECS } from "./limits.js";
+import { IMMUTABLE_SECS, MAX_STORED_BYTES } from "./limits.js";
 import type { SpecStore } from "./store.js";
 import { within } from "./within.js";
 
@@ -41,6 +41,7 @@ export const REASONS = {
   noEscrow: "The program holds no open proof escrow with this spec hash, so nothing was stored.",
   cluster: "The node of this service is not on devnet, so nothing was stored and its owner needs to fix the node url.",
   corrupt: "The stored bytes do not match this hash, so they were not served.",
+  full: "The mirror holds as much as it may store in total, so nothing was stored.",
   down: "The node or the store did not answer, so try again in a minute.",
 } as const;
 
@@ -111,6 +112,8 @@ async function stored(hex: string, request: MirrorRequest, deps: MirrorDeps): Pr
   if (!(await onDevnet(rpc))) return refused(503, REASONS.cluster);
   if (!(await openEscrowHolds(rpc, hex))) return refused(403, REASONS.noEscrow);
   if (await deps.store.has(hex)) return kept(200, hex);
+  const held = await deps.store.total();
+  if (held >= MAX_STORED_BYTES || held + bytes.length > MAX_STORED_BYTES) return refused(507, REASONS.full);
   return kept((await deps.store.write(hex, bytes)) ? 201 : 200, hex);
 }
 
