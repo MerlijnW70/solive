@@ -124,7 +124,7 @@ describe("multisig", () => {
     ];
     for (const [name, text] of cases) {
       const path = join(dir, name);
-      writeFileSync(path, text);
+      writeFileSync(path, text, { mode: 0o600 });
       const error = await readKeypair(path).then(
         () => null,
         (e: unknown) => e,

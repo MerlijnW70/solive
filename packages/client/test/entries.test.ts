@@ -51,10 +51,10 @@ describe("the package entry points", () => {
   it("keep pinned fetch, the system lookup and Ledger signing in the node entry", () => {
     const root = graph(src("client", "index.ts")).modules;
     const node = graph(src("client", "node.ts"));
-    for (const file of ["pinned-fetch.ts", "public-host.ts", "ledger.ts"]) {
+    for (const file of ["pinned-fetch.ts", "public-host.ts", "ledger.ts", "key-file.ts"]) {
       expect([...root].some((found) => found.endsWith(`/${file}`) || found.endsWith(`\\${file}`))).toBe(false);
       expect([...node.modules].some((found) => found.endsWith(`/${file}`) || found.endsWith(`\\${file}`))).toBe(true);
     }
-    expect([...node.specifiers].filter((specifier) => specifier.startsWith("node:")).sort()).toEqual(["node:crypto", "node:dns/promises", "node:http", "node:https", "node:module", "node:net", "node:stream", "node:zlib"]);
+    expect([...node.specifiers].filter((specifier) => specifier.startsWith("node:")).sort()).toEqual(["node:crypto", "node:dns/promises", "node:fs/promises", "node:http", "node:https", "node:module", "node:net", "node:os", "node:stream", "node:zlib"]);
   });
 });

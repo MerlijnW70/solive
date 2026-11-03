@@ -10,6 +10,7 @@ import { systemLookup } from "./public-host.js";
 import { connect as webConnect } from "./simple.js";
 import type { ClusterChoice, ConnectSettings, SimpleClient } from "./simple-types.js";
 
+export { type KeyFile, readKeyFile } from "./key-file.js";
 export { ledgerModule, ledgerSigner, messageHash, notOwnEnvelope, openUsb, plainLedgerError } from "./ledger.js";
 export { pinnedFetch } from "./pinned-fetch.js";
 export { systemLookup } from "./public-host.js";

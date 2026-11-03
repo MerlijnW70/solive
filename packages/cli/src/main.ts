@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
@@ -6,7 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createDefaultRpcTransport, createKeyPairSignerFromBytes, createSolanaRpcFromTransport, type KeyPairSigner } from "@solana/kit";
 import { Kind } from "@intent-engine/core";
 import { isSdkError } from "@intent-engine/client";
-import { openUsb, pinnedFetch, systemLookup } from "@intent-engine/client/node";
+import { openUsb, pinnedFetch, readKeyFile, systemLookup } from "@intent-engine/client/node";
 import { changesFrom, intentNotifications, limitedTransport, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
 import { type Command, DEFAULT_URL, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
@@ -14,7 +14,7 @@ import { withPriority } from "./compute.js";
 import { JudgeInfraError, JudgeInterrupted } from "./judge.js";
 import { watchJudge } from "./judge-watch.js";
 import { addToLines, printable, printableLines, redactUrl, render, renderText } from "./render.js";
-import { expandHome, withSettings } from "./wallet.js";
+import { withSettings } from "./wallet.js";
 import { ENV_KEYPAIR } from "./clusters.js";
 import { certificateCode, certificateHint, maybeSentHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
@@ -161,26 +161,11 @@ export const keypairUnreadable = (path: string) =>
   keyLike(path) ? `${KEYPAIR_UNREADABLE}; the value given looks like a key, not a file path, so it is not repeated here` : `${KEYPAIR_UNREADABLE}; tried ${path}`;
 
 export async function loadKeypairBytes(path: string, platform: string = process.platform, home: string = homedir()): Promise<Uint8Array> {
-  const file = expandHome(path, home);
-  let bytes: unknown;
-  let mode: number;
-  try {
-    mode = (await stat(file)).mode;
-    bytes = JSON.parse(await readFile(file, "utf8"));
-  } catch {
-    throw new UsageError(keypairUnreadable(file));
+  const read = await readKeyFile(path, platform, home);
+  if ("bytes" in read) {
+    return read.bytes;
   }
-  if (platform !== "win32" && (mode & 0o077) !== 0) {
-    throw new UsageError(KEYPAIR_EXPOSED);
-  }
-  if (
-    !Array.isArray(bytes) ||
-    bytes.length !== 64 ||
-    !bytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)
-  ) {
-    throw new UsageError(keypairUnreadable(file));
-  }
-  return new Uint8Array(bytes);
+  throw new UsageError(read.problem === "exposed" ? KEYPAIR_EXPOSED : keypairUnreadable(read.file));
 }
 
 export const loadKeypairFile = async (path: string, platform: string = process.platform, home: string = homedir()): Promise<KeyPairSigner> =>

@@ -12,7 +12,7 @@ import {
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { isSdkError } from "@intent-engine/client";
-import { redactUrl } from "@intent-engine/client/internal";
+import { loopbackUrl, redactUrl } from "@intent-engine/client/internal";
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
 import { isDevice, isLedgerPath, LEDGER_FORMS, messageHash, parseLedgerPath } from "./ledger.js";
@@ -29,6 +29,7 @@ import {
   proposeUpgrade,
   Refusal,
   reject,
+  requireProposer,
 } from "./squads.js";
 import { vault } from "./vault.js";
 
@@ -52,16 +53,16 @@ export const MAX_TIME_LOCK = 7_776_000;
 
 export const USAGE = [
   "intent-engine-multisig create --members <a,b,c> --threshold <n> [--time-lock <seconds>] [--create-key <keypair>] --keypair <creator> [--yes]",
-  "intent-engine-multisig propose-upgrade --multisig <m> --buffer <address> --spill <address> [--program <address>] --keypair <member> [--yes]",
-  "intent-engine-multisig propose-admin --multisig <m> --keypair <member> [--yes] -- <intent engine admin command with --authority <vault>>",
+  "intent-engine-multisig propose-upgrade --multisig <m> --buffer <address> --spill <address> [--program <address>] [--allow-review-problems] --keypair <member> [--yes]",
+  "intent-engine-multisig propose-admin --multisig <m> [--allow-review-problems] --keypair <member> [--yes] -- <intent engine admin command with --authority <vault>, without --yes>",
   "intent-engine-multisig propose-time-lock --multisig <m> --seconds <n> --keypair <member> [--yes]",
   "intent-engine-multisig approve --multisig <m> --index <n> [--allow-config] [--allow-engine-close] [--allow-undecoded-vault-signer] [--allow-rewritten-buffer] --keypair <member> [--yes]",
   "intent-engine-multisig execute --multisig <m> --index <n> [--expect-buffer-hash <hex>] [--allow-config] [--allow-engine-close] [--allow-undecoded-vault-signer] [--allow-rewritten-buffer] --keypair <member> [--yes]",
   "intent-engine-multisig reject --multisig <m> --index <n> --keypair <member> [--yes]",
   "intent-engine-multisig show --multisig <m> [--index <n>]",
   "intent-engine-multisig vault --multisig <m>",
-  "intent-engine-multisig propose-authority --multisig <m> --new-authority <address> [--program <address>] --keypair <member> [--yes]",
-  "every command takes --url devnet|testnet|mainnet-beta|localhost|<rpc url>, default devnet",
+  "intent-engine-multisig propose-authority --multisig <m> --new-authority <address> [--program <address>] [--allow-review-problems] --keypair <member> [--yes]",
+  "every command takes --url devnet|testnet|mainnet-beta|localhost|<rpc url>, default devnet; a node other than this machine needs https",
   `--keypair and --create-key take a keypair file or a Ledger: ${LEDGER_FORMS.join(", ")}`,
 ];
 
@@ -87,11 +88,46 @@ const OPTIONS = {
   "allow-undecoded-vault-signer": { type: "boolean" },
   "allow-rewritten-buffer": { type: "boolean" },
   "expect-buffer-hash": { type: "string" },
+  "allow-review-problems": { type: "boolean" },
 } as const;
 
 type Values = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
 
-type Flag = "yes" | "allow-config" | "allow-engine-close" | "allow-undecoded-vault-signer" | "allow-rewritten-buffer";
+type Flag = "yes" | "allow-config" | "allow-engine-close" | "allow-undecoded-vault-signer" | "allow-rewritten-buffer" | "allow-review-problems";
+
+type Option = keyof typeof OPTIONS;
+
+const SIGNING = ["url", "keypair", "yes"] as const;
+const ALLOW = ["allow-config", "allow-engine-close", "allow-undecoded-vault-signer", "allow-rewritten-buffer"] as const;
+
+const TAKES: Record<string, readonly Option[]> = {
+  create: [...SIGNING, "members", "threshold", "time-lock", "create-key"],
+  "propose-upgrade": [...SIGNING, "multisig", "buffer", "spill", "program", "allow-review-problems"],
+  "propose-authority": [...SIGNING, "multisig", "new-authority", "program", "allow-review-problems"],
+  "propose-admin": [...SIGNING, "multisig", "allow-review-problems"],
+  "propose-time-lock": [...SIGNING, "multisig", "seconds"],
+  approve: [...SIGNING, "multisig", "index", ...ALLOW],
+  execute: [...SIGNING, "multisig", "index", "expect-buffer-hash", ...ALLOW],
+  reject: [...SIGNING, "multisig", "index"],
+  show: ["url", "multisig", "index"],
+  vault: ["url", "multisig"],
+};
+
+const listed = (names: readonly string[]) => {
+  const flags = names.map((n) => `--${n}`);
+  return flags.length < 2 ? flags.join("") : `${flags.slice(0, -1).join(", ")} or ${flags.at(-1)}`;
+};
+
+function requireTaken(name: string | undefined, values: Values): void {
+  const takes = name === undefined ? undefined : TAKES[name];
+  if (takes === undefined) {
+    return;
+  }
+  const unused = (Object.keys(values) as Option[]).filter((option) => values[option] !== undefined && !takes.includes(option));
+  if (unused.length > 0) {
+    throw new UsageError(`${name} takes no ${listed(unused)}`);
+  }
+}
 
 const required = (values: Values, name: Exclude<keyof Values, Flag>): string => {
   const value = values[name];
@@ -138,6 +174,8 @@ type Cluster = { url: string; shown: string };
 
 const NOT_A_URL = `--url takes ${Object.keys(MONIKERS).join(", ")} or an http or https RPC url`;
 
+export const PLAIN_HTTP = "--url takes https for a node other than this machine: review trusts every account the node returns, and plain http lets anyone on the way change them";
+
 function cluster(given: string): Cluster {
   const url = MONIKERS[given] ?? given;
   let parsed: URL;
@@ -148,6 +186,9 @@ function cluster(given: string): Cluster {
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new UsageError(NOT_A_URL);
+  }
+  if (parsed.protocol === "http:" && !loopbackUrl(url)) {
+    throw new UsageError(PLAIN_HTTP);
   }
   return { url, shown: redactUrl(url) };
 }
@@ -236,11 +277,21 @@ function keyPath(path: string, name: "keypair" | "create-key"): string {
   return path;
 }
 
-const signingFlags = (values: Values): boolean =>
-  (["yes", "keypair", "allow-config", "allow-engine-close", "allow-undecoded-vault-signer", "allow-rewritten-buffer", "expect-buffer-hash"] as const).some((name) => values[name] !== undefined);
+function requireUnsignedCommand(passed: readonly string[], vault: Address): void {
+  if (passed.some((arg) => arg === "--yes" || arg.startsWith("--yes="))) {
+    throw new UsageError(`propose-admin refuses a command with --yes, which would sign and send it on its own; give it --authority ${vault} instead, so it prints the transaction unsigned`);
+  }
+  const named = passed.flatMap((arg, i) => (arg === "--authority" ? [passed[i + 1] ?? ""] : arg.startsWith("--authority=") ? [arg.slice("--authority=".length)] : []));
+  const other = named.find((given) => given !== vault);
+  if (other !== undefined) {
+    throw new UsageError(`the command names --authority ${other}, but the proposal signs as the vault ${vault}; give it --authority ${vault}`);
+  }
+}
 
 async function command(name: string | undefined, values: Values, passed: string[], deps: Deps, notify: Notify): Promise<object> {
+  requireTaken(name, values);
   const target = cluster(values.url ?? DEVNET);
+  const allowReviewProblems = values["allow-review-problems"] === true;
   const { url } = target;
   const yes = values.yes === true;
   const signer = async () => deps.keypair(keyPath(required(values, "keypair"), "keypair"));
@@ -269,6 +320,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         buffer: key(values, "buffer"),
         spill: key(values, "spill"),
+        allowReviewProblems,
       });
       return deliver(chain, target, member, plan, yes, notify);
     }
@@ -280,6 +332,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         member: member.address,
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         next: key(values, "new-authority"),
+        allowReviewProblems,
       });
       return deliver(chain, target, member, plan, yes, notify);
     }
@@ -297,21 +350,16 @@ async function command(name: string | undefined, values: Values, passed: string[
       }
       const multisig = key(values, "multisig");
       const member = await signer();
-      const stdout = await deps.run(passed);
       const chain = deps.chain(url);
-      const plan = await proposeInstructions(chain, { multisig, member: member.address, stdout });
+      requireUnsignedCommand(passed, await requireProposer(chain, multisig, member.address));
+      const stdout = await deps.run(passed);
+      const plan = await proposeInstructions(chain, { multisig, member: member.address, stdout, allowReviewProblems });
       return deliver(chain, target, member, { ...plan, details: { command: passed, ...plan.details } }, yes, notify);
     }
     case "approve":
     case "execute":
     case "reject": {
       const expectBufferHashes = hashes(values);
-      if (name !== "execute" && expectBufferHashes.length > 0) {
-        throw new UsageError("only execute takes --expect-buffer-hash");
-      }
-      if (name === "reject" && (["allow-config", "allow-engine-close", "allow-undecoded-vault-signer", "allow-rewritten-buffer"] as const).some((flag) => values[flag] !== undefined)) {
-        throw new UsageError("reject takes no --allow-config, --allow-engine-close, --allow-undecoded-vault-signer or --allow-rewritten-buffer");
-      }
       const member = await signer();
       const chain = deps.chain(url);
       const input = { multisig: key(values, "multisig"), member: member.address, index: indexOf(values) };
@@ -330,15 +378,9 @@ async function command(name: string | undefined, values: Values, passed: string[
       return deliver(chain, target, member, plan, yes, notify);
     }
     case "show": {
-      if (signingFlags(values)) {
-        throw new UsageError("show only reads; it takes no --keypair, --yes, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer, --allow-rewritten-buffer or --expect-buffer-hash");
-      }
       return show(deps.chain(url), key(values, "multisig"), values.index === undefined ? undefined : indexOf(values));
     }
     case "vault": {
-      if (signingFlags(values) || values.index !== undefined) {
-        throw new UsageError("vault only reads the multisig; it takes no --keypair, --yes, --index, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer, --allow-rewritten-buffer or --expect-buffer-hash");
-      }
       return vault(deps.chain(url), key(values, "multisig"));
     }
     default:

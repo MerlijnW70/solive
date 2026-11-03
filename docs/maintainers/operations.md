@@ -37,6 +37,12 @@ pnpm --filter @intent-engine/multisig build
 
 `node packages/multisig/dist/bin.js` drives the multisig: `create`, `propose-upgrade`, `propose-authority`, `propose-admin`, `propose-time-lock`, `approve`, `execute`, `reject` and `show`. It talks to Squads v4 at `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`. Every command that sends prints a preview and a simulation and sends only with `--yes`. Every command prints JSON and refuses with a JSON error, for example when the signer is not a member or a proposal has too few approvals. `--url` prints only the scheme, host and port of the RPC url, so an API key in its path or query stays out of the output. `node packages/cli/dist/src/bin.js` is the engine CLI; with `--authority <address>` an admin command prints its instructions unsigned instead of sending them, and `propose-admin` wraps exactly those instructions in a proposal.
 
+Each command refuses a flag it does not use, so `create --seconds 3600` stops instead of creating a multisig without a time lock. `propose-admin` checks the multisig, the member and the command before it runs the command: it refuses a command with `--yes`, which would send on its own, and one whose `--authority` is not the vault. A keypair file starting with `~/` is read from the home directory, and on Linux and macOS one that other users can read or change is refused; restrict it with `chmod 600`.
+
+### Trust boundary
+
+Review reads every account from the one RPC node `--url` names and trusts what it returns: a node that lies can show a buffer, an authority or a proposal that is not on chain. Use a node you run or trust, and before approving an upgrade compare `show` with the same command on a second node. `--url` refuses plain http for any node other than this machine, since anyone on the way could change what it returns.
+
 ## 1. Make the keys
 
 Three member keys and one guardian key. On devnet they are demo files; before mainnet see [Real keys](#real-keys).
@@ -261,6 +267,8 @@ node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --e
 - a message that asks any key other than the vault, or the transaction's ephemeral signers, to sign: executing it would lend the executing member's signature to a hidden instruction;
 - an upgrade or IDL update whose buffer is missing, does not decode, or is controlled by anyone but the vault, since its code or IDL could change after approval;
 - an upgrade or IDL update whose buffer an earlier instruction of the same proposal may write, without `--allow-rewritten-buffer`, as in [Simulated post-state](#simulated-post-state);
+- a loader instruction other than Upgrade, SetAuthority, SetAuthorityChecked and Close, such as InitializeBuffer, Write, DeployWithMaxDataLen, ExtendProgram or ExtendProgramChecked, and any loader tag this tool does not know;
+- a loader Migrate, which moves the program to loader v4, where this tool can no longer review, upgrade or hand over its authority;
 - a program-metadata Write that copies a source buffer the vault does not control, since what it writes could change after approval;
 - on `execute`, a proposal that writes the IDL account without a buffer, such as a Write and an Initialize, unless `--expect-buffer-hash` names the IDL hash its simulation sets, which `approve` printed as `buffer_hash`;
 - a program-metadata instruction that does not decode at the `@solana-program/program-metadata@0.10.0` layout;
@@ -269,7 +277,11 @@ node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --e
 - a program-metadata instruction signed by the vault that does more than update the engine's IDL, on every cluster, without `--allow-undecoded-vault-signer`: one that acts on metadata other than the engine's canonical IDL account, names another program, passes the vault in a role other than the authority, hands the authority of the IDL account or a buffer to a key other than the vault, or closes or trims the IDL account into an address outside the vault;
 - a Squads config transaction, which adds or removes members or changes the threshold or time lock. `show` prints each change and the members, threshold and time lock after it runs. Inspect it in the Squads app at https://app.squads.so and do not approve it blindly; `--allow-config` on `approve` and `execute` signs it once every printed change is expected.
 
-The tool decodes in full the intent engine, the upgradeable loader and a system transfer, which it shows as `Transfers <sol> SOL (<lamports> lamports) from <vault> to <recipient>`. For any other program that the vault signs for, `show` adds a problem that names the instruction and the program. With `--allow-undecoded-vault-signer`, `approve` and `execute` put that problem first in the summary as a warning and sign. Pass it only for a program you trust with everything the vault holds and controls.
+`approve` and `reject` refuse a stale proposal, one made before a config change to the members, threshold or time lock executed, since Squads refuses votes on it; `execute` refuses a stale config transaction for the same reason. A draft proposal its creator never activated gets its own refusal. `execute --expect-buffer-hash` refuses a config transaction, which upgrades nothing.
+
+`propose-upgrade`, `propose-authority` and `propose-admin` review the proposal they build the same way before sending it. They print its problems and refuse it, since `approve` would refuse it without an override; `--allow-review-problems` proposes it anyway, with each problem as a warning in the summary.
+
+The tool decodes in full the intent engine, the upgradeable loader's Upgrade, SetAuthority, SetAuthorityChecked and Close, and a system transfer, which it shows as `Transfers <sol> SOL (<lamports> lamports) from <vault> to <recipient>`. For any other program that the vault signs for, `show` adds a problem that names the instruction and the program. With `--allow-undecoded-vault-signer`, `approve` and `execute` put that problem first in the summary as a warning and sign. Pass it only for a program you trust with everything the vault holds and controls.
 
 ## Simulated post-state
 

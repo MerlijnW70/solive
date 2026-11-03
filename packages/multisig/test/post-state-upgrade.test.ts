@@ -4,7 +4,7 @@ import type { Chain } from "../src/chain.js";
 import { EXIT_OK, EXIT_REFUSED, main } from "../src/main.js";
 import { rewrittenText } from "../src/proposal-effects.js";
 import { ENGINE_PROGRAM, LOADER, programDataOf, upgradeInstruction } from "../src/squads.js";
-import { bytesOf, craftVault, header, multisig, openSvm, proposalOf, s, sha256, type Made } from "./multisig-world.js";
+import { approveDirectly, bytesOf, craftVault, header, multisig, openSvm, proposalOf, s, sha256, type Made } from "./multisig-world.js";
 import { concat, u32, u64 } from "./program-metadata-world.js";
 import { engineProgram, randomAddress, squadsProgram } from "./svm.js";
 
@@ -94,7 +94,7 @@ describe("the loader upgrade path's simulated program hash", () => {
     expect((await proposalOf(m, 1n))["status"]).toBe("approved");
   });
 
-  it("a loader Write into the buffer before the upgrade is refused, and execute refuses the transaction the runtime would fail", async () => {
+  it("a loader Write into the buffer before the upgrade is refused by approve and execute, with or without allow rewritten buffer", async () => {
     const { m, programData, buffer, spill } = await upgradeWorld("up-write");
     const { at, patched } = patchedText(NEXT);
     const write: Instruction = {
@@ -107,18 +107,18 @@ describe("the loader upgrade path's simulated program hash", () => {
     };
     const index = await craftVault(m, [write, await upgradeInstruction({ program: ENGINE_PROGRAM, buffer, spill, authority: m.vault })]);
     const on = ["--multisig", m.address, "--index", index.toString()];
+    const writeProblem = "instruction 1 is a loader Write, which this tool does not decode, so approving it would sign for an effect the tool cannot show";
     const problem = rewrittenText(2, buffer, [1], "code");
     const shown = await proposalOf(m, index);
-    expect([shown["problems"], shown["buffers"]]).toEqual([[problem], [{ buffer, authority: m.vault, hash: null, writtenBy: [1] }]]);
-    const refused = await s.cli("approve", ...on, "--keypair", m.file("a"), "--yes");
-    expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`refusing to sign proposal ${index}: ${problem}`)]);
-    for (const name of ["a", "b"]) {
-      const approved = await s.cli("approve", ...on, "--allow-rewritten-buffer", "--keypair", m.file(name), "--yes");
-      expect([approved.code, approved.json()["buffer_hash"]]).toEqual([EXIT_OK, sha256(patched)]);
+    expect([shown["problems"], shown["buffers"]]).toEqual([[writeProblem, problem], [{ buffer, authority: m.vault, hash: null, writtenBy: [1] }]]);
+    for (const allow of [[], ["--allow-rewritten-buffer"]]) {
+      const refused = await s.cli("approve", ...on, ...allow, "--keypair", m.file("a"), "--yes");
+      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`refusing to sign proposal ${index}: ${writeProblem}; ${problem}`)]);
     }
+    await approveDirectly(m, index, ["a", "b"]);
     const failed = await s.cli("execute", ...on, "--expect-buffer-hash", sha256(patched), "--allow-rewritten-buffer", "--keypair", m.file("c"), "--yes");
-    expect([failed.code, failed.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringMatching(/^simulating the execute transaction fails with .*; nothing was sent$/)]);
-    expect(failed.json()["logs"]).toContain(`Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf failed: Program ${LOADER} not supported by inner instructions`);
+    expect([failed.code, failed.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`refusing to sign proposal ${index}: ${writeProblem}; ${problem}`)]);
+    expect((await proposalOf(m, index))["status"]).toBe("approved");
     expect(codeAt(programData)).toBe(sha256(engineProgram()));
   });
 });

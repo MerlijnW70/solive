@@ -47,6 +47,7 @@ export const UPGRADE_TAG = 3;
 export const SET_AUTHORITY_TAG = 4;
 export const CLOSE_TAG = 5;
 export const SET_AUTHORITY_CHECKED_TAG = 7;
+const MIGRATE_TAG = 8;
 export const BUFFER_HEADER = 37;
 export const PROGRAM_DATA_HEADER = 45;
 export const SQUADS_APP = "https://app.squads.so";
@@ -277,7 +278,24 @@ async function describe(chain: Chain, ix: Instruction, engineData: Address, vaul
   if (tag === CLOSE_TAG) {
     return describeClose(chain, ix, engineData, data.length - 4);
   }
-  return { summary: raw(`Loader ${LOADER_NAMES[tag] ?? `instruction ${tag}`}`, ix) };
+  return describeUnshownLoader(ix, tag, position);
+}
+
+function unshownLoaderText(tag: number, position: number, target: Address | undefined): string {
+  const name = LOADER_NAMES[tag];
+  if (tag === MIGRATE_TAG) {
+    return `instruction ${position} is a loader Migrate, which moves the program whose data is ${target ?? "not named"} to loader v4, where this tool can no longer review, upgrade or hand over its authority`;
+  }
+  return name === undefined
+    ? `instruction ${position} is loader instruction ${tag}, which this tool does not know, so approving it would sign for an effect the tool cannot show`
+    : `instruction ${position} is a loader ${name}, which this tool does not decode, so approving it would sign for an effect the tool cannot show`;
+}
+
+function describeUnshownLoader(ix: Instruction, tag: number, position: number): Described {
+  return {
+    summary: raw(`Loader ${LOADER_NAMES[tag] ?? `instruction ${tag}`}`, ix),
+    problem: unshownLoaderText(tag, position, ix.accounts?.[0]?.address),
+  };
 }
 
 export async function describeInstructions(
@@ -361,6 +379,21 @@ const empty = (kind: Review["kind"], summary: string, problem: string): Review =
   engineClose: null,
 });
 
+export function bufferProblems(buffers: readonly BufferCheck[], vault: Address): string[] {
+  return buffers.flatMap((check) => {
+    if (check.hash === null && check.writtenBy === undefined) {
+      return [
+        check.sets === "idl"
+          ? `buffer ${check.buffer} is missing, not a program-metadata buffer, or holds data that does not decode`
+          : `buffer ${check.buffer} is missing or not a program buffer`,
+      ];
+    }
+    return check.authority === vault
+      ? []
+      : [`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}, so ${check.sets === "idl" ? "the IDL it sets" : "its code"} can change after approval`];
+  });
+}
+
 async function reviewVault(chain: Chain, at: Address, index: bigint, data: ReadonlyUint8Array): Promise<Review> {
   const stored = decodeAccount("VaultTransaction", vaultTransactionCodec, data);
   if (stored === null) {
@@ -395,17 +428,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
       problems.push(`it asks ${key} to sign, but only the vault ${vault} and the transaction's ephemeral signers may; executing it would lend ${key}'s signature to it`);
     }
   }
-  for (const check of buffers) {
-    if (check.hash === null && check.writtenBy === undefined) {
-      problems.push(
-        check.sets === "idl"
-          ? `buffer ${check.buffer} is missing, not a program-metadata buffer, or holds data that does not decode`
-          : `buffer ${check.buffer} is missing or not a program buffer`,
-      );
-    } else if (check.authority !== vault) {
-      problems.push(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}, so ${check.sets === "idl" ? "the IDL it sets" : "its code"} can change after approval`);
-    }
-  }
+  problems.push(...bufferProblems(buffers, vault));
   return { ...base, summary: decoded.map((d) => d.summary), instructions: decoded, buffers, problems, relayed, rewritten, sets, engineClose };
 }
 

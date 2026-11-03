@@ -14,6 +14,7 @@ import { type Plan, readMultisig, Refusal, requireMember, VAULT_INDEX, vaultOf }
 import {
   actionText,
   afterConfig,
+  bufferProblems,
   describeInstructions,
   instructionView,
   LOADER,
@@ -34,12 +35,27 @@ async function nextSlot(chain: Chain, at: Address, member: Address): Promise<{ m
   return { multisig, index, transaction: await transactionPda(at, index), proposal: await proposalPda(at, index) };
 }
 
-async function propose(chain: Chain, at: Address, member: Address, instructions: Instruction[]): Promise<Plan> {
+export type ProblemsAllowed = { allowReviewProblems?: boolean };
+
+export const PROPOSE_PROBLEMS = "approve refuses such a proposal without an override, so pass --allow-review-problems only to propose it anyway";
+
+export async function requireProposer(chain: Chain, at: Address, member: Address): Promise<Address> {
+  requireMember(await readMultisig(chain, at), at, member, "initiate", "propose");
+  return vaultOf(at);
+}
+
+async function propose(chain: Chain, at: Address, member: Address, instructions: Instruction[], allowed: ProblemsAllowed): Promise<Plan> {
   const { multisig, index, transaction, proposal } = await nextSlot(chain, at, member);
   const vault = await vaultOf(at);
-  const { decoded } = await describeInstructions(chain, instructions);
+  const seen = await describeInstructions(chain, instructions, vault);
+  const problems = [...seen.problems, ...bufferProblems(seen.buffers, vault), ...seen.rewritten, ...seen.relayed];
+  const summary = seen.decoded.map((d) => d.summary);
+  if (problems.length > 0 && allowed.allowReviewProblems !== true) {
+    throw new Refusal(`refusing to propose: ${problems.join("; ")}; ${PROPOSE_PROBLEMS}`, { proposal: { summary, problems } });
+  }
+  const warnings = [...(seen.engineClose === null ? [] : [seen.engineClose]), ...problems].map((text) => `Warning: ${text}`);
   return {
-    summary: [`Proposes vault transaction ${index} on multisig ${at}; it runs once ${multisig.threshold} members approve`, ...decoded.map((d) => d.summary)],
+    summary: [...warnings, `Proposes vault transaction ${index} on multisig ${at}; it runs once ${multisig.threshold} members approve`, ...summary],
     instructions: [
       vaultTransactionCreate({ multisig: at, transaction, creator: member, vaultIndex: VAULT_INDEX, message: compileVaultMessage(vault, instructions) }),
       proposalCreate({ multisig: at, proposal, creator: member, index }),
@@ -52,6 +68,7 @@ async function propose(chain: Chain, at: Address, member: Address, instructions:
       transaction,
       proposal,
       instructions: instructions.map(instructionView),
+      ...(problems.length > 0 ? { problems } : {}),
     },
   };
 }
@@ -93,7 +110,7 @@ export async function upgradeInstruction(input: { program: Address; buffer: Addr
   };
 }
 
-export async function proposeUpgrade(chain: Chain, input: { multisig: Address; member: Address; program: Address; buffer: Address; spill: Address }): Promise<Plan> {
+export async function proposeUpgrade(chain: Chain, input: { multisig: Address; member: Address; program: Address; buffer: Address; spill: Address } & ProblemsAllowed): Promise<Plan> {
   const vault = await vaultOf(input.multisig);
   const buffer = loaderState(await chain.account(input.buffer));
   if (buffer.kind !== "buffer") {
@@ -107,7 +124,7 @@ export async function proposeUpgrade(chain: Chain, input: { multisig: Address; m
   }
   await requireUpgradedBy(chain, input.program, vault);
   const instruction = await upgradeInstruction({ program: input.program, buffer: input.buffer, spill: input.spill, authority: vault });
-  return propose(chain, input.multisig, input.member, [instruction]);
+  return propose(chain, input.multisig, input.member, [instruction], input);
 }
 
 async function requireUpgradedBy(chain: Chain, program: Address, vault: Address): Promise<void> {
@@ -133,14 +150,14 @@ export async function setAuthorityInstruction(input: { program: Address; authori
   };
 }
 
-export async function proposeAuthority(chain: Chain, input: { multisig: Address; member: Address; program: Address; next: Address }): Promise<Plan> {
+export async function proposeAuthority(chain: Chain, input: { multisig: Address; member: Address; program: Address; next: Address } & ProblemsAllowed): Promise<Plan> {
   const vault = await vaultOf(input.multisig);
   if (input.next === vault) {
     throw new Refusal(`the vault ${vault} already holds the upgrade authority it would hand over`);
   }
   await requireUpgradedBy(chain, input.program, vault);
   const instruction = await setAuthorityInstruction({ program: input.program, authority: vault, next: input.next });
-  return propose(chain, input.multisig, input.member, [instruction]);
+  return propose(chain, input.multisig, input.member, [instruction], input);
 }
 
 type PrintedInstruction = { program: string; accounts: { address: string; signer: boolean; writable: boolean }[]; data: string };
@@ -192,7 +209,7 @@ export function wrapPrinted(stdout: string, vault: Address): Instruction[] {
   });
 }
 
-export async function proposeInstructions(chain: Chain, input: { multisig: Address; member: Address; stdout: string }): Promise<Plan> {
+export async function proposeInstructions(chain: Chain, input: { multisig: Address; member: Address; stdout: string } & ProblemsAllowed): Promise<Plan> {
   const instructions = wrapPrinted(input.stdout, await vaultOf(input.multisig));
-  return propose(chain, input.multisig, input.member, instructions);
+  return propose(chain, input.multisig, input.member, instructions, input);
 }

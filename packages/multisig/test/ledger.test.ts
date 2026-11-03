@@ -318,7 +318,7 @@ describe("multisig", () => {
     const key = await createKeyPairSignerFromPrivateKeyBytes(seed);
     s.fund(key.address);
     const file = join(mkdtempSync(join(tmpdir(), "multisig-ledger-")), "member.json");
-    writeFileSync(file, JSON.stringify([...seed, ...getAddressEncoder().encode(key.address)]));
+    writeFileSync(file, JSON.stringify([...seed, ...getAddressEncoder().encode(key.address)]), { mode: 0o600 });
     const { multisig, approve } = await proposed("ledger-file", key.address);
     let opened = 0;
     const deps: Deps = {

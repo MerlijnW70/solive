@@ -70,10 +70,12 @@ export {
 } from "./multisig-state.js";
 export {
   printedSummary,
+  PROPOSE_PROBLEMS,
   proposeAuthority,
   proposeInstructions,
   proposeTimeLock,
   proposeUpgrade,
+  requireProposer,
   setAuthorityInstruction,
   upgradeInstruction,
   wrapPrinted,
@@ -143,6 +145,24 @@ async function activeProposal(chain: Chain, at: Address, index: bigint): Promise
   return proposal;
 }
 
+const isStale = (multisig: Multisig, index: bigint) => index <= multisig.staleTransactionIndex;
+
+export const staleRefusal = (index: bigint, multisig: Multisig, action: string) =>
+  `proposal ${index} is stale: a change to the multisig's members, threshold or time lock executed after it was made, which marks every proposal up to ${multisig.staleTransactionIndex} stale, so Squads refuses to ${action} it; propose it again`;
+
+export const draftRefusal = (index: bigint, action: string) =>
+  `proposal ${index} is a draft that its creator never activated, so it cannot ${action} until it is activated; ${INSPECT} before activating it`;
+
+function requireVotable(multisig: Multisig, proposal: Proposal, index: bigint, action: string): void {
+  const kind = proposal.status.__kind;
+  if ((kind === "Active" || kind === "Draft") && isStale(multisig, index)) {
+    throw new Refusal(staleRefusal(index, multisig, action));
+  }
+  if (kind === "Draft") {
+    throw new Refusal(draftRefusal(index, action));
+  }
+}
+
 const INSPECT = `inspect it in the Squads app at ${SQUADS_APP} and do not approve it blindly`;
 
 export type Allowed = { allowConfig?: boolean; allowEngineClose?: boolean; allowUndecodedVaultSigner?: boolean; allowRewrittenBuffer?: boolean };
@@ -208,6 +228,7 @@ export async function approve(chain: Chain, input: { multisig: Address; member: 
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "vote", "approve");
   const proposal = await activeProposal(chain, input.multisig, input.index);
+  requireVotable(multisig, proposal, input.index, "approve");
   if (proposal.status.__kind !== "Active") {
     throw new Refusal(`proposal ${input.index} is ${statusOf(proposal)}, so it takes no more approvals`);
   }
@@ -243,6 +264,7 @@ export async function reject(chain: Chain, input: { multisig: Address; member: A
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "vote", "reject");
   const proposal = await activeProposal(chain, input.multisig, input.index);
+  requireVotable(multisig, proposal, input.index, "reject");
   const seen = await review(chain, input.multisig, input.index, multisig);
   const target = { multisig: input.multisig, proposal: await proposalPda(input.multisig, input.index), member: input.member };
   const details = { multisig: input.multisig, index: input.index.toString(), proposal: reviewView(seen) };
@@ -367,7 +389,8 @@ export async function execute(
   requireMember(multisig, input.multisig, input.member, "execute", "execute");
   const proposal = await activeProposal(chain, input.multisig, input.index);
   const status = proposal.status;
-  if (status.__kind === "Active" || status.__kind === "Draft") {
+  requireVotable(multisig, proposal, input.index, "execute");
+  if (status.__kind === "Active") {
     const missing = multisig.threshold - proposal.approved.length;
     throw new Refusal(`proposal ${input.index} has ${proposal.approved.length} of ${multisig.threshold} approvals; it needs ${missing} more before it can execute`);
   }
@@ -379,7 +402,14 @@ export async function execute(
   if (now < ready) {
     throw new Refusal(`proposal ${input.index} is time locked for ${ready - now} more seconds, until ${new Date(Number(ready) * 1000).toISOString()}`);
   }
-  const seen = await reviewed(chain, input.multisig, input.index, multisig, input);
+  const seen = await review(chain, input.multisig, input.index, multisig);
+  if (seen.kind === "config" && isStale(multisig, input.index)) {
+    throw new Refusal(staleRefusal(input.index, multisig, "execute"), { proposal: reviewView(seen) });
+  }
+  if (seen.kind === "config" && (input.expectBufferHashes ?? []).length > 0) {
+    throw new Refusal(`proposal ${input.index} is a config transaction, which upgrades nothing, so --expect-buffer-hash does not apply`, { proposal: reviewView(seen) });
+  }
+  await requireReviewed(chain, seen, input.index, input);
   const proposalAt = await proposalPda(input.multisig, input.index);
   const details = { multisig: input.multisig, index: input.index.toString(), proposal: reviewView(seen) };
   const summary = [...warned(seen), `Executes proposal ${input.index} on multisig ${input.multisig}`, ...seen.summary];
