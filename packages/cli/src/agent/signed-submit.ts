@@ -9,7 +9,7 @@ import { tool } from "./names.js";
 import { escrowJudge } from "./create.js";
 import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
-import { createCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
+import { relayCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { admitRelay, type Relay } from "./relay.js";
 import { type Call, enter } from "./claims.js";
 import { paramsOf } from "./shapes.js";
@@ -126,7 +126,7 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
     relay,
     input.owner,
     BigInt(config.createFee) + BigInt(config.crankBounty) + prepared.priorityLamports,
-    createCost(config, rate) +
+    relayCost(config, rate) +
       prepared.priorityLamports +
       (feeAccount.create.length > 0 ? rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate) : 0n) +
       (split ? SIGNATURE_FEE + prepared.priorityLamports : 0n),
@@ -192,7 +192,7 @@ export const previewSignedIntent = define({
       relayer_fee: input.relayer_fee,
       summary: [
         ...withFromNow(description.lines, fields.expiresAt, shownAt),
-        `Relaying costs you ${createCost(config, await rentRate(transport))} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
+        `Relaying costs you ${relayCost(config, await rentRate(transport))} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
         ...(specUrl === undefined ? [] : [publishesLine(specUrl), `Mirror: ${NOT_ON_MIRROR}`]),
       ],
       warnings: [...description.warnings, ...(specUrl === undefined ? [] : [SPEC_URL_UNSIGNED])],

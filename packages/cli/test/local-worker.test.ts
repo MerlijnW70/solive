@@ -174,7 +174,7 @@ describe("a local worker for any job", () => {
       const other = (await generateKeyPairSigner()).address;
       const sealed = await seal(new Uint8Array(SPEC), [wallet, other]);
       h.specPages.set(SPEC_URL, sealed);
-      const terms = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: sha(sealed), spec_url: SPEC_URL };
+      const terms = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: sha(SPEC), spec_url: SPEC_URL };
       const escrow = await ok(hirer, "wallet_escrow", await approved(hirer, "wallet_escrow", terms));
       const intent = escrow["intent"] as Address;
       expect((await call(hirer, "wallet_worker", { intent })).value).toMatchObject({ code: "WorkerUnfit", hint: jobSealed(intent) });

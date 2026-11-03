@@ -1,9 +1,10 @@
-import type { Address } from "@solana/kit";
+import type { Address, Instruction } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { buildClaimsWithList, buildOpenClaims, buildOpenClaimsListed, claimantChunks, isSealed, sealedTo } from "@intent-engine/core/internal";
 import { pinnedFetch } from "@intent-engine/client/node";
 import { loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { fetchBytes } from "../../delivery-fetch.js";
+import { priorityLamports } from "../../compute.js";
 import { execute } from "../../flows.js";
 import { type AgentContext, lookupOf } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -11,6 +12,7 @@ import type { AfterCreate } from "../create.js";
 import { prepare } from "../prepare.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { preparedView } from "../shapes.js";
+import { networkFee } from "./costs.js";
 import type { WalletSigner } from "./guard.js";
 import { offered } from "./offer.js";
 
@@ -82,10 +84,19 @@ export const claimsUnopened = (nonce: unknown, terms: ClaimTerms, workers: reado
 
 type Offer = Parameters<typeof offered>;
 
+export type Priced = (lamports: bigint, sends: number) => void;
+
+type Input = Omit<Offer[2], "priced"> & { priced?: Priced | undefined };
+
+const single = (input: Input): Offer[2] => {
+  const { priced, ...rest } = input;
+  return { ...rest, priced: priced === undefined ? undefined : (lamports) => priced(lamports, 1) };
+};
+
 export async function offeredWithClaims(
   ctx: AgentContext,
   call: Call,
-  input: Offer[2],
+  input: Input,
   terms: Offer[3],
   done: string | undefined,
   claims: { terms: ClaimTerms; workers: Claimants } | undefined,
@@ -93,7 +104,7 @@ export async function offeredWithClaims(
 ): Promise<Record<string, unknown>> {
   const after = claims === undefined ? undefined : opener(claims.terms, claims.workers);
   try {
-    return (await offered(ctx, call, { ...input, after }, terms, done)) as Record<string, unknown>;
+    return (await offered(ctx, call, { ...single(input), after }, terms, done)) as Record<string, unknown>;
   } catch (error) {
     const split = claims?.workers !== undefined && signer.device === undefined && error instanceof AgentRefusal && error.problem.code === "ClaimListTooLarge";
     if (!split || claims?.workers === undefined) {
@@ -106,28 +117,69 @@ export async function offeredWithClaims(
   }
 }
 
+const paidBy = (signer: WalletSigner, priority: bigint): bigint => networkFee({ signers: [signer.address], priority_fee_lamports: priority });
+
+export async function previewFees(
+  ctx: AgentContext,
+  call: Call,
+  input: Input,
+  pieces: readonly { terms: Offer[3]; claims: { terms: ClaimTerms; workers: Claimants } | undefined }[],
+  signer: WalletSigner,
+): Promise<{ lamports: bigint; sends: number }[]> {
+  const fees: { lamports: bigint; sends: number }[] = [];
+  for (const piece of pieces) {
+    let fee = { lamports: 0n, sends: 1 };
+    const priced: Priced = (lamports, sends) => {
+      fee = { lamports, sends };
+    };
+    await offeredWithClaims(ctx, call, { ...input, send: false, approval: undefined, priced }, piece.terms, undefined, piece.claims, signer);
+    fees.push(fee);
+  }
+  return fees;
+}
+
+async function followUpFees(ctx: AgentContext, follow: readonly (readonly Instruction[])[], signer: WalletSigner): Promise<bigint> {
+  let total = 0n;
+  for (const instructions of follow) {
+    total += paidBy(signer, priorityLamports(await ctx.transport.budget(instructions, signer.address)));
+  }
+  return total;
+}
+
 async function followedByClaims(
   ctx: AgentContext,
   call: Call,
-  input: Offer[2],
+  input: Input,
   terms: Offer[3],
   done: string | undefined,
   claims: ClaimTerms,
   workers: readonly Address[],
   signer: WalletSigner,
 ): Promise<Record<string, unknown>> {
-  const made = (await offered(ctx, call, { ...input, after: undefined }, terms, done)) as Record<string, unknown>;
-  const summary = [...((made["summary"] as string[]) ?? []), claimsAfter(claimantChunks(workers).length)];
+  let first = 0n;
+  const made = (await offered(ctx, call, { ...single({ ...input, priced: (lamports) => {
+        first = lamports;
+      } }), after: undefined }, terms, done)) as Record<string, unknown>;
+  const sends = claimantChunks(workers).length;
+  const priced = (fees: bigint) => input.priced?.(first + fees, 1 + sends);
+  const summary = [...((made["summary"] as string[]) ?? []), claimsAfter(sends)];
+  const build = () => buildClaimsWithList({ owner: signer, intent: made["intent"] as Address, ...claims, workers });
   if (made["sent"] !== true) {
+    priced(await followUpFees(ctx, await build(), signer));
     return { ...made, summary };
   }
+  let fees = 0n;
   try {
-    for (const instructions of await buildClaimsWithList({ owner: signer, intent: made["intent"] as Address, ...claims, workers })) {
-      await execute(ctx.transport, preparedView(await prepare(ctx.transport, instructions, signer.address)), signer);
+    for (const instructions of await build()) {
+      const prepared = preparedView(await prepare(ctx.transport, instructions, signer.address));
+      await execute(ctx.transport, prepared, signer);
+      fees += paidBy(signer, prepared.priority_fee_lamports);
     }
   } catch (error) {
+    priced(fees);
     const problem = problemOf(error);
     return { ...made, summary, warnings: [...((made["warnings"] as string[]) ?? []), claimsUnopened(made["nonce"], claims, workers, `${problem.code}: ${problem.hint}`)] };
   }
+  priced(fees);
   return { ...made, summary };
 }

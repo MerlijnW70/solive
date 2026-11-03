@@ -11,6 +11,7 @@ import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { claimsTooLarge } from "../src/agent/create.js";
 import { claimsAfter, NO_LISTED_WORKER, sealedLimits } from "../src/agent/wallet/escrow-claims.js";
+import { networkFees, sol as solText, TOTAL } from "../src/agent/wallet/costs.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, h, world } from "./harness.js";
 import { approved } from "./approved.js";
@@ -24,6 +25,12 @@ const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const encoded = (text: string) => new TextEncoder().encode(text);
 const sol = (at: Address) => h.svm.getBalance(at) ?? 0n;
 const rentOf = (space: number) => h.svm.minimumBalanceForRentExemption(BigInt(space));
+
+function totalOf(summary: unknown): bigint {
+  const line = (summary as string[]).find((text) => text.startsWith(TOTAL)) ?? "";
+  const [whole = "0", part = ""] = (/^Total: this (?:send|plan) takes ([0-9.]+) SOL from this wallet: /.exec(line)?.[1] ?? "").split(".");
+  return BigInt(whole) * 1_000_000_000n + BigInt(part.padEnd(9, "0"));
+}
 
 function address(): Address {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
@@ -139,12 +146,35 @@ describe("wallet escrows on a sealed spec", () => {
     const shown = await ok(client, "wallet_escrow", terms(judge));
     expect(shown["summary"]).toContain(claimsAfter(2));
     expect(shown["summary"]).toContain(sealedLimits(workers));
-    const wires = h.wires.length;
+    const fees = (shown["summary"] as string[]).find((line) => line.startsWith("Fees: ")) ?? "";
+    expect(fees).toContain(`, ${formatAmount(3n * SIGNATURE_FEE, 9)} SOL ${networkFees(3)}`);
+    expect(networkFees(3)).toBe("network fees of its 3 transactions");
+    const total = totalOf(shown["summary"]);
+    const [wires, before] = [h.wires.length, sol(wallet)];
     const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...terms(judge) }));
     expect(h.wires.length - wires).toBe(3);
+    expect(before - sol(wallet)).toBe(total);
+    expect(totalOf(made["summary"])).toBe(total);
     expect(JSON.stringify(made["warnings"])).not.toContain("claims did not all open");
     const read = await ok(client, "get_claims", { owner: wallet, nonce: made["nonce"] });
     expect(read["claim_list"]).toEqual({ workers, size: 30, complete: true });
     expect(claimsTooLarge(1_300)).toContain("intent-engine claims open --workers");
+  });
+
+  it("prices each plan piece's follow-up claim transactions on their own, and the preview total is what the send spends", async () => {
+    const { client, wallet } = await setup();
+    const judge = address();
+    const [worker, ...many] = Array.from({ length: 31 }, () => address());
+    h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [wallet, worker ?? judge]));
+    h.specPages.set(OTHER_URL, await seal(encoded(SPEC), [wallet, ...many]));
+    const plan = { sell: "SOL", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01", spec_url: OTHER_URL }] };
+    const shown = await ok(client, "wallet_escrow_plan", plan);
+    expect(shown["summary"]).toContain(`Network fees: ${solText(4n * SIGNATURE_FEE)} in all for the 4 transactions of this plan, piece 1 ${solText(SIGNATURE_FEE)}, piece 2 ${solText(3n * SIGNATURE_FEE)}`);
+    const total = totalOf(shown["summary"]);
+    const [wires, before] = [h.wires.length, sol(wallet)];
+    const made = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", plan));
+    expect(made).toMatchObject({ sent: true });
+    expect(h.wires.length - wires).toBe(4);
+    expect(before - sol(wallet)).toBe(total);
   });
 });

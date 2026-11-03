@@ -78,7 +78,7 @@ describe("what an escrow warns about before and after it is sent", () => {
     const plan = { sell: "SOL", attestor: wallet, pieces: [{ name: "a", amount: "0.01", spec_hash: wrong, spec_url: SPEC_URL }, { name: "b", amount: "0.01", spec_hash: wrong }] };
     const line = `Piece 1 (a): spec_url hashes to ${sha(SPEC)}, not spec_hash ${wrong}; publish the exact bytes, or fix spec_hash`;
     expect((await ok(client, "wallet_escrow_plan", plan))["warnings"]).toContain(line);
-    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", plan));
+    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan, allow_wrong_spec: true }));
     expect(sent).toMatchObject({ sent: true });
     expect(sent["warnings"]).not.toContain(line);
   });

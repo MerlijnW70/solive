@@ -7,7 +7,7 @@ import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { account, InvalidInput, list, object, text } from "../schema.js";
 import { SIGNATURE_FEE } from "../budget.js";
-import { tokenAccountRent } from "./costs.js";
+import { vaultRent } from "./costs.js";
 import { eventsIn, returnedOf } from "./history-work.js";
 import { createdMint, heldMint, releaseLookup, releasedMint } from "./releases.js";
 
@@ -90,7 +90,7 @@ async function spentOn(transport: Transport, wallet: Address, intent: Address, m
   feesSol += SIGNATURE_FEE * BigInt(transactions.filter(({ signature, feePayer }) => feePayer === wallet && touched.has(signature)).length);
   const [vault] = await findVaultPda({ intent });
   const [held, vaultView] = await transport.getAccounts([intent, vault]);
-  const rentSol = (held?.lamports ?? 0n) + (vaultView === null || vaultView === undefined ? 0n : await tokenAccountRent(transport, vaultView.owner));
+  const rentSol = (held?.lamports ?? 0n) + (vaultView === null || vaultView === undefined ? 0n : await vaultRent(transport, mint));
   return { paidOut, fees, feesSol, rentSol };
 }
 

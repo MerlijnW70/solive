@@ -134,7 +134,7 @@ describe("the spec goes to the mirror when an escrow is sent", () => {
     h.specPages.set(SPEC_URL, new TextEncoder().encode("an edited spec"));
     const preview = await ok(client, "wallet_escrow", { ...terms, spec_url: SPEC_URL });
     expect(line(preview["summary"], "Mirror:")[0]).toContain("is not uploaded");
-    const sent = await send({ ...terms, spec_url: SPEC_URL });
+    const sent = await send({ ...terms, spec_url: SPEC_URL, allow_wrong_spec: true });
     expect(puts).toStrictEqual([]);
     expect(sent).toMatchObject({ sent: true, spec_published: false, spec_not_published: `spec_url hashes to ${sha("an edited spec")}, not spec_hash ${HASH}` });
   });
@@ -330,7 +330,7 @@ describe("the spec goes to the mirror when an escrow is sent", () => {
   });
 
   describe("a plan", () => {
-    const plan = () => ({ sell: "SOL", attestor: judge, spec_hash: HASH, spec_url: SPEC_URL, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }, { name: "c", amount: "0.01", spec_hash: OTHER_HASH, spec_url: OTHER_URL }, { name: "d", amount: "0.01", spec_hash: SOME_HASH }] });
+    const plan = () => ({ sell: "SOL", attestor: judge, spec_hash: HASH, spec_url: SPEC_URL, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }, { name: "c", amount: "0.01", spec_hash: OTHER_HASH, spec_url: OTHER_URL }, { name: "d", amount: "0.01", spec_hash: SOME_HASH }], allow_wrong_spec: true });
 
     beforeEach(() => {
       h.specPages.set(OTHER_URL, new TextEncoder().encode(OTHER));

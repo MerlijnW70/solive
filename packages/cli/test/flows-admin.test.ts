@@ -2,7 +2,7 @@ import { getBase58Encoder, getBase64Encoder, type KeyPairSigner, lamports } from
 import { beforeEach, describe, expect, it } from "vitest";
 import { findConfigPda, getConfigDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { loadConfig } from "@intent-engine/client/internal";
-import { createCost, rentRate } from "../src/agent/budget.js";
+import { relayCost, rentRate } from "../src/agent/budget.js";
 import { AUTHORITY_NEXT } from "../src/commands.js";
 import { NOT_SENT } from "../src/flows.js";
 import { TREASURY_IS_PROGRAM, treasuryTooEmpty } from "../src/treasury.js";
@@ -62,8 +62,8 @@ describe("command line flows", () => {
     const submit = ["signed", "submit", "--keypair", "relayer.json", "--file", "s.json"];
     const checked = (await cli(submit, keys)).json() as Json;
     expect(checked).toMatchObject({ intent: prepared["intent"], exists: 0, relayer_fee: "5", sent: false, next: NOT_SENT });
-    const relayCost = createCost((await loadConfig(transport)).config, await rentRate(transport));
-    expect(checked["summary"].at(-1)).toContain(`Relaying costs you ${relayCost} lamports in create fee`);
+    const relaying = relayCost((await loadConfig(transport)).config, await rentRate(transport));
+    expect(checked["summary"].at(-1)).toContain(`Relaying costs you ${relaying} lamports in create fee`);
     expect(checked["summary"].at(-1)).toMatch(/^Relaying costs you \d+ lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive /);
     expect(exists(prepared["intent"])).toBe(false);
     const relayed = (await cli([...submit, "--yes"], keys)).json() as Json;

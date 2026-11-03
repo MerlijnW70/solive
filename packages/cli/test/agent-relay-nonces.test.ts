@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { formatAmount } from "@intent-engine/core";
 import { findDelegatePda, specMemo, U64_MAX } from "@intent-engine/core/internal";
 import { DEVNET_GENESIS_HASH, MEMO_PROGRAM_ADDRESS } from "@intent-engine/client/internal";
-import { createCost, rentRate } from "../src/agent/budget.js";
+import { relayCost, rentRate } from "../src/agent/budget.js";
 import { DEFAULT_SUBMIT_WITHIN, publishesLine, SPEC_URL_TOO_LONG, SPEC_URL_UNSIGNED } from "../src/agent/signed.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
 import { SPEC_URL_PLAIN } from "../src/agent/create.js";
@@ -165,7 +165,7 @@ describe("agent server against the deployed engine", () => {
     const relayer = await funded();
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 10_000n);
-    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
+    const cost = relayCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const relaying = await connect(relayer, [...free(), "--relay-hourly-lamports", (2n * cost).toString()]);
     const terms = swap({ owner: owner.address, order: { kind: "swap", amount_in: "100", min_out: "50" } });
     const sign = async (message: string) =>
@@ -194,7 +194,7 @@ describe("agent server against the deployed engine", () => {
     const relayer = await funded();
     const owner = await funded();
     const ownerInput = await ata(w.authority, owner.address, w.inputMint, 1_000n);
-    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
+    const cost = relayCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const relaying = await connect(relayer, [...free(), "--relay-hourly-lamports", cost.toString()]);
     const terms = swap({ owner: owner.address, order: { kind: "swap", amount_in: "100", min_out: "50" } });
     const sign = async (message: string) =>

@@ -7,7 +7,7 @@ import { testSignature } from "@intent-engine/client/testing";
 import { findAssociatedTokenAddress } from "@intent-engine/core";
 import { FailedOnChain } from "@intent-engine/client";
 import { failure } from "@intent-engine/client/internal";
-import { createCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
+import { relayCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { RELAY_TOO_LARGE } from "../src/agent/signed.js";
 import { ata, balance, cli, funded, h, NOW, setNow, transport, type World } from "./harness.js";
 import { connect, exists, execute, fail, ok, served, swapOf } from "./agent-kit.js";
@@ -61,7 +61,7 @@ describe("agent server against the deployed engine", () => {
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 1_000n);
     const rate = await rentRate(transport);
-    const cost = createCost({ createFee: 0, crankBounty: 0 }, rate);
+    const cost = relayCost({ createFee: 0, crankBounty: 0 }, rate);
     const base = cost + rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate);
     const needed = async (extra: string[], nonce: string, holding = false) => {
       const relayer = await funded();
@@ -106,7 +106,7 @@ describe("agent server against the deployed engine", () => {
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 1_000n);
     const relayer = await funded();
-    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
+    const cost = relayCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const limits = [...free(), "--relay-per-hour", "1", "--relay-hourly-lamports", cost.toString()];
     const relaying = await connect(relayer, limits);
     const p = await ok(relaying, "prepare_signed_intent", swap({ owner: owner.address }));

@@ -110,7 +110,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Pays for work once its attestor (the judge) approves: locks tokens until then; this wallet may be the attestor. spec_url lists the job in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. Spec uploads are public and permanent. Previews only; after the user says yes, call with send: true and its approval.
+Locks payment until its attestor (the judge) approves; this wallet may be the attestor. spec_url lists it in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. allow_wrong_spec sends a mismatched spec_url. Spec uploads are public and permanent. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -130,6 +130,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `publish_spec` | boolean | no | false keeps the spec off the public mirror; default true |
 | `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least 0.00089088, the rent-exempt minimum of a wallet; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
+| `allow_wrong_spec` | boolean | no | true sends even when the bytes at spec_url do not hash to spec_hash; leave out to refuse such a send |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
@@ -137,7 +138,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like solive_wallet_escrow; cancel one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs. Workers deliver to the attestor, not this wallet. Spec uploads are public and permanent. Previews only; after the user says yes, call with send: true and its approval.
+Pays for a larger task in pieces: one preview and send lock a payment per piece, each like solive_wallet_escrow; cancel one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs; allow_wrong_spec sends a mismatched spec_url. Workers deliver to the attestor. Spec uploads are public and permanent. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -154,6 +155,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least 0.00089088, the rent-exempt minimum of a wallet; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
+| `allow_wrong_spec` | boolean | no | true sends even when the bytes at spec_url do not hash to spec_hash; leave out to refuse such a send |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends every piece; leave out to preview |
 

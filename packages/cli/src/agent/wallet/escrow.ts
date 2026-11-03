@@ -11,10 +11,10 @@ import { AgentRefusal, problemOf, UNTRUSTED_DETAIL } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, oneAtATime, signerOf, termsApproval } from "./guard.js";
 import { offerFields, type Token } from "./offer.js";
-import { costLines, escrowCosts } from "./costs.js";
-import { CLAIMS_NEED_SPEC, claimInputs, claimTerms, specPreflight } from "./escrow-terms.js";
+import { costLines, escrowCosts, pieceCostLines } from "./costs.js";
+import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimTerms, refuseWrongSpec, specPreflight, wrongSpecLines } from "./escrow-terms.js";
 import { pieceUploadPlans, planLines, readerLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
-import { type Claimants, claimantsOf, listedLines, offeredWithClaims, specReader } from "./escrow-claims.js";
+import { type Claimants, claimantsOf, listedLines, offeredWithClaims, previewFees, specReader } from "./escrow-claims.js";
 
 export { CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, notSealedTo, SPEC_TOO_LARGE, STAKE_BELOW_RENT } from "./escrow-terms.js";
 
@@ -67,7 +67,7 @@ function recordedMint(sell: Address, url: string, chosen: string | undefined): A
 export const walletEscrow = define({
   name: tool("wallet_escrow"),
   title: "Escrow a payment for an attestor to release",
-  description: `Pays for work once its attestor (the judge) approves: locks tokens until then; this wallet may be the attestor. spec_url lists the job in ${tool("find_jobs")}; ${SPEC_MUST}. ${UPLOAD_PUBLIC} ${PREVIEW_APPROVAL}`,
+  description: `Locks payment until its attestor (the judge) approves; this wallet may be the attestor. spec_url lists it in ${tool("find_jobs")}; ${SPEC_MUST}. ${ALLOW_WRONG_SPEC}. ${UPLOAD_PUBLIC} ${PREVIEW_APPROVAL}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -83,6 +83,7 @@ export const walletEscrow = define({
     record_mint: optional(text("a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
     ...uploadInputs,
     ...claimInputs,
+    ...allowWrongSpec,
     approval: optional(text(APPROVAL_INPUT)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
@@ -114,6 +115,9 @@ export const walletEscrow = define({
     }
     const spec = specReader(ctx);
     const preflight = input.spec_url !== undefined && specHash !== undefined ? await specPreflight(ctx, await spec(input.spec_url), specHash, input.attestor) : undefined;
+    if (input.send === true) {
+      refuseWrongSpec(preflight, input.allow_wrong_spec, "spec_url");
+    }
     const upload = specHash === undefined ? undefined : await uploadPlan(ctx, { specHash, specText: input.spec_text, found: input.spec_url === undefined ? undefined : await spec(input.spec_url), publish: input.publish_spec });
     let settled: { amount: bigint; judgeFee: bigint; decimals: number } | undefined;
     const buy = recordedMint(sold, wallet.url, input.record_mint);
@@ -122,8 +126,10 @@ export const walletEscrow = define({
     const listed = claims === undefined ? undefined : { terms: claims, workers };
     const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined, listed: workers !== undefined });
     let network = 0n;
-    const priced = (lamports: bigint) => {
+    let sends = 1;
+    const priced = (lamports: bigint, count: number) => {
       network = lamports;
+      sends = count;
     };
     let approval = "";
     const bound = { previewNext: PREVIEW_APPROVAL_NEXT, approval: input.approval, changed: ESCROW_CHANGED };
@@ -146,6 +152,7 @@ export const walletEscrow = define({
         claims: claims === undefined ? null : { stake: claims.stake, max_secs: claims.maxSecs },
         workers: workers ?? null,
         spec: preflight ?? null,
+        allow_wrong_spec: input.allow_wrong_spec === true,
         mirror: uploadBound(upload),
       });
       settled = { amount: amountIn, judgeFee, decimals: token.decimals };
@@ -167,13 +174,13 @@ export const walletEscrow = define({
     const summary = [
       ...explainedSetup((escrowed["summary"] as string[]) ?? [], buy),
       ...(claims === undefined ? [] : [claims.line, ...listedLines(workers)]),
-      ...(settled === undefined ? [] : [await feeLine(ctx, settled), ...costLines(costs, network, settled.amount, 1)]),
+      ...(settled === undefined ? [] : [await feeLine(ctx, settled), ...costLines(costs, network, settled.amount, 1, sends)]),
       ...(upload === undefined || escrowed["sent"] === true ? [] : [uploadLine(upload)]),
     ];
     const ownKey = input.attestor === signer.address && signer.device === undefined;
     const warnings = [
       ...((escrowed["warnings"] as string[]) ?? []).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))),
-      ...(input.send === true || preflight === undefined ? [] : preflight.lines),
+      ...(input.send === true ? [] : wrongSpecLines(preflight, input.allow_wrong_spec)),
       ...(input.send === true ? [] : readerLines(upload, input.spec_url !== undefined)),
       ...(specHash === undefined ? [NO_SPEC_HASH] : input.send === true ? [] : [claims === undefined ? SPEC_NO_ANSWER : SPEC_ANSWER_OUT]),
     ];
@@ -248,7 +255,7 @@ const pieceText = (plan: { spec_text?: string | undefined }, piece: { spec_hash?
 export const walletEscrowPlan = define({
   name: tool("wallet_escrow_plan"),
   title: "Escrow a task's pieces in one plan",
-  description: `Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like ${tool("wallet_escrow")}; cancel one with ${tool("wallet_cancel")}. spec_hash and spec_url list pieces in ${tool("find_jobs")}. Workers deliver to the attestor, not this wallet. ${UPLOAD_PUBLIC} ${PREVIEW_APPROVAL}`,
+  description: `Pays for a larger task in pieces: one preview and send lock a payment per piece, each like ${tool("wallet_escrow")}; cancel one with ${tool("wallet_cancel")}. spec_hash and spec_url list pieces in ${tool("find_jobs")}; ${ALLOW_WRONG_SPEC}. Workers deliver to the attestor. ${UPLOAD_PUBLIC} ${PREVIEW_APPROVAL}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -273,6 +280,7 @@ export const walletEscrowPlan = define({
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds each escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
     record_mint: optional(text("a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
     ...claimInputs,
+    ...allowWrongSpec,
     approval: optional(text(APPROVAL_INPUT)),
     send: optional(flag("true signs and sends every piece; leave out to preview")),
   }),
@@ -372,6 +380,11 @@ export const walletEscrowPlan = define({
     const checks = await Promise.all(
       planned.map(async (piece) => (piece.specUrl === undefined || piece.specHash === undefined ? undefined : specPreflight(ctx, await spec(piece.specUrl), piece.specHash, piece.attestor))),
     );
+    if (input.send === true) {
+      for (const [i, piece] of planned.entries()) {
+        refuseWrongSpec(checks[i], input.allow_wrong_spec, input.pieces[i]?.spec_url === undefined ? "spec_url" : `pieces.${i}.spec_url`, `Piece ${i + 1} (${piece.name}): `);
+      }
+    }
     const uploads = await pieceUploadPlans(
       ctx,
       await Promise.all(
@@ -388,6 +401,7 @@ export const walletEscrowPlan = define({
       buy,
       expires_in: input.expires_in ?? ESCROW_EXPIRES_IN,
       claims: claims === undefined ? null : { stake: claims.stake, max_secs: claims.maxSecs },
+      allow_wrong_spec: input.allow_wrong_spec === true,
       pieces: planned.map((piece, i) => ({
         name: piece.name,
         amount: piece.amountIn,
@@ -399,15 +413,20 @@ export const walletEscrowPlan = define({
         mirror: uploadBound(uploads[i]),
       })),
     });
-    const preflights = input.send === true ? [] : planned.flatMap((piece, i) => [...(checks[i]?.lines ?? []), ...readerLines(uploads[i], piece.specUrl !== undefined)].map((line) => `Piece ${i + 1} (${piece.name}): ${line}`));
+    const preflights = input.send === true ? [] : planned.flatMap((piece, i) => [...wrongSpecLines(checks[i], input.allow_wrong_spec), ...readerLines(uploads[i], piece.specUrl !== undefined)].map((line) => `Piece ${i + 1} (${piece.name}): ${line}`));
     const [head, ...rest] = planned as [Piece, ...Piece[]];
     const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined, listed: lists.some((workers) => workers !== undefined) });
-    let network = 0n;
-    const priced = (lamports: bigint) => {
-      network = lamports;
+    let firstFee = 0n;
+    let sends = 1;
+    const priced = (lamports: bigint, count: number) => {
+      firstFee = lamports;
+      sends = count;
     };
     const bound = { previewNext: PREVIEW_APPROVAL_NEXT, approval: input.approval, changed: ESCROW_CHANGED };
+    const listedRest = lists.some((workers) => workers !== undefined);
+    const restFees = listedRest ? await previewFees(ctx, call, { sell: sold, buy }, rest.map((piece, i) => ({ terms: terms(piece), claims: listedOf(i + 1) })), signer) : [];
     const first = await offeredWithClaims(ctx, call, { sell: sold, buy, send: input.send, priced, ...bound }, terms(head, approval), undefined, listedOf(0), signer);
+    const network = [{ lamports: firstFee, sends }, ...(listedRest ? restFees : rest.map(() => ({ lamports: firstFee, sends })))];
     const ownKey = head.attestor === signer.address && signer.device === undefined;
     const afterSend = async (done: Record<string, unknown>[], next: string): Promise<{ pieces: Record<string, unknown>[]; next: string }> => {
       const { fields, failed } = await uploadsAfterSend(ctx, uploads.map((plan, i) => (done[i]?.["intent"] === undefined ? undefined : plan)));
@@ -422,7 +441,7 @@ export const walletEscrowPlan = define({
           (piece, i) =>
             `Piece ${i + 1}: ${piece.name}, ${formatAmount(piece.amountIn, token.decimals)} of ${name}, released by ${piece.attestor}${piece.specHash === undefined ? "" : ` against spec ${piece.specHash}`}`,
         ),
-        ...costLines(costs, network, total, planned.length),
+        ...pieceCostLines(costs, network, total),
         ...(input.send === true ? [] : planLines(uploads)),
         ...(claims === undefined ? [] : [claims.line, ...pieceLimits(planned, lists)]),
         ...explainedSetup(first["summary"] as string[], buy).map((line) => `${PIECE_ONE}: ${line}`),

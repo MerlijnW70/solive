@@ -153,8 +153,9 @@ describe("a wallet send bound to what its preview showed", () => {
     h.specPages.set(SPEC_URL, new TextEncoder().encode(SPEC));
     const preview = await ok(client, "wallet_escrow", terms);
     h.specPages.set(SPEC_URL, new TextEncoder().encode(`${SPEC}Also deliver the answer.\n`));
-    expect((await call(client, "wallet_escrow", { ...terms, approval: preview["approval"], send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: ESCROW_CHANGED });
-    expect((await call(client, "wallet_escrow", { ...terms, amount: "0.04", approval: preview["approval"], send: true })).value).toMatchObject({ hint: ESCROW_CHANGED });
+    expect((await call(client, "wallet_escrow", { ...terms, approval: preview["approval"], send: true })).value).toMatchObject({ code: "InvalidInput" });
+    expect((await call(client, "wallet_escrow", { ...terms, allow_wrong_spec: true, approval: preview["approval"], send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: ESCROW_CHANGED });
+    expect((await call(client, "wallet_escrow", { ...terms, amount: "0.04", allow_wrong_spec: true, approval: preview["approval"], send: true })).value).toMatchObject({ hint: ESCROW_CHANGED });
     expect(await intents()).toEqual([]);
     h.specPages.set(SPEC_URL, new TextEncoder().encode(SPEC));
     expect(await ok(client, "wallet_escrow", { ...terms, approval: preview["approval"], send: true })).toMatchObject({ sent: true });

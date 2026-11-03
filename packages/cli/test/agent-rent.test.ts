@@ -10,10 +10,10 @@ import {
   rentFor,
   rentRate,
   SIGNATURE_FEE,
+  TOKEN_ACCOUNT_BYTES,
   UnsupportedRent,
   unsupportedRent,
   unsupportedThreshold,
-  VAULT_BYTES,
 } from "../src/agent/budget.js";
 import { fundingRent } from "../src/crank.js";
 import { parse } from "../src/args.js";
@@ -49,11 +49,12 @@ const refusalOf = async (transport: Transport): Promise<Error> => {
 describe("live rent", () => {
   it("price rent the way the runtime does and count every lamport a create costs", () => {
     const old = { perByteYear: 3_480n, threshold: 2 };
-    expect([VAULT_BYTES, SIGNATURE_FEE]).toEqual([170, 5_000n]);
+    expect([TOKEN_ACCOUNT_BYTES, SIGNATURE_FEE]).toEqual([165, 5_000n]);
     expect(rentFor(165, old)).toBe(2_039_280n);
     expect(rentFor(0, old)).toBe(890_880n);
     expect(rentFor(165, { perByteYear: 5_080n, threshold: 1 })).toBe(1_488_440n);
-    expect(createCost({ createFee: 7, crankBounty: 11 }, old)).toBe(18n + (BigInt(getIntentSize()) + 128n) * 6_960n + 2_074_080n + 5_000n);
+    expect(createCost({ createFee: 7, crankBounty: 11 }, old)).toBe(18n + (BigInt(getIntentSize()) + 128n) * 6_960n + 2_039_280n + 5_000n);
+    expect(createCost({ createFee: 7, crankBounty: 11 }, old, 178)).toBe(18n + (BigInt(getIntentSize()) + 128n) * 6_960n + (178n + 128n) * 6_960n + 5_000n);
   });
 
   it("reserve rent for a create at the cluster's live rate, read once however many budgets ask", async () => {
@@ -65,10 +66,10 @@ describe("live rent", () => {
       costs.push(createCost(economics, await rentRate(memoized(transport))));
     }
     expect(costs).toEqual([
-      (BigInt(getIntentSize()) + 128n) * 5_080n + (170n + 128n) * 5_080n + 5_000n,
-      18n + (BigInt(getIntentSize()) + 128n) * 5_080n + (170n + 128n) * 5_080n + 5_000n,
+      (BigInt(getIntentSize()) + 128n) * 5_080n + (165n + 128n) * 5_080n + 5_000n,
+      18n + (BigInt(getIntentSize()) + 128n) * 5_080n + (165n + 128n) * 5_080n + 5_000n,
     ]);
-    expect((170n + 128n) * 5_080n).toBe(1_513_840n);
+    expect((165n + 128n) * 5_080n).toBe(1_488_440n);
     expect(reads.count).toBe(1);
   });
 
@@ -76,9 +77,9 @@ describe("live rent", () => {
     const { transport } = rentServing(3_387n, 1.5);
     const rent = await rentRate(transport);
     expect(rentFor(165, rent)).toBe(1_488_586n);
-    expect(rentFor(VAULT_BYTES, rent)).toBe(1_513_989n);
+    expect(rentFor(TOKEN_ACCOUNT_BYTES, rent)).toBe(1_488_586n);
     expect(createCost({ createFee: 7, crankBounty: 11 }, rent)).toBe(
-      18n + BigInt(Math.floor((getIntentSize() + 128) * 3_387 * 1.5)) + 1_513_989n + 5_000n,
+      18n + BigInt(Math.floor((getIntentSize() + 128) * 3_387 * 1.5)) + 1_488_586n + 5_000n,
     );
   });
 

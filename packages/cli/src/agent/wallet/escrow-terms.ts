@@ -6,7 +6,7 @@ import { loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { tooLarge } from "../../delivery-fetch.js";
 import type { AgentContext } from "../actions.js";
 import { tool } from "../names.js";
-import { InvalidInput, integer, optional, text } from "../schema.js";
+import { flag, InvalidInput, integer, optional, text } from "../schema.js";
 import type { ClaimTerms, SpecRead } from "./escrow-claims.js";
 import { raw } from "./guard.js";
 import { openedSpec, SEALED_UNCHECKED } from "./seal.js";
@@ -17,6 +17,26 @@ export const notSealedTo = (missing: readonly Address[], committee: boolean): st
   `spec_url holds a spec not sealed to the ${committee ? "committee members" : "attestor"} ${missing.join(", ")}, so the work cannot be judged; seal it again to ${committee ? "every member" : "the attestor"}`;
 
 type Preflight = { lines: string[]; readers: string[]; wrong?: true };
+
+export const WRONG_SPEC_SEND = "a send refuses this spec unless allow_wrong_spec is true";
+
+export const WRONG_SPEC_ALLOWED = "allow_wrong_spec is true: the send escrows anyway, against a spec_hash the bytes at spec_url do not match";
+
+export const ALLOW_WRONG_SPEC = "allow_wrong_spec sends a mismatched spec_url";
+
+export const wrongSpecRefused = (line: string): string => `${line}; nothing was sent; fix spec_hash or the file at spec_url, or pass allow_wrong_spec: true to send anyway`;
+
+export const allowWrongSpec = { allow_wrong_spec: optional(flag("true sends even when the bytes at spec_url do not hash to spec_hash; leave out to refuse such a send")) };
+
+export function wrongSpecLines(checked: Preflight | undefined, allowed: boolean | undefined): string[] {
+  return checked === undefined ? [] : checked.wrong === true ? [...checked.lines, allowed === true ? WRONG_SPEC_ALLOWED : WRONG_SPEC_SEND] : checked.lines;
+}
+
+export function refuseWrongSpec(checked: Preflight | undefined, allowed: boolean | undefined, path: string, label = ""): void {
+  if (checked?.wrong === true && allowed !== true) {
+    throw new InvalidInput([{ path, message: wrongSpecRefused(`${label}${checked.lines.at(-1) ?? ""}`) }]);
+  }
+}
 
 async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address): Promise<string[]> {
   const recipients = new Set<string>(sealedTo(bytes));

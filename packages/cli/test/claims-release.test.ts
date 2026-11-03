@@ -177,6 +177,7 @@ describe("claims from the wallet tools", () => {
       attestor: wallet,
       spec_hash: SPEC_HASH,
       spec_url: SPEC_URL,
+      allow_wrong_spec: true,
       pieces: [
         { name: "parser", amount: "0.02" },
         { name: "page", amount: "0.03" },
