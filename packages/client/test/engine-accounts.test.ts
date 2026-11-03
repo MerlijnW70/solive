@@ -3,6 +3,7 @@ import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { describe, expect, it } from "vitest";
 import type { RpcLike } from "../src/internal.js";
 import { rpcTransport } from "../src/rpc-transport.js";
+import { refuseTooMany } from "./stock-node.js";
 import { signatureOfWire } from "./transport-stub.js";
 
 const ACCOUNT = "11111111111111111111111111111112" as Address;
@@ -12,6 +13,7 @@ function scan() {
   const rpc = {
     getProgramAccounts: (program: Address, config: unknown) => ({
       send: async () => {
+        refuseTooMany((config as { filters: readonly unknown[] }).filters);
         asked.push({ program, config });
         return [{ pubkey: ACCOUNT, account: { data: [Buffer.from([1, 2]).toString("base64"), "base64"] as const, lamports: 3n } }];
       },

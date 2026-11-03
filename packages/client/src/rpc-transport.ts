@@ -9,7 +9,6 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   type Signature,
   signTransactionMessageWithSigners,
-  getBase58Decoder,
   getBase58Encoder,
   getBase64Encoder,
   getSignatureFromTransaction,
@@ -25,7 +24,6 @@ import { askedSignature, isTransactionSignature, nodeSignature, NotASignature } 
 import type {
   AccountView,
   AtLeast,
-  EngineAccountFilter,
   EngineTransaction,
   FinalizedBlock,
   ListedSignature,
@@ -38,25 +36,13 @@ import type {
   Transport,
 } from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
-import { intentMatches } from "./intent-filters.js";
+import { type ProgramFilter, planFilters } from "./account-filters.js";
+import { ATTESTED_ATTESTOR_AT, INTENT_INPUT_MINT_AT, INTENT_OUTPUT_MINT_AT, INTENT_OWNER_AT, intentMatches } from "./intent-filters.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 import { base64Bytes } from "./encoding.js";
 import { shown } from "./shown.js";
 
-type ProgramFilter = { dataSize: bigint } | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } };
-
-function accountFilters(filter?: EngineAccountFilter): ProgramFilter[] {
-  if (filter === undefined) {
-    return [];
-  }
-  return [
-    ...(filter.dataSize === undefined ? [] : [{ dataSize: BigInt(filter.dataSize) }]),
-    { memcmp: { offset: 0n, bytes: getBase58Decoder().decode(filter.discriminator), encoding: "base58" as const } },
-    ...(filter.match ?? []).map((match) => ({
-      memcmp: { offset: BigInt(match.offset), bytes: "address" in match ? (match.address as string) : getBase58Decoder().decode(match.bytes), encoding: "base58" as const },
-    })),
-  ];
-}
+const MOST_SELECTIVE_FIRST = [INTENT_OWNER_AT, ATTESTED_ATTESTOR_AT, INTENT_INPUT_MINT_AT, INTENT_OUTPUT_MINT_AT];
 
 const decodedEntry = ({ pubkey, account }: ProgramEntry) => ({
   address: pubkey,
@@ -410,19 +396,15 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => ask("getFirstAvailableBlock", () => firstBlock().send()) }),
       ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
       async engineAccounts(filter) {
-        return (await programAccounts(accountFilters(filter), atLeast(), true)).map(decodedEntry);
+        const plan = planFilters(filter);
+        return (await programAccounts(plan.filters, atLeast(), true)).map(decodedEntry).filter(({ data }) => plan.holds(data));
       },
       async intents(query, read) {
-        const found = await programAccounts(
-          accountFilters({ discriminator: getIntentDiscriminatorBytes(), dataSize: getIntentSize(), match: intentMatches(query) }),
-          atLeast(read?.minContextSlot),
-          read !== undefined,
-          read?.onSlot,
-        );
-        return found.map(({ pubkey, account }) => ({
-          address: pubkey,
-          data: base64Bytes(account.data[0]),
-        }));
+        const plan = planFilters({ discriminator: getIntentDiscriminatorBytes(), dataSize: getIntentSize(), match: intentMatches(query) }, MOST_SELECTIVE_FIRST);
+        const found = await programAccounts(plan.filters, atLeast(read?.minContextSlot), read !== undefined, read?.onSlot);
+        return found
+          .map(({ pubkey, account }) => ({ address: pubkey, data: base64Bytes(account.data[0]) }))
+          .filter(({ data }) => plan.holds(data));
       },
       ...(tokensByOwner === undefined ? {} : { tokenAccountsOf: tokensByOwner }),
     }, (next) => facade(joined(by, next)));

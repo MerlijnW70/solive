@@ -27,7 +27,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/core";
+import { attestedResult, findAssociatedTokenAddress, IntentStatus, Kind, limitOrder, swapExactIn } from "@intent-engine/core";
 import {
   ALL_KINDS_MASK,
   findEventAuthorityPda,
@@ -37,6 +37,7 @@ import {
   INTENT_ENGINE_PROGRAM_ADDRESS,
 } from "@intent-engine/core/internal";
 import { BlockhashExpired, MaybeSent, createClient, type Latest, type Transport } from "../src/index.js";
+import { donorsOf, expectedFor, queryShapes } from "./intent-shapes.js";
 import { changedAccount, type Confirmed, confirm, confirmSent, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "../src/internal.js";
 
 const url = process.env["VALIDATOR_URL"];
@@ -101,7 +102,7 @@ describe.skipIf(url === undefined || authorityFile === undefined)("the client ag
     return wallet;
   };
 
-  const setup = async () => {
+  const build = async () => {
     const authority = await funded(100n, await createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(readFileSync(authorityFile ?? "", "utf8")) as number[])));
     const [feeRecipient, owner, solver] = await Promise.all([funded(10n), funded(10n), funded(10n)]);
     const [eventAuthority] = await findEventAuthorityPda();
@@ -150,6 +151,8 @@ describe.skipIf(url === undefined || authorityFile === undefined)("the client ag
     );
     return { authority, owner, solver, inputMint, outputMint, ata };
   };
+  let ready: ReturnType<typeof build> | undefined;
+  const setup = () => (ready ??= build());
 
   it("confirms a created intent at its landed slot, hears it, fills it, and reports a stale blockhash as expired", { timeout: 240_000 }, async () => {
     const { authority, owner, solver, inputMint, outputMint, ata } = await setup();
@@ -202,5 +205,47 @@ describe.skipIf(url === undefined || authorityFile === undefined)("the client ag
     expect(refused).not.toBeInstanceOf(MaybeSent);
     expect(await plain.signatureStatuses?.([getSignatureFromTransaction(late) as Signature])).toEqual([null]);
     expect((await rpc.getBalance(owner.address).send()).value).toBe(before);
+  });
+
+  it("answers every query shape with the accounts a full client-side check returns", { timeout: 240_000 }, async () => {
+    const { authority, owner, solver, inputMint, outputMint, ata } = await setup();
+    const judge = await generateKeyPairSigner();
+    await sender.send(
+      [
+        await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: authority, owner: solver.address, mint: inputMint }),
+        getMintToInstruction({ mint: inputMint, token: await ata(solver.address, inputMint), mintAuthority: authority, amount: 1_000n }),
+        getMintToInstruction({ mint: outputMint, token: await ata(owner.address, outputMint), mintAuthority: authority, amount: 1_000n }),
+      ],
+      authority,
+    );
+    const proof = (attestor: Address) => attestedResult({ amountIn: 10n, minResult: 1n, maxResult: 1n, attestor, specHash: new Uint8Array(32).fill(7), judgeFee: 0n });
+    const swap = swapExactIn({ amountIn: 10n, minOut: 1n });
+    const limit = limitOrder({ makeAmount: 10n, takeAmount: 1n });
+    const cancelled = await sender.createIntent({ signer: owner, inputMint, outputMint, params: swap });
+    await sender.createIntent({ signer: owner, inputMint, outputMint, params: limit });
+    await sender.createIntent({ signer: owner, inputMint, outputMint, params: proof(judge.address) });
+    await sender.createIntent({ signer: owner, inputMint: outputMint, outputMint: inputMint, params: swap });
+    await sender.createIntent({ signer: solver, inputMint, outputMint, params: proof(judge.address) });
+    await sender.createIntent({ signer: solver, inputMint, outputMint, params: swap });
+    await sender.cancel(owner, cancelled.intent);
+    const entries = await plain.intents();
+    const shapes = queryShapes(donorsOf(entries, authority.address));
+    expect(shapes.length).toBeGreaterThan(100);
+    const wrong: string[] = [];
+    for (const shape of shapes) {
+      const want = expectedFor(entries, shape).sort();
+      const direct = await plain.intents(shape).then(
+        (found) => found.map(({ address }) => address).sort(),
+        (error: unknown) => String(error),
+      );
+      const listed = await sender.intents(shape).then(
+        ({ intents }) => intents.map(({ address }) => address).sort(),
+        (error: unknown) => String(error),
+      );
+      if (JSON.stringify(direct) !== JSON.stringify(want) || JSON.stringify(listed) !== JSON.stringify(want)) {
+        wrong.push(`${Object.keys(shape).length} fields ${JSON.stringify(Object.keys(shape))}: ${JSON.stringify(direct).slice(0, 80)}`);
+      }
+    }
+    expect(wrong).toEqual([]);
   });
 });

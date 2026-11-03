@@ -19,6 +19,7 @@ import { afterEach, beforeEach, vi } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { testSignature } from "../src/testing.js";
 import { type RpcLike, MEMO_PROGRAM_ADDRESS } from "../src/transport.js";
+import { refuseTooMany } from "./stock-node.js";
 
 export const SIG = testSignature("sig");
 export const OWNER = "11111111111111111111111111111112" as Address;
@@ -165,6 +166,7 @@ export function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[
     }),
     getProgramAccounts: (program: Address, config: { encoding: string; filters: readonly unknown[] }) => ({
       send: async () => {
+        refuseTooMany(config.filters);
         calls.push(`program-accounts:${program}:${JSON.stringify(config, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v))}`);
         return [{ pubkey: OWNER, account: { data: [Buffer.from([7, 8]).toString("base64"), "base64"] as const } }];
       },

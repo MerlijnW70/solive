@@ -9,6 +9,7 @@ export {
   type SdkErrorCode,
   type SdkErrors,
 } from "@intent-engine/core";
+export * from "./account-filters.js";
 export * from "./accounts.js";
 export * from "./announce.js";
 export * from "./announce-errors.js";

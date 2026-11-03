@@ -20,6 +20,7 @@ import {
   rpcTransport,
   FailedOnChain,
 } from "../src/transport.js";
+import { refuseTooMany } from "./stock-node.js";
 import { isolateMocks, OTHER, OWNER, SIG, signedWire, stub, TOKEN_PROGRAM } from "./transport-stub.js";
 
 isolateMocks();
@@ -137,8 +138,9 @@ describe("read your writes", () => {
           return { value: addresses.map(() => null) };
         },
       }),
-      getProgramAccounts: (_program: Address, config: { minContextSlot?: bigint }) => ({
+      getProgramAccounts: (_program: Address, config: { minContextSlot?: bigint; filters: readonly unknown[] }) => ({
         send: async () => {
+          refuseTooMany(config.filters);
           note("program", config);
           return [];
         },

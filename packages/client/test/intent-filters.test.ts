@@ -16,6 +16,7 @@ import {
 } from "../src/internal.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 import { SPEC } from "./plan-driver.js";
+import { refuseTooMany } from "./stock-node.js";
 
 const proof = (attestor: Address) => attestedResult({ amountIn: 1_000_000n, minResult: 1n, maxResult: 1n, attestor, specHash: SPEC, judgeFee: 0n });
 
@@ -103,6 +104,7 @@ describe("intents filters on the node", () => {
     const rpc = {
       getProgramAccounts: (_program: Address, config: { filters: readonly unknown[] }) => ({
         send: async () => {
+          refuseTooMany(config.filters);
           asked.push(config.filters);
           return [];
         },
@@ -110,14 +112,8 @@ describe("intents filters on the node", () => {
     } as unknown as RpcLike;
     await rpcTransport(rpc).intents({ owner: stored.intent.owner, status: IntentStatus.Open, kind: Kind.AttestedResult, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, attestor: judge.address });
     const memcmp = (offset: number, bytes: string) => ({ memcmp: { offset: BigInt(offset), bytes, encoding: "base58" } });
-    expect((asked[0] as unknown[]).slice(2)).toEqual([
-      memcmp(INTENT_OWNER_AT, stored.intent.owner),
-      memcmp(INTENT_INPUT_MINT_AT, NATIVE_MINT),
-      memcmp(INTENT_OUTPUT_MINT_AT, DEVNET_TEST_MINT),
-      memcmp(INTENT_KIND_AT, getBase58Decoder().decode(Uint8Array.of(Kind.AttestedResult))),
-      memcmp(INTENT_STATUS_AT, getBase58Decoder().decode(Uint8Array.of(IntentStatus.Open))),
-      memcmp(ATTESTED_ATTESTOR_AT, judge.address),
-    ]);
+    const together = getBase58Decoder().decode(Uint8Array.from([...at(INTENT_OWNER_AT, 32), ...at(INTENT_INPUT_MINT_AT, 32), ...at(INTENT_OUTPUT_MINT_AT, 32)]));
+    expect((asked[0] as unknown[]).slice(2)).toEqual([memcmp(INTENT_OWNER_AT, together), memcmp(ATTESTED_ATTESTOR_AT, judge.address)]);
     await rpcTransport(rpc).intents({ attestor: judge.address });
     expect((asked[1] as unknown[]).slice(2)).toEqual([memcmp(INTENT_KIND_AT, getBase58Decoder().decode(Uint8Array.of(Kind.AttestedResult))), memcmp(ATTESTED_ATTESTOR_AT, judge.address)]);
   });
