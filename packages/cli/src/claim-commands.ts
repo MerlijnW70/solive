@@ -12,7 +12,6 @@ import {
   buildStandBy,
   buildUpdateProfile,
   claimBoardAddress,
-  claimUntil,
   findIntentPda,
   formatTime,
   kindBit,
@@ -20,10 +19,15 @@ import {
   PAUSE_FILL,
   profileAddress,
   stakeReceiverOnSettle,
+  standByRefusal,
+  takeUntil,
+  checkAdvance,
+  claimCooldown,
 } from "@intent-engine/core/internal";
 import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
+import { claimBoard, refusedBy } from "./agent/claim-line.js";
 import { previewed } from "./admin-commands.js";
 import { finishList, listAccount, listExists, listLate, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
@@ -171,7 +175,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   }
   const { intent, view } = await claimsOf(client, command.owner, command.nonce);
   const shown = claimsShown(intent, view);
-  if (command.name === "claims-take" || command.name === "claims-standby") {
+  const admit = async () => {
     const invited = await sealedInvites(transport, runtime.specFetch, intent, { lookup: runtime.lookup, rpcUrl: command.url });
     if (invited !== undefined && !invited.includes(signer.address)) {
       throw new FlowRefused(claimNotInvited(signer.address, intent));
@@ -180,10 +184,10 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
     if (unlisted !== undefined) {
       throw new FlowRefused(unlisted);
     }
-  }
+  };
   switch (command.name) {
     case "claims-take":
-      return takeClaim(command, signer, transport, client, intent, view, shown);
+      return takeClaim(command, signer, transport, client, intent, view, shown, admit);
     case "claims-drop": {
       if (view.state !== "held" || view.worker !== signer.address) {
         throw new FlowRefused(`${signer.address} holds no claim on escrow ${intent}; nothing was sent`);
@@ -193,7 +197,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
       return previewed(transport, [await buildDropClaim({ worker: signer, intent, ...handover })], signer, { ...shown, summary }, command.yes);
     }
     case "claims-standby":
-      return standBy(command, signer, transport, client, intent, view, shown);
+      return standBy(command, signer, transport, client, intent, view, shown, admit);
     case "claims-advance":
       return advanceLine(command, signer, transport, client, intent, view, shown);
     case "claims-settle":
@@ -228,20 +232,24 @@ async function standBy(
   intent: Address,
   view: ClaimsView,
   shown: object,
+  admit: () => Promise<void>,
 ) {
-  if (view.state !== "held" && view.line.waiting === 0) {
-    throw new FlowRefused(`nobody holds escrow ${intent} and nobody stands by, so claim it with claims take; nothing was sent`);
-  }
-  if (view.state === "held" && view.worker === worker.address) {
-    throw new FlowRefused(`${worker.address} holds the claim on escrow ${intent}, and the holder cannot stand by for its own job; nothing was sent`);
-  }
-  if (command.secs > view.maxSecs) {
-    throw new FlowRefused(`escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`);
-  }
-  if ((await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) === null) {
+  const now = await client.chainTime();
+  if ((await escrowOpen(client, command.owner, command.nonce, now)) === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so nobody can stand by for it`);
   }
   await fillsStopped(client, command.owner, command.nonce, intent);
+  await admit();
+  const refused = standByRefusal(claimBoard(view), worker.address, command.secs, view.maxSecs, now);
+  if (refused === "ClaimTerms") {
+    throw new FlowRefused(`escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`);
+  }
+  if (refused === "HolderStandsBy") {
+    throw new FlowRefused(`${worker.address} holds the claim on escrow ${intent}, and the holder cannot stand by for its own job; nothing was sent`);
+  }
+  if (refused === "JobNotHeld") {
+    throw new FlowRefused(`nobody holds escrow ${intent} and nobody stands by, so claim it with claims take; nothing was sent`);
+  }
   const seq = view.line.tail;
   const summary = [
     `Stands by: for escrow ${intent} as entry ${seq}, place ${view.line.waiting + 1} in its line; when the job reaches this worker it holds it for ${command.secs} seconds`,
@@ -260,14 +268,16 @@ async function advanceLine(
   view: ClaimsView,
   shown: object,
 ) {
-  if (view.line.waiting === 0) {
-    throw new FlowRefused(`nobody stands by for escrow ${intent}; nothing was sent`);
-  }
-  if (view.state === "held" && view.worker !== null) {
-    throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
-  }
-  if ((await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) === null) {
+  const now = await client.chainTime();
+  if ((await escrowOpen(client, command.owner, command.nonce, now)) === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so its line is not advanced; each waiter gets its stake back with claims leave`);
+  }
+  const refused = refusedBy(() => checkAdvance(claimBoard(view), now));
+  if (refused === "ClaimHeld" && view.worker !== null) {
+    throw new FlowRefused(heldBy(intent, view.worker, view.until - now));
+  }
+  if (refused === "LineEmpty") {
+    throw new FlowRefused(`nobody stands by for escrow ${intent}; nothing was sent`);
   }
   const handover = await lineHandover(transport, intent, view.line, view.cooldown?.worker);
   const summary = [
@@ -312,30 +322,36 @@ async function takeClaim(
   intent: Address,
   view: ClaimsView,
   shown: object,
+  admit: () => Promise<void>,
 ) {
-  if (view.state === "held" && view.worker !== null) {
-    throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
-  }
-  if (view.line.waiting > 0) {
-    throw new FlowRefused(lineWaiting(intent, view.line.waiting));
-  }
-  if (view.cooldown !== null && view.cooldown.worker === worker.address) {
-    throw new FlowRefused(coolingDown(intent, worker.address, view.cooldown.until));
-  }
-  if (command.secs > view.maxSecs) {
-    throw new FlowRefused(`escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`);
-  }
   const now = await client.chainTime();
   const expiresAt = await escrowOpen(client, command.owner, command.nonce, now);
   if (expiresAt === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so its job cannot be claimed`);
   }
   await fillsStopped(client, command.owner, command.nonce, intent);
-  let until: bigint;
-  try {
-    until = claimUntil(view.maxSecs, now, command.secs, expiresAt);
-  } catch (error) {
-    throw isSdkError(error, "intent-core-error") ? new FlowRefused(`a claim of ${command.secs} seconds would outlive escrow ${intent}, which expires at ${expiresAt}`) : error;
+  await admit();
+  const board = claimBoard(view);
+  let until = 0n;
+  const refused = refusedBy(() => {
+    until = takeUntil(board, worker.address, { maxSecs: view.maxSecs, secs: command.secs, expiresAt }, now);
+  });
+  if (refused === "LineWaiting") {
+    throw new FlowRefused(lineWaiting(intent, view.line.waiting));
+  }
+  if (refused === "ClaimHeld") {
+    throw new FlowRefused(heldBy(intent, board.worker, board.until - now));
+  }
+  const cooling = claimCooldown(board, now);
+  if (refused === "ClaimCooldown" && cooling !== null) {
+    throw new FlowRefused(coolingDown(intent, worker.address, cooling.until));
+  }
+  if (refused === "ClaimTerms") {
+    throw new FlowRefused(
+      command.secs > view.maxSecs
+        ? `escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`
+        : `a claim of ${command.secs} seconds would outlive escrow ${intent}, which expires at ${expiresAt}`,
+    );
   }
   const summary = [
     `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only ${worker.address} can be paid`,

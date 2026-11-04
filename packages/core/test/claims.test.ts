@@ -259,6 +259,14 @@ describe("the order the program checks a claim in", () => {
     expect(standByRefusal(line(WORKER, 100n, 0, 0), WORKER, 60, 600, 100n)).toBe("JobNotHeld");
   });
 
+  it("accepts a stand-by of exactly the longest claim and refuses one second more", () => {
+    const held = line(WORKER, 100n, 0, 0);
+    expect(standByRefusal(held, OTHER, 600, 600, 50n)).toBeUndefined();
+    expect(standByRefusal(held, OTHER, 601, 600, 50n)).toBe("ClaimTerms");
+    expect(standByRefusal(held, OTHER, 1, 1, 50n)).toBeUndefined();
+    expect(standByRefusal(held, OTHER, 2, 1, 50n)).toBe("ClaimTerms");
+  });
+
   it("lets the wallet whose claim lapsed stand by behind a line", () => {
     expect(standByRefusal(line(WORKER, 100n, 0, 1), WORKER, 60, 600, 100n)).toBeUndefined();
     expect(standByRefusal(line(WORKER, 100n, 0, 1), WORKER, 60, 600, 99n)).toBe("HolderStandsBy");

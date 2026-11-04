@@ -109,7 +109,7 @@ describe("the stand-by line from the command line", () => {
     const j = await job();
     await j.ok(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "60", "--yes"]);
     const advance = ["claims", "advance", "--keypair", "payer.json", ...j.ref];
-    expect(await j.refused(advance)).toContain("nobody stands by");
+    expect(await j.refused(advance)).toContain(heldBy(j.intent, j.worker.address, 60n));
     await j.standBy("first.json", "600");
     expect(await j.refused(advance)).toContain(heldBy(j.intent, j.worker.address, 60n));
     setNow(NOW + 60n);

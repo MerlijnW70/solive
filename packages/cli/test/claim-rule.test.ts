@@ -1,7 +1,7 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
-import { CORE_ERROR_CODES, checkAdvance, checkClaimant, checkStandBy } from "@intent-engine/core/internal";
+import { CORE_ERROR_CODES, checkAdvance, checkClaimant, checkStandBy, PAUSE_FILL } from "@intent-engine/core/internal";
 import type { Client, ClaimsView } from "@intent-engine/client";
 import { advanceStep, claimBoard, lineWaitingHere, refusedBy, standbyStep } from "../src/agent/claim-line.js";
 import { tool } from "../src/agent/names.js";
@@ -14,11 +14,11 @@ type Taker = Parameters<typeof takeStep>[3] & Parameters<typeof standbyStep>[4];
 const NONE = "11111111111111111111111111111111" as Address;
 const UNTIL = 1_600n;
 
-const clientAt = (now: bigint, status: number = IntentStatus.Open) =>
+const clientAt = (now: bigint, status: number = IntentStatus.Open, paused = 0) =>
   ({
     intent: async () => ({ intent: { status, kind: Kind.AttestedResult, expiresAt: 10_000n } }),
     chainTime: async () => now,
-    config: async () => ({ paused: 0, fillDisabledKinds: 0n }),
+    config: async () => ({ paused, fillDisabledKinds: 0n }),
   }) as unknown as Client;
 
 const viewOf = (over: Partial<ClaimsView>): ClaimsView =>
@@ -155,6 +155,30 @@ describe("the order the program refuses in", () => {
     expect(await refusal(takeStep(clientAt(1_000n), escrow, held, worker, 60, refuses("NotListed")))).toMatchObject({ code: "NotListed" });
     expect(await refusal(takeStep(closed(1_000n), escrow, held, worker, 60, refuses("NotListed")))).toMatchObject({ code: "InvalidTransition" });
     expect(await refusal(standbyStep(clientAt(1_000n), rented, escrow, held, worker, 99_999, refuses("NotInvited")))).toMatchObject({ code: "NotInvited" });
+  });
+
+  it("asks neither gate of a closed escrow or of stopped fills, in a take and in a stand-by", async () => {
+    const { escrow, holder, worker } = await actors();
+    const held = heldView(holder);
+    const gate = vi.fn(refuses("NotListed"));
+    expect(await refusal(takeStep(closed(1_000n), escrow, held, worker, 60, gate))).toMatchObject({ code: "InvalidTransition" });
+    expect(await refusal(standbyStep(closed(1_000n), rented, escrow, held, worker, 60, gate))).toMatchObject({ code: "InvalidTransition" });
+    const stopped = clientAt(1_000n, IntentStatus.Open, PAUSE_FILL);
+    expect(await refusal(takeStep(stopped, escrow, held, worker, 60, gate))).toMatchObject({ code: "FillPaused" });
+    expect(await refusal(standbyStep(stopped, rented, escrow, held, worker, 60, gate))).toMatchObject({ code: "FillPaused" });
+    expect(gate).not.toHaveBeenCalled();
+  });
+
+  it("asks both gates once, and before every board check, in a take and in a stand-by", async () => {
+    const { escrow, holder, worker } = await actors();
+    const open = clientAt(UNTIL - 600n);
+    const gate = vi.fn(refuses("NotInvited"));
+    const queued = heldView(holder, { line: { head: 0, tail: 1, waiting: 1 } });
+    expect(await refusal(takeStep(open, escrow, queued, worker, 99_999, gate))).toMatchObject({ code: "NotInvited" });
+    expect(await refusal(takeStep(open, escrow, viewOf({ cooldown: { worker: worker.address, until: UNTIL } }), worker, 60, gate))).toMatchObject({ code: "NotInvited" });
+    expect(await refusal(standbyStep(open, rented, escrow, heldView(worker.address), worker, 99_999, gate))).toMatchObject({ code: "NotInvited" });
+    expect(await refusal(standbyStep(open, rented, escrow, viewOf({}), worker, 60, gate))).toMatchObject({ code: "NotInvited" });
+    expect(gate).toHaveBeenCalledTimes(4);
   });
 
   it("names a waiting line before a held claim, and a held claim before terms that are out of range", async () => {

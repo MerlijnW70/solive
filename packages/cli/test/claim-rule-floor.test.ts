@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { Rent } from "litesvm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -122,5 +124,16 @@ describe("the claim stake floor follows the cluster rent", () => {
     const sent = await open(low);
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
     expect(h.svm.getAccount(await claimBoardAddress(await intentOf(w.owner.address))).exists).toBe(true);
+  });
+});
+
+describe("the guide quotes the stake rule the program has", () => {
+  const guide = readFileSync(fileURLToPath(new URL("../../../docs/judge.md", import.meta.url)), "utf8");
+
+  it("says 0 or the rent-exempt minimum of an empty account on the cluster, not a fixed amount", () => {
+    const rule = guide.split("\n").find((line) => line.includes("A stake is 0 or at least")) ?? "";
+    expect(rule).toContain("A stake is 0 or at least the rent-exempt minimum of an empty account on this cluster");
+    expect(rule).not.toContain(stakeOf(MIN_CLAIM_STAKE));
+    expect(guide).not.toMatch(/at least 0\.\d+ SOL, the rent-exempt/);
   });
 });
