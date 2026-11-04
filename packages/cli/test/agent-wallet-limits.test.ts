@@ -25,6 +25,7 @@ import { salesPath } from "../src/agent/sales.js";
 import { call, connect, created, fresh, type Json, ok, tag } from "./agent-wallet-kit.js";
 import { approved } from "./approved.js";
 import { EVERY, guideOf, proseOf } from "./served-texts.js";
+import { DEVNET_URL } from "../src/tokens.js";
 
 describe("the wallet server's limits and reads", () => {
   let client: Client;
@@ -97,7 +98,7 @@ describe("the wallet server's limits and reads", () => {
     h.airdropRefused = true;
     const made = await ok(client, "wallet_setup");
     const address = made["address"] as string;
-    expect(made).toMatchObject({ sol: "0", next: airdropRefused(address) });
+    expect(made).toMatchObject({ sol: "0", next: airdropRefused(address, DEVNET_URL) });
     expect((made["other_ways"] as string[])[2]).toContain(faucetLink(address));
     expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" })).value).toMatchObject({
       code: "WalletEmpty",

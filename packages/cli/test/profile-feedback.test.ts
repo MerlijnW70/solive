@@ -9,6 +9,8 @@ import { EVENT_IX_TAG, getIntentAttestedEventEncoder } from "@intent-engine/core
 import { createClient } from "@intent-engine/client/node";
 import { keepsKey } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
+import { SERVER_PROBLEMS } from "../src/agent/problems.js";
+import { FEEDBACK_CHANGED } from "../src/agent/reputation.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { EXIT_OK } from "../src/main.js";
@@ -108,6 +110,10 @@ describe("wallet_feedback", () => {
     const shown = await ok(client, "wallet_feedback", { intent, score: 80 });
     expect(shown).toMatchObject({ intent, score: 80, sent: false });
     expect(h.simulated).toEqual([]);
+    for (const changed of [{ score: 81, approval: shown["approval"] }, { score: 80 }]) {
+      expect(await callOn(client, "wallet_feedback", { intent, ...changed, send: true })).toMatchObject({ error: true, value: { code: "ReleaseChanged", hint: FEEDBACK_CHANGED } });
+    }
+    expect(SERVER_PROBLEMS.ReleaseChanged.hint).toContain("feedback");
     expect(await ok(client, "wallet_feedback", { intent, score: 80, approval: shown["approval"], send: true })).toMatchObject({ sent: true, signature: expect.any(String) });
   });
 });

@@ -1,4 +1,4 @@
-import { type Address, type KeyPairSigner, lamports, none, type Signature } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, type Signature } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -104,7 +104,7 @@ function made(intent: Address, slot: bigint, createFee: bigint): EngineTransacti
   return { signature: testSignature(`made-${intent}`), slot, blockTime: escrow.createdAt, failed: false, emitted: [tag(event)], feePayer: escrow.owner };
 }
 
-type Release = { intent: Address; owner: Address; to: Address; payee: Address; amount: bigint; judgeFee: bigint; signature: Signature; slot: bigint; at: bigint };
+type Release = { intent: Address; owner: Address; to: Address; payee: Address; amount: bigint; judgeFee: bigint; signature: Signature; slot: bigint; at: bigint; attestor?: Address };
 
 function released(r: Release, extra: Uint8Array[] = []): EngineTransaction {
   const { fee, net } = splitFee(r.amount - r.judgeFee, FEE_BPS);
@@ -113,14 +113,14 @@ function released(r: Release, extra: Uint8Array[] = []): EngineTransaction {
     owner: r.owner,
     solver: r.owner,
     payee: r.payee,
-    attestor: r.owner,
+    attestor: r.attestor ?? r.owner,
     amountIn: r.amount,
     result: 1n,
     fee,
     net,
     filled: r.amount,
     remaining: 0n,
-    partnerFee: r.judgeFee,
+    partnerFee: 0n,
   });
   return {
     signature: r.signature,
@@ -169,9 +169,10 @@ describe("wallet_history of a job a contractor resold", () => {
     expect(await ok(client, "wallet_attest", { ...attest, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
 
     useKey(contractor);
+    const judge = (await generateKeyPairSigner()).address;
     const subs: Address[] = [];
-    for (const hint of ["72", "73"]) {
-      subs.push((await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.03", attestor: contractor.address, spec_hash: hint.repeat(32) })))["intent"] as Address);
+    for (const [hint, attestor] of [["72", judge], ["73", contractor.address]] as const) {
+      subs.push((await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.03", attestor, spec_hash: hint.repeat(32) })))["intent"] as Address);
     }
     const [first, second] = subs as [Address, Address];
     const payeeOf = (owner: Address) => findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
@@ -182,7 +183,7 @@ describe("wallet_history of a job a contractor resold", () => {
       { intent: jobIntent, owner: payer, to: contractor.address, payee: await payeeOf(contractor.address), amount: jobAmount, judgeFee: 0n, signature: testSignature("job-released"), slot: 9n, at: at + 9n },
       [releasedEvent(jobIntent, announcement, contractor.address, payer, work)],
     );
-    const firstRelease = released({ intent: first, owner: contractor.address, to: payer, payee: await payeeOf(payer), amount: subAmount, judgeFee, signature: testSignature("first-released"), slot: 14n, at: at + 14n });
+    const firstRelease = released({ intent: first, owner: contractor.address, to: payer, payee: await payeeOf(payer), amount: subAmount, judgeFee, signature: testSignature("first-released"), slot: 14n, at: at + 14n, attestor: judge });
     const secondRelease = released({ intent: second, owner: contractor.address, to: payer, payee: await payeeOf(payer), amount: subAmount, judgeFee: 0n, signature: testSignature("second-released"), slot: 15n, at: at + 15n });
     h.engineLog = [secondRelease, firstRelease, made(second, 12n, CREATE_FEE), made(first, 11n, CREATE_FEE), jobRelease, announced, jobMade];
 

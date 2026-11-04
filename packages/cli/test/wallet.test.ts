@@ -166,7 +166,7 @@ describe("setup and balance", () => {
     h.airdropRefused = true;
     const refused = (await cli(["setup"], {})).json();
     const address = refused["address"] as Address;
-    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address) });
+    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address, DEVNET_URL) });
     expect(refused["next"]).toBe(
       "your wallet holds no SOL yet and devnet refused the airdrop; paste " + address + " at https://" + "faucet.solana.com, which sends at once when it accepts, then run setup again",
     );
@@ -178,12 +178,12 @@ describe("setup and balance", () => {
       GH_WAY,
     ]);
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address) });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address, DEVNET_URL) });
     expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
-    expect(heldRefused("0.02", address).endsWith(pasteAt(address))).toBe(true);
+    expect(heldRefused("0.02", address, DEVNET_URL).endsWith(pasteAt(address))).toBe(true);
     expect(otherWays(address, GH_HINT)[2]).toContain(faucetLink(address));
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START) });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START, DEVNET_URL) });
     expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);
     clean();
     h.airdrops.length = 0;
@@ -251,7 +251,7 @@ describe("setup and balance", () => {
     const made = (await cli(["setup"], {})).json();
     const address = made["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.06", next: refusedEnough("0.06", CLI_SMALL_START) });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.06", next: refusedEnough("0.06", CLI_SMALL_START, DEVNET_URL) });
   });
 
   it("setup on a Ledger names the device's address and creates no key file", async () => {

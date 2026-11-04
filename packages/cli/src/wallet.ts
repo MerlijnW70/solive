@@ -49,9 +49,10 @@ export const explorerLink = (address: string, url: string): string | undefined =
 export const CLI_START = "try offering 0.05 SOL for at least 5 TEST";
 const solOf = (lamports: bigint) => formatAmount(lamports, SOL_DECIMALS);
 export const CLI_SMALL_START = `follow the first paid job guide; a 0.05 SOL swap needs ${solOf(SWAP_START)} SOL`;
-export const smallerAirdrop = (got: bigint) => `devnet refused ${solOf(AIRDROP)} SOL and sent ${solOf(got)} SOL; `;
+export const airdropper = (url: string): string => Object.keys(CLUSTERS).find((name) => CLUSTERS[name] === url) ?? "the node";
+export const smallerAirdrop = (got: bigint, url: string) => `${airdropper(url)} refused ${solOf(AIRDROP)} SOL and sent ${solOf(got)} SOL; `;
 export const holdsEnough = (sol: string, start: string) => `your wallet holds ${sol} SOL, enough to start; ${start}`;
-export const refusedEnough = (sol: string, start: string) => `devnet refused more free SOL, but your wallet holds ${sol} SOL, enough to start; ${start}`;
+export const refusedEnough = (sol: string, start: string, url: string) => `${airdropper(url)} refused more free SOL, but your wallet holds ${sol} SOL, enough to start; ${start}`;
 export const FAUCET_FIELD = "address";
 export const faucetLink = (address: string) => FAUCET + "&" + FAUCET_FIELD + "=" + encodeURIComponent(address);
 export const OTHER_FAUCETS = `or ask another devnet faucet, such as ${PUBLIC_FAUCET}, which sends at once when it accepts`;
@@ -66,14 +67,14 @@ export const WHY_EMPTY = "the instant faucet is out of SOL";
 export const WHY_LIMITED = "the instant faucet's rate limit applies to this address or network";
 export const WHY_DAILY = "the instant faucet has sent all the drips it allows today, for every address";
 export const WHY_OTHER = "the instant faucet sent no SOL";
-export const WHY_AIRDROP = "devnet refused the airdrop";
-export const whyShort = (dripped: InstantFaucet | null, declined: boolean): string | undefined => {
+export const whyAirdrop = (url: string) => `${airdropper(url)} refused the airdrop`;
+export const whyShort = (dripped: InstantFaucet | null, declined: boolean, url: string): string | undefined => {
   const reasons: string[] = [];
   if (dripped !== null && "refused" in dripped) {
     reasons.push(dripped.kind === "empty" ? WHY_EMPTY : dripped.kind === "limited" ? WHY_LIMITED : dripped.kind === "daily" ? WHY_DAILY : WHY_OTHER);
   }
   if (declined) {
-    reasons.push(WHY_AIRDROP);
+    reasons.push(whyAirdrop(url));
   }
   return reasons.length === 0 ? undefined : reasons.join("; ");
 };
@@ -83,15 +84,15 @@ export const otherWays = (address: string, hint: string): string[] => [
   `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}`,
   ...(hint === GH_HINT ? [GH_WAY] : []),
 ];
-export const airdropRefused = (address: string) => `your wallet holds no SOL yet and devnet refused the airdrop; ${pasteAt(address)}`;
+export const airdropRefused = (address: string, url: string) => `your wallet holds no SOL yet and ${whyAirdrop(url)}; ${pasteAt(address)}`;
 const getSol = (address: string, url: string) => (url === DEVNET_URL ? `get devnet SOL: ${GH_HINT}${fundingSteps(address)}` : `send SOL to ${address}`);
 export const unfundedPreview = (address: string, url: string) =>
   `nothing was sent: ${address} holds no SOL, so this preview could not be simulated; ${getSol(address, url)}; then run this again with --yes`;
 export const unfundedRefused = (address: string, url: string) =>
   `nothing was sent: ${address} holds no SOL to pay the network fee; ${getSol(address, url)}; then run this again`;
 export const SEND_SOL = "send SOL to this address, then run setup again";
-export const heldRefused = (sol: string, address: string) =>
-  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ${pasteAt(address)}`;
+export const heldRefused = (sol: string, address: string, url: string) =>
+  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and ${airdropper(url)} refused to add more; ${pasteAt(address)}`;
 
 export type InstantRun = { fetch: FaucetFetch | undefined; env: Env };
 
@@ -279,21 +280,22 @@ export async function setup(
     }
   }
   const sol = solOf(held);
-  const smaller = got === undefined || got === AIRDROP ? "" : smallerAirdrop(got);
+  const smaller = got === undefined || got === AIRDROP ? "" : smallerAirdrop(got, url);
+  const begin = held >= SWAP_START ? start : smallStart;
   const lead = dripped === null ? "" : "lamports" in dripped ? instantSent(solOf(BigInt(dripped.lamports))) : INSTANT_REFUSED;
   const short = url !== CLUSTERS["mainnet-beta"] && held < ENOUGH_TO_START;
   const status =
     url === CLUSTERS["mainnet-beta"] && held < FUND_BELOW
       ? SEND_SOL
       : held >= ENOUGH_TO_START
-        ? smaller + (refused ? refusedEnough : holdsEnough)(sol, held >= SWAP_START ? start : smallStart)
+        ? smaller + (refused ? refusedEnough(sol, begin, url) : holdsEnough(sol, begin))
         : filed !== undefined
           ? faucetPending(filed)
           : held > 0n
-            ? heldRefused(sol, signer.address)
-            : airdropRefused(signer.address);
+            ? heldRefused(sol, signer.address, url)
+            : airdropRefused(signer.address, url);
   const next = short ? status : lead + status;
-  const why = short ? whyShort(dripped, refused) : undefined;
+  const why = short ? whyShort(dripped, refused, url) : undefined;
   const shown = dripped !== null && "refused" in dripped ? { refused: dripped.refused } : dripped;
   const explorer = explorerLink(signer.address, url);
   return {

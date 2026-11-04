@@ -43,6 +43,6 @@ describe("problem hints", () => {
   });
 
   it("include hints that name served tools, so the check reads real names", () => {
-    expect(HINTS.filter(([, hint]) => hint.includes(name("wallet_setup"))).map(([code]) => code)).toEqual(["NoWallet"]);
+    expect(HINTS.filter(([, hint]) => hint.includes(name("wallet_setup"))).map(([code]) => code)).toEqual(["NoWallet", "KeyIsWallet"]);
   });
 });

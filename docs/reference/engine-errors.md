@@ -35,7 +35,7 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
 | 6028 | `FillPaused` | yes | fills are paused by the guardian or admin, and with them new claims and stand-by joins |
-| 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's) |
+| 6029 | `FeeAccountNotCanonical` | no | a fee went to an account the program does not name: the canonical token account of the treasury, the agent or the judge at a fill, or the config's fee recipient wallet itself at an announcement |
 | 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
 | 6032 | `SigProgram` | no | the signature instruction must come from the Ed25519 program |

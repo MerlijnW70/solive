@@ -69,6 +69,14 @@ describe("an IDL account allocated, filled by a Write from a source buffer and i
     await refusedCopy("psi-two", false);
   });
 
+  it("prints the sha256 of the bytes the copied buffer holds, not of their hex text", async () => {
+    const x = await world("psi-hash", false, true);
+    const held = deflateSync(HONEST);
+    const summary = JSON.stringify((await proposalOf(x.m, x.index))["summary"]);
+    expect(summary).toContain(`buffer ${x.source}, controlled by ${x.m.vault}, holding ${held.length} bytes with sha256 ${digest(held)}`);
+    expect(summary).not.toContain(digest(new TextEncoder().encode(Buffer.from(held).toString("hex"))));
+  });
+
   it("PS-1 approves a vault-controlled source only on the IDL hash its simulation sets, and execute needs that hash", async () => {
     const x = await world("psi-one", false, true);
     expect((await proposalOf(x.m, x.index))["problems"] ?? []).toEqual([]);

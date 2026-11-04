@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type Address, type Instruction, isSignerRole, type ReadonlyUint8Array } from "@solana/kit";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { Chain } from "./chain.js";
@@ -110,7 +111,7 @@ async function copySource(chain: Chain, at: Address, ctx: MetadataContext): Prom
       problem: `instruction ${ctx.position} copies the data of ${at}, which is missing or not a program-metadata buffer, so this tool cannot show what it writes`,
     };
   }
-  const text = `buffer ${at}, controlled by ${nobody(state.authority)}, holding ${state.data.length} bytes with sha256 ${contentText(state.data, "none", "none").hash ?? "none"}`;
+  const text = `buffer ${at}, controlled by ${nobody(state.authority)}, holding ${state.data.length} bytes with sha256 ${createHash("sha256").update(Uint8Array.from(state.data)).digest("hex")}`;
   if (ctx.vault === null || state.authority !== ctx.vault) {
     return {
       text,

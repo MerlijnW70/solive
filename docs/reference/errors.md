@@ -25,7 +25,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `WalletEmpty` | no | the wallet holds no SOL; fund it from a faucet, then try again |
 | `WalletTokenNotAllowed` | no | the server was started with sell limits that do not name this token |
 | `WalletTradeLimit` | no | the trade sells more than the server's --wallet-per-trade limit for this token |
-| `ReleaseChanged` | no | the release differs from the one previewed: its payee, amount, result, fee or the escrow itself changed; preview it again and show the user |
+| `ReleaseChanged` | no | what this call would sign differs from its preview, or no approval was given: a release, a vote, an escrow, an order or offer, a claim, a held-share claim, a committee, a profile or feedback changed; preview it again and show the user |
 | `ReleaseTooLarge` | no | this split has too many co-authors to fit in one transaction; pass a lookup_table or reduce recipients as the hint says |
 | `WalletBusy` | yes | another server using the same wallet holds its sale record for a moment; call again |
 | `WalletHourLimit` | yes | the wallet sold as much of this token in the last hour as the server's --wallet-per-hour limit allows; try later or sell less |
@@ -71,6 +71,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NotAnnounced` | no | no announcement to the escrow opens to this work with this wallet's keys, so no release can pay for it |
 | `NotReleased` | no | the escrow has no release in its history yet |
 | `KeyInUse` | no | this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close |
+| `KeyIsWallet` | no | a key this server was started with is also the wallet's key, so its sends would pay from the wallet without a preview: the --agent key at solive_agent_create, the --relayer key at solive_submit_signed_intent, or either key as the file solive_wallet_setup would make the wallet; give each its own key file |
+| `WalletKeyUnread` | no | the key file the wallet's settings name cannot be read now, so this server cannot check that its --agent or --relayer key is not the wallet's; nothing was sent; restore that file, then call again |
 | `NotRefutable` | no | the announcements named cannot refute this release: the hint says why; nothing was sent |
 | `NothingToReclaim` | no | none of this wallet's announcements can close now: each belongs to an open escrow, is kept for the refutation window, can still refute a paid release, or holds a split share until it is claimed; the hint says which |
 | `NotARelease` | no | the transaction named as the release is not a release of this escrow |
@@ -118,7 +120,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
 | 6028 | `FillPaused` | yes | fills are paused by the guardian or admin, and with them new claims and stand-by joins; try again later; intent-engine show config shows the pause bits in paused |
-| 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's); let this server pick it |
+| 6029 | `FeeAccountNotCanonical` | no | a fee went to an account the program does not name: the canonical token account of the treasury, the agent or the judge at a fill, or the config's fee recipient wallet itself at an announcement; let this server pick it |
 | 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create; create that token account and pass it |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
 | 6032 | `SigProgram` | no | the signature instruction must come from the Ed25519 program |

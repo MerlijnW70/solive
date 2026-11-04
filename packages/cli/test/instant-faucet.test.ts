@@ -178,7 +178,7 @@ describe("the instant faucet in setup", () => {
       const made = (await cli(["setup"], {})).json();
       const address = made["address"] as string;
       expect(made["sol"]).toBe("0");
-      expect(made["next"]).toBe(airdropRefused(address));
+      expect(made["next"]).toBe(airdropRefused(address, DEVNET_URL));
       expect((made["next"] as string).split(/[.!?](?:\s|$)/).filter((part) => part !== "").length).toBeLessThanOrEqual(2);
       expect(made["other_ways"]).toEqual(otherWays(address, GH_HINT));
       expect(made["next"]).not.toContain("GitHub");

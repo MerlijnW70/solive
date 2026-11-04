@@ -15,6 +15,7 @@ import { EXIT_OK } from "../src/main.js";
 import { AIRDROPS, airdropRefused, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, otherWays, refusedEnough } from "../src/wallet.js";
 import { cli, creation, FEE_BPS, h, world } from "./harness.js";
 import { approved } from "./approved.js";
+import { DEVNET_URL } from "../src/tokens.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -101,20 +102,20 @@ describe("setup, escrow and balance explain themselves", () => {
     h.airdropRefused = true;
     const empty = await ok(client, "wallet_setup");
     const address = empty["address"] as Address;
-    expect(empty).toMatchObject({ sol: "0", next: airdropRefused(address) });
+    expect(empty).toMatchObject({ sol: "0", next: airdropRefused(address, DEVNET_URL) });
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
     const low = await ok(client, "wallet_setup");
-    expect(low).toMatchObject({ sol: "0.02", next: heldRefused("0.02", address) });
+    expect(low).toMatchObject({ sol: "0.02", next: heldRefused("0.02", address, DEVNET_URL) });
     expect(low["next"]).toContain(`your wallet holds 0.02 SOL, less than the ${formatAmount(ENOUGH_TO_START, 9)} SOL setup counts as enough to start`);
     expect(low["next"]).not.toContain("--faucet");
     expect(low["other_ways"]).toEqual(otherWays(address, ""));
     h.svm.airdrop(address, lamports(ENOUGH_TO_START - LAMPORTS_PER_SOL / 50n));
     const small = await ok(client, "wallet_setup");
-    expect(small).toMatchObject({ sol: "0.06", next: refusedEnough("0.06", WALLET_SMALL_START) });
+    expect(small).toMatchObject({ sol: "0.06", next: refusedEnough("0.06", WALLET_SMALL_START, DEVNET_URL) });
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
     const held = await ok(client, "wallet_setup");
     expect(held["next"]).not.toBe(OLD_NEXT);
-    expect(held).toMatchObject({ sol: "0.31", next: refusedEnough("0.31", WALLET_START) });
+    expect(held).toMatchObject({ sol: "0.31", next: refusedEnough("0.31", WALLET_START, DEVNET_URL) });
     expect(held["next"]).toMatch(/^devnet refused more free SOL, but your wallet holds 0\.31 SOL, enough to start; /);
     expect(h.airdrops).toHaveLength(4 * AIRDROPS.length);
   });

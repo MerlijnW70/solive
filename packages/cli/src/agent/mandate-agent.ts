@@ -12,7 +12,7 @@ import { unusedIntent } from "./owner.js";
 import { prepare } from "./prepare.js";
 import { paying } from "./signed-relay.js";
 import { type Call, claim, type Claims, PREPARED_TTL } from "./claims.js";
-import { AgentRefusal } from "./problems.js";
+import { AgentRefusal, SERVER_PROBLEMS } from "./problems.js";
 import { orderSchema, paramsOf, preparedSchema, preparedView } from "./shapes.js";
 import { TOKEN_NAMES, tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
@@ -23,8 +23,12 @@ export const OWNER_IS_THIS_WALLET = "this agent never acts for this server's wal
 
 export const AGENT_KEY_IS_WALLET = "this server's agent key is also its wallet's key, so an agent send would pay from the wallet without a preview; restart the server with an agent key of its own";
 
+const unreadWallet = (error: unknown): never => {
+  throw new AgentRefusal("WalletKeyUnread", SERVER_PROBLEMS.WalletKeyUnread.hint, error instanceof Error ? error.message : String(error));
+};
+
 export const fileWalletAddress = async (ctx: AgentContext): Promise<Address | undefined> =>
-  ctx.wallet === undefined ? undefined : keyFileAddress(ctx.wallet).catch(() => undefined);
+  ctx.wallet === undefined ? undefined : keyFileAddress(ctx.wallet).catch(unreadWallet);
 
 async function walletAddress(ctx: AgentContext): Promise<Address | undefined> {
   if (ctx.wallet === undefined) {
@@ -34,7 +38,7 @@ async function walletAddress(ctx: AgentContext): Promise<Address | undefined> {
   if (path === undefined) {
     return undefined;
   }
-  return isLedgerPath(path) ? (await signerOf(ctx)).address : keyFileAddress(ctx.wallet).catch(() => undefined);
+  return isLedgerPath(path) ? (await signerOf(ctx)).address : keyFileAddress(ctx.wallet).catch(unreadWallet);
 }
 
 const agentTerms = {
@@ -175,7 +179,7 @@ export const agentCreate = define({
     }
     const own = await walletAddress(ctx);
     if (key.signer.address === own) {
-      throw new AgentRefusal("KeyInUse", AGENT_KEY_IS_WALLET);
+      throw new AgentRefusal("KeyIsWallet", AGENT_KEY_IS_WALLET);
     }
     if (input.owner === own) {
       throw new AgentRefusal("OwnerNotServed", OWNER_IS_THIS_WALLET);

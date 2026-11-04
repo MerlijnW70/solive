@@ -60,7 +60,7 @@ export const submitSignedIntent = define({
       throw new AgentRefusal("RelayerNotConfigured", "this server has no relayer key; start it with --relayer to submit signed intents");
     }
     if (relay.signer.address === (await fileWalletAddress(ctx))) {
-      throw new AgentRefusal("KeyInUse", RELAYER_KEY_IS_WALLET);
+      throw new AgentRefusal("KeyIsWallet", RELAYER_KEY_IS_WALLET);
     }
     const leave = enter(claims, `${input.owner}:${input.nonce}`);
     try {

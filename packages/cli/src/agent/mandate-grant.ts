@@ -18,7 +18,6 @@ import {
   MANDATE_KIND_NAMES,
   mandateRef,
   MAX_MANDATE_INTENTS,
-  MAX_MANDATE_SECONDS,
   specOf,
 } from "./mandate-state.js";
 
@@ -37,7 +36,7 @@ export const prepareMandate = define({
     total: amount("most raw input units all the agent's intents may sell together"),
     max_intents: integer(1, MAX_MANDATE_INTENTS, "most intents the agent may create"),
     max_ttl: integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, "longest an intent may stay open, in seconds"),
-    valid_for: integer(MIN_EXPIRES_IN, MAX_MANDATE_SECONDS, "seconds from now until the mandate ends"),
+    valid_for: integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, "seconds from now until the mandate ends"),
     floor: object(
       {
         out: amount("raw output units"),

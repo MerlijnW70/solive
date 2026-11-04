@@ -9,6 +9,7 @@ import { belowRent, newWallet, walletExists } from "../src/wallet-commands.js";
 import { CLI_SMALL_START, CLI_START, ENOUGH_TO_START, FUND_BELOW, holdsEnough, refusedEnough, SWAP_START } from "../src/wallet.js";
 import { cli, h, runtime, world, type World } from "./harness.js";
 import { NPM_REGISTRY } from "../src/npm-registry.js";
+import { DEVNET_URL } from "../src/tokens.js";
 
 const SIGNED_IN: Launched = { code: 0, output: "Logged in to github.com" };
 const HTTPS: Launched = { code: 0, output: `${NPM_REGISTRY}\n` };
@@ -72,9 +73,9 @@ describe("setup thresholds", () => {
   it("offers the starter swap hint from the exact amount that pays for it", async () => {
     const address = (await run(["setup"])).json()["address"] as Address;
     h.svm.airdrop(address, lamports(SWAP_START - 1n));
-    expect((await run(["setup"])).json()["next"]).toBe(refusedEnough(sol(SWAP_START - 1n), CLI_SMALL_START));
+    expect((await run(["setup"])).json()["next"]).toBe(refusedEnough(sol(SWAP_START - 1n), CLI_SMALL_START, DEVNET_URL));
     h.svm.airdrop(address, lamports(1n));
-    expect((await run(["setup"])).json()["next"]).toBe(refusedEnough(sol(SWAP_START), CLI_START));
+    expect((await run(["setup"])).json()["next"]).toBe(refusedEnough(sol(SWAP_START), CLI_START, DEVNET_URL));
   });
 });
 
@@ -89,7 +90,7 @@ describe("setup --faucet thresholds", () => {
     h.svm.airdrop(address, lamports(ENOUGH_TO_START));
     const ran = await run(["setup", "--faucet"]);
     expect([ran.code, ran.err, ran.launched]).toStrictEqual([EXIT_OK, "", []]);
-    expect(ran.json()["next"]).toBe(refusedEnough(sol(ENOUGH_TO_START), CLI_SMALL_START));
+    expect(ran.json()["next"]).toBe(refusedEnough(sol(ENOUGH_TO_START), CLI_SMALL_START, DEVNET_URL));
   });
 
   it("stops waiting for the faucet the moment the wallet holds exactly enough to start", async () => {

@@ -6,8 +6,9 @@ import { DEFAULT_URL, ENV_URL, parse } from "../src/args.js";
 import { NO_WALLET, PASS_KEYPAIR } from "../src/arg-values.js";
 import { askInstantFaucet, FAUCET_DAILY_SIGN, type FaucetFetch, waitFor } from "../src/faucet.js";
 import { EXIT_FAILED, EXIT_USAGE, main, NO_NODE_SET, unreachable } from "../src/main.js";
-import { WHY_AIRDROP, WHY_DAILY, WHY_LIMITED, whyShort } from "../src/wallet.js";
+import { whyAirdrop, WHY_DAILY, WHY_LIMITED, whyShort } from "../src/wallet.js";
 import { cli, h, instant, runtime, transport, world } from "./harness.js";
+import { DEVNET_URL } from "../src/tokens.js";
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const service = readFileSync(join(ROOT, "services/faucet/src/drip.ts"), "utf8");
@@ -76,8 +77,8 @@ describe("the faucet's refusal shows the real wait", () => {
   });
 
   it("names a whole-faucet limit as one, and keeps the per-address limit for the others", () => {
-    expect(whyShort({ refused: "x", kind: "daily" }, false)).toBe(WHY_DAILY);
-    expect(whyShort({ refused: "x", kind: "limited" }, false)).toBe(WHY_LIMITED);
+    expect(whyShort({ refused: "x", kind: "daily" }, false, DEVNET_URL)).toBe(WHY_DAILY);
+    expect(whyShort({ refused: "x", kind: "limited" }, false, DEVNET_URL)).toBe(WHY_LIMITED);
     expect(WHY_DAILY).not.toContain("address or network");
     expect(WHY_DAILY).toContain("for every address");
   });
@@ -87,7 +88,7 @@ describe("the faucet's refusal shows the real wait", () => {
     instant.fetch = answering(429, { error: DAILY, retry_after: 7_200 });
     const made = (await cli(["setup"], {})).json();
     expect(made["faucet"]).toEqual({ refused: DAILY.replace("retry_after seconds", "about 2 hours") });
-    expect(made["why"]).toBe(`${WHY_DAILY}; ${WHY_AIRDROP}`);
+    expect(made["why"]).toBe(`${WHY_DAILY}; ${whyAirdrop(DEVNET_URL)}`);
   });
 });
 

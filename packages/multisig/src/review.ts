@@ -445,25 +445,26 @@ export async function review(chain: Chain, at: Address, index: bigint, multisig:
   }
   if (hasDiscriminator(info.data, DISCRIMINATORS.ConfigTransaction)) {
     const config = decodeAccount("ConfigTransaction", configTransactionCodec, info.data);
-    if (config !== null) {
-      return {
-        kind: "config",
-        creator: config.creator,
-        summary: [
-          `Config transaction: changes multisig ${at} itself`,
-          ...config.actions.map((action) => actionText(action, multisig)),
-          afterConfig(config.actions, multisig),
-        ],
-        instructions: [],
-        actions: config.actions,
-        buffers: [],
-        problems: [],
-        relayed: [],
-        rewritten: [],
-        sets: [],
-        engineClose: null,
-      };
+    if (config === null) {
+      return empty("other", "A config transaction this tool cannot decode", "its config transaction does not decode");
     }
+    return {
+      kind: "config",
+      creator: config.creator,
+      summary: [
+        `Config transaction: changes multisig ${at} itself`,
+        ...config.actions.map((action) => actionText(action, multisig)),
+        afterConfig(config.actions, multisig),
+      ],
+      instructions: [],
+      actions: config.actions,
+      buffers: [],
+      problems: [],
+      relayed: [],
+      rewritten: [],
+      sets: [],
+      engineClose: null,
+    };
   }
   return empty("other", "A batch or other Squads transaction this tool cannot decode", "it is a batch or another transaction this tool cannot decode");
 }

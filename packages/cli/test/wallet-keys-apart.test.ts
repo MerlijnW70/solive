@@ -4,6 +4,7 @@ import { NATIVE_MINT } from "@intent-engine/core";
 import { AGENT_IS_WALLET, OWNER_IS_WALLET, RELAYER_IS_WALLET } from "../src/command-builders.js";
 import { AGENT_KEY_IS_WALLET, OWNER_IS_THIS_WALLET } from "../src/agent/mandate-agent.js";
 import { RELAYER_KEY_IS_WALLET } from "../src/agent/signed-submit.js";
+import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { defaultWallet, serverKeyNotWallet } from "../src/wallet.js";
 import { execute, grantOf } from "./agent-mandate-kit.js";
 import { keyed } from "./announce.js";
@@ -124,10 +125,10 @@ describe("a server key placed where the wallet would be", () => {
     const agent = await keyed(path);
     const owner = await funded();
     const client = await servedThrough(["--agent", path, "--agent-owners", owner.address], {});
-    expect((await call(client, "wallet_setup")).value).toMatchObject({ code: "KeyInUse", hint: serverKeyNotWallet(path) });
+    expect((await call(client, "wallet_setup")).value).toMatchObject({ code: "KeyIsWallet", hint: serverKeyNotWallet(path) });
     h.env[ENV_KEYPAIR] = path;
     const before = h.svm.getBalance(agent.address);
-    expect((await call(client, "agent_create", { owner: owner.address, order: order("300", "150"), expires_in: 600 })).value).toMatchObject({ code: "KeyInUse", hint: AGENT_KEY_IS_WALLET });
+    expect((await call(client, "agent_create", { owner: owner.address, order: order("300", "150"), expires_in: 600 })).value).toMatchObject({ code: "KeyIsWallet", hint: AGENT_KEY_IS_WALLET });
     expect(h.svm.getBalance(agent.address)).toBe(before);
   });
 
@@ -137,10 +138,10 @@ describe("a server key placed where the wallet would be", () => {
     const relayer = await keyed(path);
     const owner = await funded();
     const client = await servedThrough(["--relayer", path, "--relay-fee", `${NATIVE_MINT}=0`], {});
-    expect((await call(client, "wallet_setup")).value).toMatchObject({ code: "KeyInUse", hint: serverKeyNotWallet(path) });
+    expect((await call(client, "wallet_setup")).value).toMatchObject({ code: "KeyIsWallet", hint: serverKeyNotWallet(path) });
     h.env[ENV_KEYPAIR] = path;
     const before = h.svm.getBalance(relayer.address);
-    expect((await call(client, "submit_signed_intent", SUBMIT(owner.address))).value).toMatchObject({ code: "KeyInUse", hint: RELAYER_KEY_IS_WALLET });
+    expect((await call(client, "submit_signed_intent", SUBMIT(owner.address))).value).toMatchObject({ code: "KeyIsWallet", hint: RELAYER_KEY_IS_WALLET });
     expect(h.svm.getBalance(relayer.address)).toBe(before);
   });
 
@@ -162,5 +163,46 @@ describe("a server key placed where the wallet would be", () => {
     expect(refused.value["intent"]).toBeUndefined();
     expect([h.svm.getBalance(agent.address), h.svm.getBalance(w.owner.address)]).toEqual(before);
     expect(unplugged.signed).toEqual([]);
+  });
+});
+
+const UNREAD_PATH = "unread-wallet.json";
+
+describe("a wallet key file that cannot be read when a server key is checked against it", () => {
+  it("refuses agent_create and sends nothing, then creates once the file reads again", async () => {
+    const w = await world();
+    h.watched.length = 0;
+    h.watched.push(w.owner.address);
+    const agent = await funded();
+    const client = await servedThrough(["--agent", "a.json", "--agent-owners", w.owner.address], { "a.json": agent });
+    await execute((await ok(client, "prepare_mandate", grantOf(w, agent)))["prepared"], w.owner);
+    h.env[ENV_KEYPAIR] = UNREAD_PATH;
+    h.files.set(UNREAD_PATH, "not a key file");
+    const before = [h.svm.getBalance(agent.address), h.svm.getBalance(w.owner.address)];
+    const terms = { owner: w.owner.address, order: order("300", "150"), expires_in: 600 };
+    const refused = await call(client, "agent_create", terms);
+    expect(refused.value).toMatchObject({ code: "WalletKeyUnread", retryable: false, hint: SERVER_PROBLEMS.WalletKeyUnread.hint });
+    expect(refused.value["intent"]).toBeUndefined();
+    expect([h.svm.getBalance(agent.address), h.svm.getBalance(w.owner.address)]).toEqual(before);
+    h.files.delete(UNREAD_PATH);
+    expect((await call(client, "agent_create", terms)).value).toMatchObject({ code: "WalletKeyUnread" });
+    expect([h.svm.getBalance(agent.address), h.svm.getBalance(w.owner.address)]).toEqual(before);
+    await keyed(UNREAD_PATH);
+    const created = await call(client, "agent_create", terms);
+    expect([created.error, typeof created.value["intent"]]).toEqual([false, "string"]);
+  });
+
+  it("refuses submit_signed_intent before it reads the signed terms", async () => {
+    await world();
+    const relayer = await funded();
+    const owner = await funded();
+    const client = await servedThrough(["--relayer", "r.json", "--relay-fee", `${NATIVE_MINT}=0`], { "r.json": relayer });
+    h.env[ENV_KEYPAIR] = UNREAD_PATH;
+    h.files.set(UNREAD_PATH, "not a key file");
+    const before = h.svm.getBalance(relayer.address);
+    expect((await call(client, "submit_signed_intent", SUBMIT(owner.address))).value).toMatchObject({ code: "WalletKeyUnread", hint: SERVER_PROBLEMS.WalletKeyUnread.hint });
+    expect(h.svm.getBalance(relayer.address)).toBe(before);
+    await keyed(UNREAD_PATH);
+    expect((await call(client, "submit_signed_intent", SUBMIT(owner.address))).value["code"]).not.toBe("WalletKeyUnread");
   });
 });

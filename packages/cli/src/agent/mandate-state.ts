@@ -6,6 +6,8 @@ import {
   findIntentPda,
   findMandatePda,
   getMandateDiscriminatorBytes,
+  I64_MAX,
+  I64_MIN,
   type IntentParams,
   kindBit,
   type Mandate,
@@ -19,7 +21,6 @@ import { AgentRefusal, ENGINE_PROBLEMS, SimulationFailed } from "./problems.js";
 import { account, amount, optional } from "./schema.js";
 
 export const MANDATE_KIND_NAMES = ["swap", "limit", "dutch"] as const;
-export const MAX_MANDATE_SECONDS = 365 * 24 * 60 * 60;
 export const MAX_MANDATE_INTENTS = 1_000_000;
 export const MANDATE_ID_PROBES = 64;
 export const REVOKE_CANCELS = 6;
@@ -117,9 +118,6 @@ export const mandateRef = {
   agent: account("the agent key the mandate authorises"),
   id: optional(amount("which of the owner's mandates for this agent; default 0")),
 };
-
-const I64_MIN = -(1n << 63n);
-const I64_MAX = (1n << 63n) - 1n;
 
 export type MandateRefusal =
   | "MandateRevoked"

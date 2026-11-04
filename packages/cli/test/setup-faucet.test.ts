@@ -6,7 +6,7 @@ import { NATIVE_MINT } from "@intent-engine/core";
 import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testSignature } from "@intent-engine/client/testing";
-import { FAUCET_DEVNET_ONLY } from "../src/args.js";
+import { CLUSTERS, FAUCET_DEVNET_ONLY } from "../src/args.js";
 import {
   FAUCET_INTERVAL_MINUTES,
   FAUCET_MINUTE,
@@ -45,6 +45,7 @@ import {
   SWAP_START,
 } from "../src/wallet.js";
 import { h, runtime, transport, world, type World } from "./harness.js";
+import { DEVNET_URL } from "../src/tokens.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -133,7 +134,7 @@ describe("setup when devnet refuses", () => {
     expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
     const address = made.json()["address"] as Address;
     expect(h.airdrops).toEqual(AIRDROPS.slice(0, 3).map((amount) => ({ address, lamports: amount })));
-    expect(made.json()).toMatchObject({ sol: "0.25", airdrop: "0.25", next: smallerAirdrop(AIRDROP / 4n) + holdsEnough("0.25", CLI_START) });
+    expect(made.json()).toMatchObject({ sol: "0.25", airdrop: "0.25", next: smallerAirdrop(AIRDROP / 4n, DEVNET_URL) + holdsEnough("0.25", CLI_START) });
     expect(made.json()["next"]).toMatch(/^devnet refused 1 SOL and sent 0\.25 SOL; your wallet holds 0\.25 SOL, enough to start; /);
     expect(AIRDROPS[0]).toBe(AIRDROP);
     expect(AIRDROPS.every((amount, i) => i === 0 || amount < (AIRDROPS[i - 1] ?? 0n))).toBe(true);
@@ -146,7 +147,7 @@ describe("setup when devnet refuses", () => {
     const address = made.json()["address"] as Address;
     expect(h.airdrops.map((a) => a.lamports)).toEqual([...AIRDROPS]);
     expect(made.launched).toEqual([]);
-    expect(made.json()).toMatchObject({ sol: "0", next: airdropRefused(address) });
+    expect(made.json()).toMatchObject({ sol: "0", next: airdropRefused(address, DEVNET_URL) });
     expect(made.json()["airdrop"]).toBeUndefined();
     expect(made.json()["other_ways"]).toEqual(otherWays(address, GH_HINT));
     expect(made.json()["other_ways"]).toContain(GH_WAY);
@@ -159,7 +160,7 @@ describe("setup when devnet refuses", () => {
   it("names the faucet option only on devnet, where the faucet sends", async () => {
     refusing(0n);
     const made = await run(["setup", "--url", "localnet"]);
-    expect(made.json()).toMatchObject({ next: airdropRefused(made.json()["address"] as string) });
+    expect(made.json()).toMatchObject({ next: airdropRefused(made.json()["address"] as string, CLUSTERS["localnet"] ?? "") });
     expect(made.json()["next"]).not.toContain("--faucet");
     expect(made.json()["other_ways"]).toEqual(otherWays(made.json()["address"] as string, ""));
     expect(made.json()["other_ways"]).not.toContain(GH_WAY);
@@ -171,7 +172,7 @@ describe("setup when devnet refuses", () => {
     const address = (await run(["setup"])).json()["address"] as Address;
     h.svm.airdrop(address, lamports(SOL(need)));
     const held = (await run(["setup"])).json();
-    expect(held).toMatchObject({ sol: need, next: refusedEnough(need, CLI_SMALL_START) });
+    expect(held).toMatchObject({ sol: need, next: refusedEnough(need, CLI_SMALL_START, DEVNET_URL) });
     expect(held["next"]).not.toContain(faucetLink(address));
     expect(held["next"]).not.toContain(fundingSteps(address));
     expect(held["next"]).not.toContain("less than");
@@ -183,7 +184,7 @@ describe("setup when devnet refuses", () => {
     const address = (await run(["setup"])).json()["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START - 1n));
     const held = (await run(["setup"])).json();
-    expect(held).toMatchObject({ sol: "0.059999999", next: heldRefused("0.059999999", address) });
+    expect(held).toMatchObject({ sol: "0.059999999", next: heldRefused("0.059999999", address, DEVNET_URL) });
   });
 
   it("offers the starter swap only to a wallet that can pay for it", async () => {
@@ -224,7 +225,7 @@ describe("setup --faucet", () => {
     expect(ran.notes).toBe(`${faucetWaiting(ISSUE)}\n`);
     expect(ran.notes).toContain(`waiting up to ${FAUCET_WAIT_MINUTES} minutes`);
     expect(h.sleeps).toEqual([FAUCET_POLL_SECONDS, FAUCET_POLL_SECONDS]);
-    expect(ran.json()).toMatchObject({ sol: "0.5", faucet_request: ISSUE, next: refusedEnough("0.5", CLI_START) });
+    expect(ran.json()).toMatchObject({ sol: "0.5", faucet_request: ISSUE, next: refusedEnough("0.5", CLI_START, DEVNET_URL) });
   });
 
   it("stops waiting once the bound passes, and says where the faucet answers", async () => {
@@ -246,7 +247,7 @@ describe("setup --faucet", () => {
     expect(ran.launched).toEqual([["gh", "auth", "status", "--hostname", "github.com"]]);
     expect(h.sleeps).toEqual([]);
     expect(ran.notes).toBe("");
-    expect(ran.json()).toMatchObject({ sol: "0", next: airdropRefused(address) });
+    expect(ran.json()).toMatchObject({ sol: "0", next: airdropRefused(address, DEVNET_URL) });
     expect(ran.json()["other_ways"]).toEqual(otherWays(address, GH_MISSING));
     expect((ran.json()["other_ways"] as string[])[2]).toContain("open " + faucetLink(address) + " to file a faucet request in a browser");
     expect(ran.json()["faucet_request"]).toBeUndefined();
@@ -256,7 +257,7 @@ describe("setup --faucet", () => {
     const ran = await run(["setup", "--faucet"], [{ code: 1, output: "You are not logged into any GitHub hosts" }]);
     const address = ran.json()["address"] as Address;
     expect(ran.launched).toHaveLength(1);
-    expect(ran.json()).toMatchObject({ next: airdropRefused(address) });
+    expect(ran.json()).toMatchObject({ next: airdropRefused(address, DEVNET_URL) });
   });
 
   it("fails with what the GitHub CLI said when it cannot file the request", async () => {

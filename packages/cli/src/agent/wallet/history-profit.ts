@@ -2,7 +2,7 @@ import type { Address } from "@solana/kit";
 import { type EngineEvent, formatAmount, NATIVE_MINT, tokenName } from "@intent-engine/core";
 import { findVaultPda } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
-import { eventAuthority, heldPayouts, heldReturned, mintOf, releaseShareOf } from "@intent-engine/client/internal";
+import { eventAuthority, heldPayouts, heldReturned, loadCommittee, mintOf, releaseShareOf } from "@intent-engine/client/internal";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { account, InvalidInput, list, object, text } from "../schema.js";
@@ -31,7 +31,7 @@ export const profitItem = object({
   token: text("SOL, TEST or the mint the job paid in, and the paid_from escrows too"),
   received: text("whole tokens the job's release paid this wallet, less a held share of it returned to the job's owner"),
   paid_out: text("whole tokens the releases of paid_from paid their workers, less held shares their closes returned to this wallet"),
-  fees: text("whole tokens of judge and protocol fees those releases took"),
+  fees: text("whole tokens of protocol and partner fees those releases paid, and of judge fees they paid to a judge whose fee wallet is not this wallet; withheld fees not"),
   fees_sol: text("whole SOL of create fees, crank bounties others collected, and the base network fee of each transaction this wallet paid for on paid_from"),
   rent_sol: text("whole SOL the paid_from escrows' accounts still hold as rent and crank bounty; most comes back when they close"),
   difference: text("received less paid_out and fees, and for SOL also less fees_sol and rent_sol; a leading - is a loss"),
@@ -63,6 +63,17 @@ async function received(transport: Transport, wallet: Address, job: Address) {
 
 type Spent = { paidOut: bigint; fees: bigint; feesSol: bigint; rentSol: bigint };
 
+type Release = { amountIn: bigint; fee: bigint; partnerFee: bigint; net: bigint; attestor: Address };
+
+async function judgePaid(transport: Transport, wallet: Address, release: Release, withheld: bigint): Promise<bigint> {
+  const paid = release.amountIn - release.fee - release.partnerFee - release.net - withheld;
+  if (paid <= 0n) {
+    return 0n;
+  }
+  const committee = await loadCommittee(transport, release.attestor);
+  return (committee?.feeWallet ?? release.attestor) === wallet ? 0n : paid;
+}
+
 async function spentOn(transport: Transport, wallet: Address, intent: Address, mint: Address, at: number): Promise<Spent> {
   const transactions = (await transport.engineTransactions(ESCROW_EVENTS, intent)).filter(({ failed }) => !failed);
   const events = eventsIn(transactions).filter((event) => (event.fields as Fields)["intent"] === intent);
@@ -79,7 +90,8 @@ async function spentOn(transport: Transport, wallet: Address, intent: Address, m
   for (const event of events) {
     if (event.name === "IntentAttested" || event.name === "IntentSplit") {
       paidOut += event.fields.net;
-      fees += event.fields.fee + event.fields.partnerFee;
+      const withheld = events.reduce((sum, other) => (other.name === "FeeWithheld" && other.signature === event.signature ? sum + other.fields.fee : sum), 0n);
+      fees += event.fields.fee + event.fields.partnerFee + (await judgePaid(transport, wallet, event.fields, withheld));
     }
     if (event.name === "IntentClosed" && event.fields.bountyTo !== wallet) {
       feesSol += BigInt(event.fields.bounty);

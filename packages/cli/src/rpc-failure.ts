@@ -1,5 +1,6 @@
 import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
 import { isSdkError } from "@intent-engine/client";
+import { DEVNET_URL } from "./tokens.js";
 
 export type RpcCause = { kind: "http"; status: number } | { kind: "json-rpc" } | { kind: "unreached" } | { kind: "dropped" };
 
@@ -34,5 +35,9 @@ export function rpcCause(error: unknown): RpcCause | null {
 }
 
 export const RATE_LIMITED_HINT = "the public devnet node rate-limited this request; retry in a minute, or pass another --url";
+
+export const NODE_RATE_LIMITED = "the RPC node rate-limited this request; retry in a minute, or pass another --url";
+
+export const rateLimitedHint = (url: string | undefined): string => (url === DEVNET_URL ? RATE_LIMITED_HINT : NODE_RATE_LIMITED);
 
 export const rpcFailed = (error: unknown): boolean => rpcCause(error) !== null;

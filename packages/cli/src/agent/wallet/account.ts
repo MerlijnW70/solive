@@ -74,7 +74,7 @@ export const walletSetup = define({
     const wallet = await testCluster(ctx);
     const apart = [ctx.agent?.signer.address, ctx.relay?.signer.address].filter((key): key is Address => key !== undefined);
     const made = await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
-      throw error instanceof ServerKeyNotWallet ? new AgentRefusal("KeyInUse", error.message) : error;
+      throw error instanceof ServerKeyNotWallet ? new AgentRefusal("KeyIsWallet", error.message) : error;
     });
     return { ...made, notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };
   },

@@ -9,7 +9,7 @@ import { createClient } from "@intent-engine/client/node";
 import { DEMO_SPECS, demoSpecUrl } from "../src/agent/mcp.js";
 import { URL_HIDDEN } from "../src/announce-commands.js";
 import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
-import { RATE_LIMITED_HINT } from "../src/rpc-failure.js";
+import { NODE_RATE_LIMITED, RATE_LIMITED_HINT } from "../src/rpc-failure.js";
 import { announced, keyed } from "./announce.js";
 import { cli, NOW, runtime, transport, type World, world } from "./harness.js";
 
@@ -94,12 +94,24 @@ describe("deliveries url hint", () => {
 describe("rate limit text", () => {
   const throttled = () => new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Too Many Requests", statusCode: 429 });
 
-  it("a 429 from the node prints the retry text and still fails", async () => {
+  const throttledRun = async (url: string[]) => {
     const err: string[] = [];
     const rate = { ...runtime({}), transport: () => { throw throttled(); } };
-    const code = await main(["deliveries", "--intent", "11111111111111111111111111111111"], rate, { out: () => undefined, err: (t) => err.push(t) });
-    expect(code).toBe(EXIT_FAILED);
-    expect(err.join("\n")).toBe(RATE_LIMITED_HINT);
+    const code = await main(["deliveries", "--intent", "11111111111111111111111111111111", ...url], rate, { out: () => undefined, err: (t) => err.push(t) });
+    return { code, err: err.join("\n") };
+  };
+
+  it("a 429 from the devnet node prints the retry text and still fails", async () => {
+    expect(await throttledRun(["--url", "devnet"])).toEqual({ code: EXIT_FAILED, err: RATE_LIMITED_HINT });
     expect(RATE_LIMITED_HINT).toMatch(/rate-limited.*retry in a minute.*--url/);
+  });
+
+  it("a 429 from any other node names no devnet", async () => {
+    for (const url of [[], ["--url", "testnet"], ["--url", "mainnet-beta"], ["--url", "https://" + "rpc.example.org"]]) {
+      const run = await throttledRun(url);
+      expect(run, url.join(" ")).toEqual({ code: EXIT_FAILED, err: NODE_RATE_LIMITED });
+      expect(run.err).not.toMatch(/devnet/i);
+    }
+    expect(NODE_RATE_LIMITED).toMatch(/rate-limited.*retry in a minute.*--url/);
   });
 });

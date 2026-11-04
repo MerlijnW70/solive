@@ -1,5 +1,6 @@
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./agent/create.js";
 import { MANDATE_KIND_NAMES } from "./agent/mandate.js";
+import { MAX_MANDATE_INTENTS } from "./agent/mandate-state.js";
 import { ORDER, type StringKey, type Values } from "./arg-options.js";
 import {
   amountOf,
@@ -107,7 +108,7 @@ function grant(values: Values): ToolInput {
     kinds,
     per_intent: amountOf(values, "per-intent"),
     total: amountOf(values, "total"),
-    max_intents: parseBounded(required(values, "max-intents"), "max-intents", 0xffff_ffff),
+    max_intents: parseBounded(required(values, "max-intents"), "max-intents", MAX_MANDATE_INTENTS, 1),
     max_ttl: parseBounded(required(values, "max-ttl"), "max-ttl", MAX_EXPIRES_IN, MIN_EXPIRES_IN),
     valid_for: parseBounded(required(values, "valid-for"), "valid-for", MAX_EXPIRES_IN, MIN_EXPIRES_IN),
     floor: { out: amountOf(values, "floor-out"), in: amountOf(values, "floor-in") },
