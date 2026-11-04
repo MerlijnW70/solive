@@ -359,7 +359,7 @@ sudo systemctl enable --now intent-engine-monitor
 journalctl -u intent-engine-monitor -f
 ```
 
-`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `SECOND_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. The first step also passes `--min-balance` for the wallets of the filler, the faucet and the instant faucet, and a `--max-swap-wait` above the filler's polling interval. The faucet's floor stays above its reserve plus one request on each faucet run between two checks: `.github/workflows/faucet.yml` runs several times between two checks, and `packages/cli/test/monitor-workflow.test.ts` holds the floor to that. The instant faucet's floor is 13 SOL: its service stops sending below 2.5 SOL, and the rest covers a day at its daily cap of 20 drips of 0.5 SOL; the same test reads those values from `services/faucet/src/limits.ts`. Funding it is in `services/faucet/README.md`. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
+`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `SECOND_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. The first step also passes `--min-balance` for the wallets of the filler, the faucet and the instant faucet, and a `--max-swap-wait` above the filler's polling interval. The faucet's floor stays above its reserve plus one request on each faucet run between two checks: `.github/workflows/faucet.yml` runs once an hour, at minute 7, and again for each request filed, so the schedule gives one run between two checks, and `packages/cli/test/monitor-workflow.test.ts` holds the floor to that. The instant faucet's floor is 13 SOL: its service stops sending below 2.5 SOL, and the rest covers a day at its daily cap of 20 drips of 0.5 SOL; the same test reads those values from `services/faucet/src/limits.ts`. Funding it is in `services/faucet/README.md`. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
 
 Alerts go to the journal and to the webhook, which should page a person, for example a chat or paging service. After each intended change, write the new baseline and run `sudo systemctl restart intent-engine-monitor`. The monitor cannot report its own death: alert on the unit failing, and watch the webhook for silence.
 
@@ -397,6 +397,10 @@ journalctl -u solive-filler -n 20
 ```
 
 `scripts/faucet-topup.sh` refills one faucet wallet from a funding wallet. By default that is the issue faucet's wallet, `CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS`, the one `scripts/faucet.sh` pays from; the instant faucet's wallet needs `TOPUP_FAUCET` set, as `services/faucet/README.md` shows. It refuses any node whose genesis hash is not devnet's. When the faucet holds less than `TOPUP_FLOOR` SOL it previews a transfer that brings it to `TOPUP_TARGET` SOL, and sends it only with `--yes`, printing the amount and the explorer link. `TOPUP_KEYPAIR` is the funding wallet's key file; `TOPUP_FAUCET`, `TOPUP_URL`, `TOPUP_FLOOR` and `TOPUP_TARGET` default to the devnet faucet's address, devnet and the values at the top of the script.
+
+The issue faucet's budget is one chain of numbers. `scripts/faucet.sh` sends 0.5 SOL per request, stops after 50 requests a day, and keeps 1 SOL in reserve. A day at the cap costs 50 × 0.5 = 25 SOL, so the wallet needs 25 + 1 = 26 SOL to serve it. `TOPUP_TARGET` defaults to 26 SOL, and `TOPUP_FLOOR` to 14 SOL, the reserve plus a little over half a day at the cap. The weekly top-up thus restores one full day at the cap each week; a week at the cap would cost 7 × 25 = 175 SOL. `packages/cli/test/faucet-budget.test.ts` reads these values from the scripts.
+
+The issue faucet finds requests by one rule, kept in `scripts/faucet.sh` and `.github/workflows/faucet.yml` as the same two commands: open issues titled exactly `Devnet SOL` that lack the `faucet` label, and open issues with the `faucet` label that lack `faucet-sent`. When devnet cannot be reached for an address, the script leaves the request open and comments `Retry after:` with a time 3 hours ahead; every run before that time skips the request. Only comments by `github-actions` count. After 8 such tries, 24 hours in all, the script closes the request and asks for a new one.
 
 Run it weekly with `/etc/systemd/system/solive-faucet-topup.service`:
 
@@ -446,7 +450,25 @@ The fast path also holds a subscription to the node for new escrows of each demo
 
 It announces each escrow once and keeps the escrows it is done with in `DEMO_WORKER_STATE`, default `~/demo-worker.json`. The two paths take turns, so they never work one escrow at once. A failed round is logged and retried, waiting twice as long after each failure, up to `MAX_BACKOFF_MS`. Logged events carry the time in `at`.
 
-`DEMO_WORKER_KEYPAIR` is its devnet key file, outside the checkout. `DEMO_WORKER_CLI` names the command line, by default the checkout's build; `DEMO_WORKER_URL`, `DEMO_WORKER_FAST_INTERVAL`, `DEMO_WORKER_INTERVAL`, `DEMO_WORKER_CLAIM_SECS` and `DEMO_WORKER_MAX_STAKE_LAMPORTS` default to devnet and the values in `scripts/demo-worker.mts`. `DEMO_WORKER_PROGRAM` defaults to the owner of the config account that `show config` names. `--once` runs one fast round and one full scan. The unit at `/etc/systemd/system/solive-demo-worker.service`:
+The worker reads these environment variables. It refuses to start when a number is not a number above 0, or the stake cap is not a whole number of lamports, and names the variable.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DEMO_WORKER_KEYPAIR` | none, required | The worker's devnet key file, outside the checkout. |
+| `DEMO_WORKER_CLI` | the checkout's build | The command line the worker runs. |
+| `DEMO_WORKER_DEMOS` | `examples/demo` | The folder of demo specs and solutions. |
+| `DEMO_WORKER_BASE_URL` | the repository's raw url of `examples/demo` on `main` | Where the work urls point; required when `identity.toml` names no GitHub repository. |
+| `DEMO_WORKER_STATE` | `~/demo-worker.json` | The file of escrows it is done with. |
+| `DEMO_WORKER_URL` | `devnet` | The cluster or node address. |
+| `DEMO_WORKER_WS_URL` | derived from `DEMO_WORKER_URL` | The node's websocket address for the subscription. |
+| `DEMO_WORKER_PROGRAM` | the owner of the config account that `show config` names | The program address. |
+| `DEMO_WORKER_FAST_INTERVAL` | 15 | Seconds between fast rounds. |
+| `DEMO_WORKER_WATCHED_INTERVAL` | 30 | Seconds between fast rounds while the subscription is open. |
+| `DEMO_WORKER_INTERVAL` | 300 | Seconds between full scans. |
+| `DEMO_WORKER_CLAIM_SECS` | 900 | The longest claim the worker takes, in seconds. |
+| `DEMO_WORKER_MAX_STAKE_LAMPORTS` | 50000000 | The largest claim stake the worker accepts, in lamports. |
+
+`--once` runs one fast round and one full scan. The unit at `/etc/systemd/system/solive-demo-worker.service`:
 
 ```ini
 [Unit]

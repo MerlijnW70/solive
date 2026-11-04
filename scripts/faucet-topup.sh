@@ -3,8 +3,8 @@ set -euo pipefail
 keypair="${TOPUP_KEYPAIR:?set TOPUP_KEYPAIR to the keypair of the wallet that funds the faucet}"
 url="${TOPUP_URL:-devnet}"
 faucet="${TOPUP_FAUCET:-CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS}"
-floor="${TOPUP_FLOOR:-5}"
-target="${TOPUP_TARGET:-10}"
+floor="${TOPUP_FLOOR:-14}"
+target="${TOPUP_TARGET:-26}"
 devnet_genesis=EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
 lamports_per_sol=1000000000
 

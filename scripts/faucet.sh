@@ -9,6 +9,9 @@ funded=1000000000
 reserve=1000000000
 min_age=$((7 * 86400))
 daily=50
+retry_secs=$((3 * 3600))
+bot=github-actions
+max_parks=8
 day_ago=$(date -u -d "@$((now - 86400))" +%Y-%m-%dT%H:%M:%SZ)
 
 answer() {
@@ -19,10 +22,28 @@ answer() {
 }
 
 later() {
-  gh issue comment "$issue" --body "$1" > /dev/null
-  gh issue edit "$issue" --remove-label faucet > /dev/null
-  echo "$1"
+  if [ "$parks" -ge "$max_parks" ]; then
+    answer "Refused: the faucet could not reach devnet to check \`$address\` after $max_parks tries. Nothing was sent. File a new request to try again." "not planned"
+  fi
+  retry_at=$(date -u -d "@$((now + retry_secs))" +%Y-%m-%dT%H:%M:%SZ)
+  message="$1 The request stays open. Retry after: $retry_at."
+  gh issue comment "$issue" --body "$message" > /dev/null
+  echo "$message"
   exit 0
+}
+
+park_state() {
+  gh issue view "$issue" --json comments | BOT="$bot" node -e '
+let text = "";
+process.stdin.on("data", (chunk) => (text += chunk)).on("end", () => {
+  const marks = [];
+  for (const comment of JSON.parse(text).comments) {
+    const found = comment.author?.login === process.env.BOT ? /Retry after: (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)/.exec(comment.body) : null;
+    if (found && Number.isFinite(Date.parse(found[1]))) marks.push(found[1]);
+  }
+  console.log(marks.length + " " + (marks.at(-1) ?? ""));
+});
+'
 }
 
 key_bytes() {
@@ -39,6 +60,11 @@ console.log(bytes);
 
 serve() {
   issue="$1"
+  read -r parks until < <(park_state)
+  if [ -n "$until" ] && [ "$now" -lt "$(date -u -d "$until" +%s)" ]; then
+    echo "Parked: request $issue waits until $until."
+    exit 0
+  fi
   author=$(gh issue view "$issue" --json author --jq .author.login)
   body=$(gh issue view "$issue" --json body --jq .body)
   if ! [[ "$author" =~ ^[A-Za-z0-9-]{1,39}$ ]]; then
@@ -65,7 +91,7 @@ serve() {
     answer "Refused: the faucet sent its daily limit. Try again tomorrow, or request devnet SOL at https://faucet.solana.com." "not planned"
   fi
   if ! held=$(solana balance "$address" --url "$url" --lamports 2> /dev/null); then
-    later "The faucet could not reach devnet to check \`$address\`. Nothing was sent, and this request does not count toward your one request a day. Open a new request later."
+    later "The faucet could not reach devnet to check \`$address\`. Nothing was sent, and this request does not count toward your one request a day."
   fi
   if [ "${held%% *}" -ge "$funded" ]; then
     answer "Refused: \`$address\` already holds 1 devnet SOL or more." "not planned"

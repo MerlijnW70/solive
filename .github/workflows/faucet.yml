@@ -26,9 +26,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          titled=$(gh issue list --state open --limit 100 --search 'in:title "Devnet SOL"' --json number --jq 'length')
-          labelled=$(gh issue list --state open --label faucet --limit 100 --json labels --jq '[.[] | select(all(.labels[]; .name != "faucet-sent"))] | length')
-          echo "open=$((titled + labelled))" >> "$GITHUB_OUTPUT"
+          untagged=$(gh issue list --state open --limit 100 --search 'in:title "Devnet SOL" -label:faucet' --json number,title --jq '.[] | select(.title == "Devnet SOL") | .number')
+          waiting=$(gh issue list --label faucet --state open --limit 100 --json number,labels --jq '.[] | select(all(.labels[]; .name != "faucet-sent")) | .number')
+          open=$(printf '%s\n%s\n' "$waiting" "$untagged" | { grep -Ex '[0-9]+' || true; } | sort -nu | wc -l)
+          echo "open=$open" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
         with:

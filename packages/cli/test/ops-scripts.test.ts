@@ -63,7 +63,7 @@ describe("the faucet top-up", () => {
   it("previews the top-up without --yes and sends nothing", () => {
     const run = topUp([], { held: (3n * SOL) / 2n });
     expect(run.code).toBe(0);
-    expect(run.out).toBe(`would send 8.5 SOL from ${FUNDER} to the faucet ${FAUCET}, which holds 1.5 SOL, to reach 10 SOL; run again with --yes to send`);
+    expect(run.out).toBe(`would send 24.5 SOL from ${FUNDER} to the faucet ${FAUCET}, which holds 1.5 SOL, to reach 26 SOL; run again with --yes to send`);
     expect(run.transfers).toEqual([]);
   });
 
@@ -76,9 +76,9 @@ describe("the faucet top-up", () => {
   });
 
   it("sends nothing while the faucet holds the floor or more", () => {
-    const run = topUp(["--yes"], { held: 5n * SOL });
+    const run = topUp(["--yes"], { held: 14n * SOL });
     expect(run.code).toBe(0);
-    expect(run.out).toBe(`the faucet ${FAUCET} holds 5 SOL, at least the floor of 5 SOL; nothing sent`);
+    expect(run.out).toBe(`the faucet ${FAUCET} holds 14 SOL, at least the floor of 14 SOL; nothing sent`);
     expect(run.transfers).toEqual([]);
   });
 

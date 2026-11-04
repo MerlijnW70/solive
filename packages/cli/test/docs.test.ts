@@ -7,7 +7,7 @@ import { annotationsOf } from "../src/agent/mcp.js";
 import { ENGINE_ERROR_BASE, ENGINE_PROBLEMS, SERVER_PROBLEMS, TOKEN_PROBLEMS } from "../src/agent/problems.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
-import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
+import { EVERYDAY_TOOLS, servedActions } from "../src/agent/everyday.js";
 import { ADDRESS_PATTERN, AMOUNT_PATTERN, TIME_PATTERN } from "../src/agent/schema.js";
 import * as core from "@intent-engine/core";
 import * as client from "@intent-engine/client";
@@ -173,8 +173,12 @@ function toolsPage(): string {
         : [...table(["Parameter", "Type", "Required", "Description"], params.map((r) => [`\`${r.path}\``, r.type, r.required ? "yes" : "no", r.description])), ""]),
     ];
   });
+  const serving = { wallet: false, allTools: false, relay: false, agent: false };
+  const plain = servedActions(serving);
+  const everyday = servedActions({ ...serving, wallet: true });
+  const every = servedActions({ ...serving, wallet: true, allTools: true });
   return page("MCP tools", [
-    `${ACTIONS.length} tools, served by \`intent-engine mcp\` over stdio. With \`--wallet\` it serves only the ${EVERYDAY_TOOLS.size} everyday tools: ${[...WALLET_ACTIONS, ...ACTIONS].filter((a) => EVERYDAY_TOOLS.has(a.name)).map((a) => `\`${a.name}\``).join(", ")}, plus the tools \`--relayer\` and \`--agent\` need. With \`--wallet --all-tools\` it serves every tool, the ${WALLET_ACTIONS.length} wallet tools listed first.`,
+    `This page lists ${every.length} tools: ${WALLET_ACTIONS.length} wallet tools and ${ACTIONS.length} others. \`intent-engine mcp\` serves the ${plain.length} others over stdio. With \`--wallet\` it serves only the ${everyday.length} everyday tools: ${everyday.map((a) => `\`${a.name}\``).join(", ")}, plus the tools \`--relayer\` and \`--agent\` need. With \`--wallet --all-tools\` it serves all ${every.length}, the ${WALLET_ACTIONS.length} wallet tools listed first.`,
     "",
     ...body,
   ]);

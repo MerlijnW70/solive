@@ -32,6 +32,8 @@ export const KEEPALIVE_ID = 0;
 export const KEEPALIVE = JSON.stringify({ jsonrpc: "2.0", id: KEEPALIVE_ID, method: "getVersion" });
 export const WATCHED_INTERVAL_SECS = 30;
 export const FULL_INTERVAL_SECS = 300;
+export const CLAIM_SECS = 900;
+export const MAX_STAKE_LAMPORTS = 50_000_000;
 export const MAX_BACKOFF_MS = 60_000;
 export const RPC_TIMEOUT_MS = 15_000;
 
@@ -401,6 +403,36 @@ const needed = (env: NodeJS.ProcessEnv, name: string): string => {
 
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
+export type Timing = { fastSecs: number; fullSecs: number; watchedSecs: number; claimSecs: number; maxStake: bigint };
+
+const secondsOf = (env: NodeJS.ProcessEnv, name: string, fallback: number): number => {
+  const raw = env[name];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  const value = /^\d+(\.\d+)?$/.test(raw.trim()) ? Number(raw) : Number.NaN;
+  if (!(Number.isFinite(value) && value > 0)) {
+    throw new Error(`${name} is a number of seconds above 0, not "${raw}"`);
+  }
+  return value;
+};
+
+const lamportsOf = (env: NodeJS.ProcessEnv, name: string, fallback: string): bigint => {
+  const raw = env[name] ?? fallback;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${name} is a whole number of lamports, not "${raw}"`);
+  }
+  return BigInt(raw);
+};
+
+export const timingOf = (env: NodeJS.ProcessEnv): Timing => ({
+  fastSecs: secondsOf(env, "DEMO_WORKER_FAST_INTERVAL", FAST_INTERVAL_SECS),
+  fullSecs: secondsOf(env, "DEMO_WORKER_INTERVAL", FULL_INTERVAL_SECS),
+  watchedSecs: secondsOf(env, "DEMO_WORKER_WATCHED_INTERVAL", WATCHED_INTERVAL_SECS),
+  claimSecs: secondsOf(env, "DEMO_WORKER_CLAIM_SECS", CLAIM_SECS),
+  maxStake: lamportsOf(env, "DEMO_WORKER_MAX_STAKE_LAMPORTS", String(MAX_STAKE_LAMPORTS)),
+});
+
 export const pollEvery = (watching: () => boolean, fastMs: number, watchedMs: number): number => (watching() ? Math.max(fastMs, watchedMs) : fastMs);
 
 export async function repeat(path: string, round: () => Promise<Event[]>, every: () => number, log: Log, wait: (ms: number) => Promise<unknown> = pause, more: () => boolean = () => true): Promise<void> {
@@ -414,6 +446,7 @@ export async function runWorker(env: NodeJS.ProcessEnv, argv: readonly string[])
   const split = argv.indexOf("--");
   const once = argv.slice(0, split < 0 ? argv.length : split).includes("--once");
   const keypair = needed(env, "DEMO_WORKER_KEYPAIR");
+  const timing = timingOf(env);
   const url = env["DEMO_WORKER_URL"] ?? "devnet";
   const cli = cliOf(split < 0 ? [] : argv.slice(split + 1), url);
   const rpc = rpcOf(rpcUrlOf(url));
@@ -423,7 +456,7 @@ export async function runWorker(env: NodeJS.ProcessEnv, argv: readonly string[])
   if (wallet === null) {
     throw new Error("balance printed no address for DEMO_WORKER_KEYPAIR");
   }
-  const settings: Settings = { keypair, wallet, maxStake: BigInt(env["DEMO_WORKER_MAX_STAKE_LAMPORTS"] ?? "50000000"), claimSecs: Number(env["DEMO_WORKER_CLAIM_SECS"] ?? "900") };
+  const settings: Settings = { keypair, wallet, maxStake: timing.maxStake, claimSecs: timing.claimSecs };
   const program = env["DEMO_WORKER_PROGRAM"] || (await programOf(cli, rpc));
   const read = programReader(rpc, program);
   const ledger = await readLedger(statePath);
@@ -442,11 +475,11 @@ export async function runWorker(env: NodeJS.ProcessEnv, argv: readonly string[])
     await tick("full", full, log);
     return;
   }
-  const fastEvery = Number(env["DEMO_WORKER_FAST_INTERVAL"] ?? String(FAST_INTERVAL_SECS)) * 1000;
-  const fullEvery = Number(env["DEMO_WORKER_INTERVAL"] ?? String(FULL_INTERVAL_SECS)) * 1000;
+  const fastEvery = timing.fastSecs * 1000;
+  const fullEvery = timing.fullSecs * 1000;
   const seen = (found: Found) => void tick("watch", () => lock(async () => saved(await fastWork(cli, [found], settings, ledger, now()))), log);
   const Sockets = (globalThis as unknown as { WebSocket: new (url: string) => Socket }).WebSocket;
-  const watchedEvery = Number(env["DEMO_WORKER_WATCHED_INTERVAL"] ?? String(WATCHED_INTERVAL_SECS)) * 1000;
+  const watchedEvery = timing.watchedSecs * 1000;
   let open = false;
   const link = { up: () => void (open = true), down: () => void (open = false) };
   const watching = watch((socketUrl) => new Sockets(socketUrl), env["DEMO_WORKER_WS_URL"] || wsUrlOf(url), program, demos, now, seen, log, pause, () => true, link);

@@ -24,7 +24,8 @@ echo "gh $*" >> "$STUB_LOG"
 case "$1 $2" in
   "api users/"*) echo "$STUB_CREATED" ;;
   "issue view")
-    if [[ "$*" == *"--json body"* ]]; then cat "$STUB_ISSUES/$3/body"; else cat "$STUB_ISSUES/$3/author"; fi ;;
+    if [[ "$*" == *"--json comments"* ]]; then echo '{"comments":[]}'
+    elif [[ "$*" == *"--json body"* ]]; then cat "$STUB_ISSUES/$3/body"; else cat "$STUB_ISSUES/$3/author"; fi ;;
   "issue list")
     if [[ "$*" == *"--search"* ]]; then cat "$STUB_ISSUES/untagged"
     elif [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"
@@ -170,12 +171,13 @@ describe("the devnet faucet", () => {
     expect(sent(request(form("1".repeat(32))).calls)).toHaveLength(1);
   });
 
-  it("leaves a request open, unanswered and out of the daily count when devnet cannot be reached", () => {
+  it("leaves a request open, labelled and out of the daily count, with a retry time, when devnet cannot be reached", () => {
     const { out, calls } = request(form(ADDRESS), { invalid: ADDRESS });
     expect(out.startsWith("The faucet could not reach devnet")).toBe(true);
     expect(sent(calls)).toEqual([]);
     expect(closed(calls)).toBeUndefined();
-    expect(calls).toContain("gh issue edit 7 --remove-label faucet");
+    expect(calls.filter((c) => c.startsWith("gh issue edit 7"))).toEqual([]);
+    expect(out).toMatch(/ Retry after: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\.$/);
     expect(calls.filter((c) => c.startsWith("gh issue comment 7 --body The faucet could not reach devnet"))).toHaveLength(1);
     expect(readFileSync(SCRIPT, "utf8")).toMatch(/gh issue list --author "\$author" --label faucet /);
   });
@@ -190,7 +192,7 @@ describe("the devnet faucet", () => {
     const gate = "if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'";
     expect(WORKFLOW.indexOf("- name: waiting")).toBeLessThan(WORKFLOW.indexOf("uses: actions/checkout"));
     expect(WORKFLOW.split(gate)).toHaveLength(4);
-    expect(WORKFLOW).toContain(`--search 'in:title "Devnet SOL"'`);
+    expect(WORKFLOW).toContain(`--search 'in:title "Devnet SOL" -label:faucet'`);
     expect(WORKFLOW).toContain('select(all(.labels[]; .name != "faucet-sent"))');
   });
 
