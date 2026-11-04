@@ -5,6 +5,7 @@ import { IntentStatus, Kind } from "@intent-engine/core";
 import { buildClaimJob, buildOpenClaims, buildSettleClaims, claimBoardAddress, findIntentPda } from "@intent-engine/core/internal";
 import { createClient } from "../../src/index.js";
 import { world } from "../svm.js";
+import { airdropped } from "../airdrop.js";
 
 const SOL = 1_000_000_000n;
 const STAKE = 50_000_000n;
@@ -17,7 +18,7 @@ describe("a claim held when its escrow is cancelled", () => {
     const owner = w.owner;
     const judge = await generateKeyPairSigner();
     const worker = await generateKeyPairSigner();
-    w.chain.svm.airdrop(worker.address, lamports(10n * SOL));
+    airdropped(w.chain.svm, worker.address, lamports(10n * SOL));
     const { nonce } = await client.createIntent({
       signer: owner,
       params: { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: SPEC, judgeFee: 0n },

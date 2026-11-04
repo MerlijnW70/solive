@@ -41,6 +41,7 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { GH_HINT } from "../src/faucet.js";
 import { balance, cli, funded, h, HOME, runtime, transport, type World, world } from "./harness.js";
 import { device, deviceKey, found } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 const WALLET = defaultWallet(HOME);
 const SYSTEM_PROGRAM = "11111111111111111111111111111111" as Address;
@@ -177,12 +178,12 @@ describe("setup and balance", () => {
         " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 60 minutes, so SOL arrives within 70 minutes",
       GH_WAY,
     ]);
-    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
+    airdropped(h.svm, address, lamports(LAMPORTS_PER_SOL / 50n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address, DEVNET_URL) });
     expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
     expect(heldRefused("0.02", address, DEVNET_URL).endsWith(pasteAt(address))).toBe(true);
     expect(otherWays(address, GH_HINT)[2]).toContain(faucetLink(address));
-    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
+    airdropped(h.svm, address, lamports(LAMPORTS_PER_SOL / 4n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START, DEVNET_URL) });
     expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);
     clean();
@@ -250,7 +251,7 @@ describe("setup and balance", () => {
     h.airdropRefused = true;
     const made = (await cli(["setup"], {})).json();
     const address = made["address"] as Address;
-    h.svm.airdrop(address, lamports(ENOUGH_TO_START));
+    airdropped(h.svm, address, lamports(ENOUGH_TO_START));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.06", next: refusedEnough("0.06", CLI_SMALL_START, DEVNET_URL) });
   });
 

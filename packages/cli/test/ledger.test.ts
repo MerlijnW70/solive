@@ -21,6 +21,7 @@ import { LEDGER_COMMANDS, needsKeyFile, signsOnDevice } from "../src/ledger-keys
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { ata, balance, h, runtime, type World, world } from "./harness.js";
 import { addressApdu, BLIND_OFF, BLIND_ON, CONFIG, type Device, device, deviceKey, type Key, REJECT, signing, TransportError } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 
@@ -55,7 +56,7 @@ describe("signing with a Ledger", () => {
   beforeEach(async () => {
     w = await world();
     key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     input = await ata(w.authority, key.address, w.inputMint, 1_000n);
     await ata(w.authority, key.address, w.outputMint);
   });

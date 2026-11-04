@@ -14,6 +14,7 @@ import { keyedProfile } from "./encryption-job.js";
 import { ata, cli, FEE_BPS, funded, h, mint, setNow, transport } from "./harness.js";
 import { deviceKey } from "./ledger-device.js";
 import { freeProtocol } from "./kill-cli-wallet-survivors-kit.js";
+import { airdropped } from "./airdrop.js";
 
 const forced = vi.hoisted(() => ({ setup: undefined as unknown }));
 
@@ -199,7 +200,7 @@ describe("the committee tools of a wallet outside the committee", () => {
   async function committeeJob() {
     const client = await fresh();
     const first = await deviceKey();
-    h.svm.airdrop(first.address, lamports(10_000_000_000n));
+    airdropped(h.svm, first.address, lamports(10_000_000_000n));
     const second = await keyed();
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(wallet);

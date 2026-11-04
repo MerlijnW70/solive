@@ -27,7 +27,7 @@ import {
 import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
-import { claimBoard, refusedBy } from "./agent/claim-line.js";
+import { claimAt, claimBoard, refusedBy } from "./agent/claim-line.js";
 import { previewed } from "./admin-commands.js";
 import { finishList, listAccount, listExists, listLate, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
@@ -156,14 +156,16 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   if (command.name === "claims-list") {
     const { address: intent } = await ownOrder(transport, signer.address, command.nonce);
     const { view } = await claimsOf(client, signer.address, command.nonce);
-    if ((await escrowOpen(client, signer.address, command.nonce, await client.chainTime())) === null) {
+    const now = await client.chainTime();
+    if ((await escrowOpen(client, signer.address, command.nonce, now)) === null) {
       throw new FlowRefused(notOpen(intent));
     }
     if (view.list !== null) {
       throw new FlowRefused(listExists(intent));
     }
-    if (view.state === "held" && view.worker !== null) {
-      throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
+    const slot = claimAt(view, now);
+    if (slot.state === "held") {
+      throw new FlowRefused(heldBy(intent, slot.worker, slot.until - now));
     }
     if (view.line.waiting > 0) {
       throw new FlowRefused(lineWaiting(intent, view.line.waiting));
@@ -189,7 +191,8 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
     case "claims-take":
       return takeClaim(command, signer, transport, client, intent, view, shown, admit);
     case "claims-drop": {
-      if (view.state !== "held" || view.worker !== signer.address) {
+      const slot = claimAt(view, await client.chainTime());
+      if (slot.state !== "held" || slot.worker !== signer.address) {
         throw new FlowRefused(`${signer.address} holds no claim on escrow ${intent}; nothing was sent`);
       }
       const handover = await dropHandover(client, transport, command.owner, command.nonce, intent, view);
@@ -280,8 +283,9 @@ async function advanceLine(
     throw new FlowRefused(`nobody stands by for escrow ${intent}; nothing was sent`);
   }
   const handover = await lineHandover(transport, intent, view.line, view.cooldown?.worker);
+  const slot = claimAt(view, now);
   const summary = [
-    ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
+    ...(slot.state === "lapsed" ? [`Ends: the lapsed claim of ${slot.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
     ...handedTo(handover),
     `Pays the fee: ${payer.address}`,
   ];
@@ -353,10 +357,11 @@ async function takeClaim(
         : `a claim of ${command.secs} seconds would outlive escrow ${intent}, which expires at ${expiresAt}`,
     );
   }
+  const slot = claimAt(view, now);
   const summary = [
     `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only ${worker.address} can be paid`,
     `Stakes: ${sol(view.stake)}, returned when a release pays this worker or it drops the claim, and lost to the owner if the claim lapses first`,
-    ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake goes to the owner ${view.owner}`] : []),
+    ...(slot.state === "lapsed" ? [`Ends: the lapsed claim of ${slot.worker}, whose stake goes to the owner ${view.owner}`] : []),
   ];
   const instruction = await buildClaimJob({ worker, intent, owner: view.owner, secs: command.secs, ...listAccount(view.list) });
   return previewed(transport, [instruction], worker, { ...shown, summary }, command.yes);
@@ -379,7 +384,7 @@ async function settleClaims(
     receiver = stakeReceiverOnSettle(board, now, open);
   } catch (error) {
     if (isSdkError(error, "intent-core-error") && view.worker !== null) {
-      throw new FlowRefused(`${heldBy(intent, view.worker, view.secondsLeft)}; settle once it lapses or the escrow closes`);
+      throw new FlowRefused(`${heldBy(intent, view.worker, view.until - now)}; settle once it lapses or the escrow closes`);
     }
     throw error;
   }

@@ -32,6 +32,7 @@ import { chainTime, CLOCK_SYSVAR, JOBS_LIMIT, loadUser, MAX_SPEC_BYTES } from ".
 import type { NodeClientOptions, NodeConnectOptions } from "../src/node.js";
 import { OBSERVE_SECTION, PLAN_SECTION, TESTING_SECTION } from "./doc-sections.js";
 import { FEE_BPS, onDevnet, world, type World } from "./svm.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -132,7 +133,7 @@ const ata = (owner: Address, mint: Address) => findAssociatedTokenAddress({ owne
 async function wallet(w: World): Promise<{ signer: KeyPairSigner; secret: number[] }> {
   const seed = crypto.getRandomValues(new Uint8Array(32));
   const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
-  w.chain.svm.airdrop(signer.address, lamports(LAMPORTS));
+  airdropped(w.chain.svm, signer.address, lamports(LAMPORTS));
   return { signer, secret: [...seed, ...getAddressEncoder().encode(signer.address)] };
 }
 

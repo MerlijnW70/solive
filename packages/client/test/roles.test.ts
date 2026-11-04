@@ -30,6 +30,7 @@ import {
 import { createClient, EscrowExpired, NotSettleable, type Transport } from "../src/index.js";
 import { FEE_BPS, NOW, world } from "./svm.js";
 import { announced, type Delivered, sha } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/sdk.md`, "utf8") + "\n" + readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
@@ -101,7 +102,7 @@ async function setup() {
   const svm = w.chain.svm;
   const fresh = async () => {
     const signer = await generateKeyPairSigner();
-    svm.airdrop(signer.address, lamports(10n * SOL));
+    airdropped(svm, signer.address, lamports(10n * SOL));
     return signer;
   };
   const sol = (wallet: Address) => svm.getBalance(wallet) ?? 0n;

@@ -46,6 +46,7 @@ import {
 } from "../src/wallet.js";
 import { h, runtime, transport, world, type World } from "./harness.js";
 import { DEVNET_URL } from "../src/tokens.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -100,7 +101,7 @@ const refusing = (above: bigint) => {
       if (amount > above) {
         throw new Error("429 Too Many Requests");
       }
-      h.svm.airdrop(address, lamports(amount));
+      airdropped(h.svm, address, lamports(amount));
       return testSignature(`airdrop ${address} ${amount}`);
     },
   };
@@ -170,7 +171,7 @@ describe("setup when devnet refuses", () => {
     const need = /This guide needs ([\d.]+) SOL in your wallet\./.exec(GUIDE)?.[1] ?? "missing";
     refusing(0n);
     const address = (await run(["setup"])).json()["address"] as Address;
-    h.svm.airdrop(address, lamports(SOL(need)));
+    airdropped(h.svm, address, lamports(SOL(need)));
     const held = (await run(["setup"])).json();
     expect(held).toMatchObject({ sol: need, next: refusedEnough(need, CLI_SMALL_START, DEVNET_URL) });
     expect(held["next"]).not.toContain(faucetLink(address));
@@ -182,7 +183,7 @@ describe("setup when devnet refuses", () => {
   it("still points a wallet below that amount to the faucet", async () => {
     refusing(0n);
     const address = (await run(["setup"])).json()["address"] as Address;
-    h.svm.airdrop(address, lamports(ENOUGH_TO_START - 1n));
+    airdropped(h.svm, address, lamports(ENOUGH_TO_START - 1n));
     const held = (await run(["setup"])).json();
     expect(held).toMatchObject({ sol: "0.059999999", next: heldRefused("0.059999999", address, DEVNET_URL) });
   });
@@ -191,7 +192,7 @@ describe("setup when devnet refuses", () => {
     expect(CLI_SMALL_START).toBe("follow the first paid job guide; a 0.05 SOL swap needs 0.1 SOL");
     preset(NATIVE_MINT);
     const signer = await createKeyPairSignerFromPrivateKeyBytes(new Uint8Array(32).fill(9));
-    h.svm.airdrop(signer.address, lamports(SWAP_START));
+    airdropped(h.svm, signer.address, lamports(SWAP_START));
     const swap = ["create", "swap", "--keypair", "owner.json", "--input-mint", "SOL", "--output-mint", w.outputMint, "--expires-in", "3600", "--amount-in", "0.05", "--min-out", "0.000005", "--yes"];
     const out: string[] = [];
     const err: string[] = [];
@@ -212,7 +213,7 @@ describe("setup --faucet", () => {
     h.rounds = 100;
     h.onSleep.push(
       () => undefined,
-      () => h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 2n)),
+      () => airdropped(h.svm, address, lamports(LAMPORTS_PER_SOL / 2n)),
     );
     const ran = await run(["setup", "--faucet"], [SIGNED_IN, FILED]);
     expect([ran.code, ran.err]).toEqual([EXIT_OK, ""]);

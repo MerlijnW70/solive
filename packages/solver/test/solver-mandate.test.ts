@@ -18,6 +18,7 @@ import {
 } from "@intent-engine/core/internal";
 import { type Chain, MANDATE_GONE, mandateEpochPassed, mandateReplaced } from "../src/index.js";
 import { AMOUNT, deployEngine, type Engine, engineTools, MIN_OUT, NOW, stashMarket } from "./solver-engine.js";
+import { airdropped } from "./airdrop.js";
 
 const AGENT_FEE = 10n;
 const LANE = MANDATE_NONCE_BIT | (1n << 32n);
@@ -68,7 +69,7 @@ async function grant(agent: Address, id = 0n) {
 
 async function agentIntent() {
   const agent = await generateKeyPairSigner();
-  e.svm.airdrop(agent.address, lamports(10_000_000_000n));
+  airdropped(e.svm, agent.address, lamports(10_000_000_000n));
   const agentAccount = await ata(e.authority, agent.address, e.inputMint);
   await grant(agent.address);
   await send(agent, [

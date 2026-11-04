@@ -11,6 +11,7 @@ import {
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import { describe, expect, it } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../src/internal.js";
+import { airdropped } from "./airdrop.js";
 
 const ANCHOR_INSTRUCTION_FALLBACK_NOT_FOUND = 101;
 const FEE_BUDGET = lamports(1_000_000_000n);
@@ -22,7 +23,7 @@ async function rejectionCode(data: Uint8Array): Promise<number> {
   const svm = new LiteSVM();
   svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   const payer = await generateKeyPairSigner();
-  svm.airdrop(payer.address, FEE_BUDGET);
+  airdropped(svm, payer.address, FEE_BUDGET);
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(payer, m),

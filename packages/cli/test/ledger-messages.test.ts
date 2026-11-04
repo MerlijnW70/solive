@@ -33,6 +33,7 @@ import { ata, balance, creation, funded, h, HOME, NOW, runtime, transport, type 
 
 const KEY_FILE = "judge.enc";
 import { CONFIG, type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen, TransportError } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -93,7 +94,7 @@ type Job = {
 async function job(attestorOf?: (key: Key) => Promise<Address>): Promise<Job> {
   const w = await world();
   const key = await deviceKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const profile = await keyedProfile(key, KEY_FILE);
   const attestor = attestorOf === undefined ? key.address : await attestorOf(key);
   const workerKey = await keyed();
@@ -161,7 +162,7 @@ describe("a judge on a Ledger", () => {
   it("lets a worker on a Ledger, which cannot sign the salt message, announce with random secrets it keeps, the device signing only the transaction", async () => {
     const j = await job();
     const worker = await deviceKey();
-    h.svm.airdrop(worker.address, lamports(10_000_000_000n));
+    airdropped(h.svm, worker.address, lamports(10_000_000_000n));
     const ledger = device(worker, [...found(LEVELS, worker), ...transactionThen()]);
     const work = "ab".repeat(32);
     const delivered = await run(["deliver", "--keypair", PATH, "--intent", j.intent, "--sha256", work, "--work-url", "https://" + "example.org/work", "--yes"], ledger);
@@ -361,7 +362,7 @@ describe("a signed-intent owner on a Ledger", () => {
   beforeEach(async () => {
     w = await world();
     key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     await ata(w.authority, key.address, w.inputMint, 1_000n);
   });
 

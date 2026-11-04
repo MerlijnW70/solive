@@ -11,6 +11,7 @@ import { svmTransport } from "../src/svm.js";
 import { readFailed } from "../src/trust.js";
 import { FEE_BPS, world } from "./svm.js";
 import { announced } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const failingWith = (transport: Transport, error: Error): Transport => ({
   ...transport,
@@ -46,7 +47,7 @@ async function setup() {
   const client = createClient({ url: LOCAL, transport });
   const fresh = async () => {
     const signer = await generateKeyPairSigner();
-    w.chain.svm.airdrop(signer.address, lamports(10n * SOL));
+    airdropped(w.chain.svm, signer.address, lamports(10n * SOL));
     return signer;
   };
   const judge = await fresh();

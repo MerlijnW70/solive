@@ -42,6 +42,7 @@ import {
 } from "../src/internal.js";
 import { testSignature } from "../src/testing.js";
 import { funded, world, type World } from "./svm.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const LOOKUP_TABLE_HEAD = 56;
@@ -71,7 +72,7 @@ async function setting(fetch?: SpecFetch) {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
   const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
   const judge = await createKeyPairSignerFromBytes(keypair);
-  w.chain.svm.airdrop(judge.address, lamports(100_000_000_000n));
+  airdropped(w.chain.svm, judge.address, lamports(100_000_000_000n));
   const order = { signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint };
   return { w, client, judge, keypair, order };
 }

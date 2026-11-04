@@ -24,6 +24,7 @@ import { buildCreateIntent, buildInitUser, INTENT_ENGINE_PROGRAM_ADDRESS } from 
 import { createClient, FailedOnChain, isSdkError, MaybeSent } from "../src/index.js";
 import { failure, type RpcLike, rpcTransport, SYSTEM_PROGRAM_ADDRESS } from "../src/internal.js";
 import { NOW, world } from "./svm.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const VALID_UNTIL = 100n;
@@ -167,7 +168,7 @@ describe("a transaction that lands and fails", () => {
   it("names another failing program and decodes no engine error for it", async () => {
     const w = await world();
     const poor = await generateKeyPairSigner();
-    w.chain.svm.airdrop(poor.address, lamports(10_000_000n));
+    airdropped(w.chain.svm, poor.address, lamports(10_000_000n));
     const error = await w.chain.transport
       .send([getTransferSolInstruction({ source: poor, destination: w.owner.address, amount: 1_000_000_000n })], poor)
       .catch((caught: unknown) => caught);

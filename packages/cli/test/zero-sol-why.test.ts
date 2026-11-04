@@ -8,6 +8,7 @@ import { APP_WAY, FAUCET, otherWays, pasteFirst, whyAirdrop, WHY_EMPTY, WHY_LIMI
 import { fresh, ok } from "./agent-wallet-kit.js";
 import { cli, h, instant, world } from "./harness.js";
 import { DEVNET_URL } from "../src/tokens.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
@@ -18,7 +19,7 @@ const answering =
   (status: number, body: unknown, credit = false): FaucetFetch =>
   async (_url, init) => {
     if (credit) {
-      h.svm.airdrop((JSON.parse(init.body) as { address: Address }).address, lamports(500_000_000n));
+      airdropped(h.svm, (JSON.parse(init.body) as { address: Address }).address, lamports(500_000_000n));
     }
     return { status, json: async () => body };
   };

@@ -9,6 +9,8 @@ import {
   checkAdvance,
   claimBoardAddress,
   claimListAddress,
+  claimSlot,
+  type ClaimSlot,
   getClaimBoardSize,
   getClaimListSize,
   getStandbySize,
@@ -42,6 +44,8 @@ export function claimBoard(view: ClaimsView): BoardView {
     tail: view.line.tail,
   };
 }
+
+export const claimAt = (view: ClaimsView, now: bigint): ClaimSlot => claimSlot(claimBoard(view), now);
 
 export function refusedBy(check: () => void): CoreErrorCode | undefined {
   try {
@@ -115,7 +119,7 @@ export async function settleStep(client: Client, transport: Transport, escrow: E
     receiver = stakeReceiverOnSettle(board, now, open);
   } catch (error) {
     if (isSdkError(error, "intent-core-error") && view.worker !== null) {
-      throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.secondsLeft} more seconds, so there is nothing to settle; nothing was sent`);
+      throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.until - now} more seconds, so there is nothing to settle; nothing was sent`);
     }
     throw error;
   }
@@ -198,18 +202,19 @@ export async function advanceStep(client: Client, transport: Transport, escrow: 
   const now = await client.chainTime();
   const refused = refusedBy(() => checkAdvance(claimBoard(view), now));
   if (refused === "ClaimHeld" && view.worker !== null) {
-    throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.secondsLeft} more seconds, so the line waits; nothing was sent`);
+    throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.until - now} more seconds, so the line waits; nothing was sent`);
   }
   if (refused === "LineEmpty") {
     throw new AgentRefusal("LineEmpty", `nobody stands by for escrow ${escrow.intent}; nothing was sent`);
   }
   const handover = await lineHandover(transport, escrow.intent, view.line, view.cooldown?.worker);
+  const slot = claimAt(view, now);
   const summary = [
-    ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
+    ...(slot.state === "lapsed" ? [`Ends: the lapsed claim of ${slot.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
     ...handedTo(handover),
     feeLine(payer),
   ];
   const instruction = await buildAdvance({ intent: escrow.intent, owner: view.owner, ...handover });
   const done = handover.nextWorker === undefined ? "advanced; nobody was left in the line" : `advanced; ${handover.nextWorker} now holds the claim`;
-  return { instruction, summary, key: `advance:${view.state}:${handover.nextWorker ?? ""}:${handover.entries.length}`, done };
+  return { instruction, summary, key: `advance:${slot.state}:${handover.nextWorker ?? ""}:${handover.entries.length}`, done };
 }

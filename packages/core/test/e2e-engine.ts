@@ -31,6 +31,7 @@ import {
   getInitConfigInstructionAsync,
   INTENT_ENGINE_PROGRAM_ADDRESS,
 } from "../src/internal.js";
+import { airdropped } from "./airdrop.js";
 
 export const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const NOW = 1_700_000_000n;
@@ -88,7 +89,7 @@ export async function send(payer: KeyPairSigner, ixs: Instruction[]): Promise<Tr
 
 export async function funded(): Promise<KeyPairSigner> {
   const kp = await generateKeyPairSigner();
-  svm.airdrop(kp.address, lamports(100_000_000_000n));
+  airdropped(svm, kp.address, lamports(100_000_000_000n));
   return kp;
 }
 

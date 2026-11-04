@@ -8,7 +8,7 @@ import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";
 import { type AgentContext, define, specReach } from "./actions.js";
-import { type Admit, advanceStep, claimBoard, closedEscrow, type EscrowState, escrowState, fillsGoing, leaveStep, type LineStep, lineWaitingHere, refusedBy, settleCall, settleStep, standbyStep } from "./claim-line.js";
+import { type Admit, advanceStep, claimAt, claimBoard, closedEscrow, type EscrowState, escrowState, fillsGoing, leaveStep, type LineStep, lineWaitingHere, refusedBy, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
@@ -275,22 +275,24 @@ export async function takeStep(client: ReturnType<typeof createClient>, escrow: 
     );
   }
   const stake = `${formatAmount(view.stake, 9)} SOL`;
+  const slot = claimAt(view, now);
   return {
     locks: view.stake,
     instruction: await buildClaimJob({ worker: signer, intent, owner: view.owner, secs, ...listAccount(view.list) }),
     summary: [
       `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only this wallet ${signer.address} can be paid`,
       `Stakes: ${stake}, returned when a release pays this wallet or it drops the claim, and lost to the owner if the claim lapses first`,
-      ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake goes to the owner ${view.owner}`] : []),
+      ...(slot.state === "lapsed" ? [`Ends: the lapsed claim of ${slot.worker}, whose stake goes to the owner ${view.owner}`] : []),
     ],
     key: `${secs}:${view.stake}`,
     done: `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses`,
   };
 }
 
-async function dropStep(ctx: AgentContext, client: ReturnType<typeof createClient>, escrow: Escrow, view: ClaimsView, signer: Signer): Promise<LineStep> {
+export async function dropStep(ctx: AgentContext, client: ReturnType<typeof createClient>, escrow: Escrow, view: ClaimsView, signer: Signer): Promise<LineStep> {
   const { intent } = escrow;
-  if (view.state !== "held" || view.worker !== signer.address) {
+  const slot = claimAt(view, await client.chainTime());
+  if (slot.state !== "held" || slot.worker !== signer.address) {
     throw new AgentRefusal("NotClaimant", `this wallet ${signer.address} holds no claim on escrow ${intent}`);
   }
   const handover: LineHandover = await dropHandover(client, ctx.transport, escrow.owner, escrow.nonce, intent, view);

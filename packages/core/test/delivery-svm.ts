@@ -40,6 +40,7 @@ import {
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
 } from "../src/internal.js";
+import { airdropped } from "./airdrop.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const NOW = 1_700_000_000n;
@@ -128,7 +129,7 @@ export class Engine {
 
   async funded(): Promise<KeyPairSigner> {
     const kp = await generateKeyPairSigner();
-    this.svm.airdrop(kp.address, lamports(100_000_000_000n));
+    airdropped(this.svm, kp.address, lamports(100_000_000_000n));
     return kp;
   }
 

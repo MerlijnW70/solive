@@ -4,12 +4,13 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { getAnnouncementSize, getDeliveryBookSize } from "@intent-engine/core/internal";
 import { isSdkError, type ClaimsView } from "@intent-engine/client";
-import { pinnedFetch } from "@intent-engine/client/node";
+import { createClient, pinnedFetch } from "@intent-engine/client/node";
 import { chainTime, loadCommittee, loadConfig, loadDeliveryBook, readSpec } from "@intent-engine/client/internal";
 import { newKeyFile } from "../../wallet.js";
 import { type AgentContext, define, specReach, specReadOf } from "../actions.js";
 import { rentFor, rentRate } from "../budget.js";
 import type { Call } from "../claims.js";
+import { claimAt, fillsGoing } from "../claim-line.js";
 import { claimOf } from "../job-claims.js";
 import { tool } from "../names.js";
 import { prepare } from "../prepare.js";
@@ -98,15 +99,16 @@ export async function workerSpec(ctx: AgentContext, intent: Address) {
   return spec;
 }
 
-function claimable(intent: Address, view: ClaimsView | null): void {
+export function claimable(intent: Address, view: ClaimsView | null, now: bigint): void {
   if (view === null) {
     return;
   }
   if (view.list !== null) {
     throw new AgentRefusal("WorkerUnfit", jobListed(intent));
   }
-  if (view.state === "held" && view.worker !== null) {
-    throw new AgentRefusal("WorkerUnfit", jobHeld(intent, view.worker));
+  const slot = claimAt(view, now);
+  if (slot.state === "held") {
+    throw new AgentRefusal("WorkerUnfit", jobHeld(intent, slot.worker));
   }
   if (view.line.waiting > 0) {
     throw new AgentRefusal("WorkerUnfit", jobLine(intent, view.line.waiting));
@@ -175,9 +177,10 @@ export const walletWorker = define({
     if (held.status !== IntentStatus.Open || held.expiresAt <= now) {
       throw new AgentRefusal("WorkerUnfit", jobNotOpen(intent));
     }
+    await fillsGoing(createClient({ url: ctx.url ?? "", transport: ctx.transport }), { owner: held.owner, nonce: held.nonce, intent });
     const spec = await workerSpec(ctx, intent);
     const board = await claimOf(ctx.transport, intent);
-    claimable(intent, board);
+    claimable(intent, board, await chainTime(ctx.transport));
     const left = Number(held.expiresAt - now) - LANDING_SECONDS;
     if (board !== null && left < 1) {
       throw new AgentRefusal("WorkerUnfit", jobNotOpen(intent));

@@ -9,6 +9,7 @@ import { costlyFunding, fundingRent } from "../src/crank.js";
 import { SETTLED_LINE } from "../src/agent/shapes.js";
 import { ata, balance, cli, ESCROW, funded, h, NOW, send, setNow, transport, type World } from "./harness.js";
 import { connect, createIntentOf, exists, execute, fail, heldBy, ok, served, swapOf } from "./agent-kit.js";
+import { airdropped } from "./airdrop.js";
 
 describe("agent server against the deployed engine", () => {
   let w: World;
@@ -156,7 +157,7 @@ describe("agent server against the deployed engine", () => {
       const receiver = await findAssociatedTokenAddress({ owner: owner.address, mint: w.outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
       const [firstIntent] = await findIntentPda({ owner: owner.address, nonce: 0n });
       for (const address of [userState, receiver, firstIntent]) {
-        h.svm.airdrop(address, lamports(h.svm.minimumBalanceForRentExemption(0n)));
+        airdropped(h.svm, address, lamports(h.svm.minimumBalanceForRentExemption(0n)));
         expect(h.svm.getAccount(address)).toMatchObject({ exists: true, data: new Uint8Array() });
       }
       expect((await ok(client, "get_balances", { owner: owner.address, mints: [w.outputMint] }))["tokens"]).toMatchObject([

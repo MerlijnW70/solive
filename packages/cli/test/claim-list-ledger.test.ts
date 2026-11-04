@@ -13,6 +13,7 @@ import { ENV_KEYPAIR } from "../src/clusters.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { h, runtime, world } from "./harness.js";
 import { device, deviceKey, found } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 type Json = Record<string, unknown>;
 
@@ -48,7 +49,7 @@ describe("a claim list from a Ledger wallet", () => {
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
     const key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     h.env[ENV_KEYPAIR] = PATH;
     h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), [key.address, ...Array.from({ length: 30 }, () => address())]));
     h.served.length = 0;

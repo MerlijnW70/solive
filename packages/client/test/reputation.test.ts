@@ -10,6 +10,7 @@ import { memoInstruction } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 import { announced } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -33,7 +34,7 @@ async function setup() {
   const client = createClient({ url: LOCAL, transport });
   const fresh = async () => {
     const signer = await generateKeyPairSigner();
-    w.chain.svm.airdrop(signer.address, lamports(10n * SOL));
+    airdropped(w.chain.svm, signer.address, lamports(10n * SOL));
     return signer;
   };
   const escrow = async (owner: KeyPairSigner, judge: Address) => {

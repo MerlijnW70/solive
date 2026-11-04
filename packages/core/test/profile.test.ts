@@ -29,6 +29,7 @@ import {
   profileView,
 } from "../src/internal.js";
 import { NotAnEngineAccount } from "../src/errors.js";
+import { airdropped } from "./airdrop.js";
 
 const NOW = 1_700_000_000n;
 const enginePath =
@@ -50,7 +51,7 @@ async function attempt(payer: KeyPairSigner, ixs: Instruction[]) {
 
 async function funded(): Promise<KeyPairSigner> {
   const signer = await generateKeyPairSigner();
-  svm.airdrop(signer.address, lamports(10_000_000_000n));
+  airdropped(svm, signer.address, lamports(10_000_000_000n));
   return signer;
 }
 

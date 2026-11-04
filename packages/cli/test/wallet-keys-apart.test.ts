@@ -18,6 +18,7 @@ import { cli, funded, h, runtime, world } from "./harness.js";
 import { device, deviceKey, found } from "./ledger-device.js";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { Client } from "@modelcontextprotocol/client";
+import { airdropped } from "./airdrop.js";
 
 const NOTICE_LINE = "This wallet pays only after you approve a preview.";
 
@@ -72,7 +73,7 @@ describe("a wallet server keeps the wallet's key apart from the agent and relaye
   it("refuses agent_create for a Ledger wallet's own address, whose address startup cannot read, and moves nothing", async () => {
     await world();
     const key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     h.env[ENV_KEYPAIR] = "usb://ledger?key=4";
     const ledger = device(key, found([44, 501, 4], key));
     const agent = await funded();

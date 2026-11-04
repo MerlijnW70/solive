@@ -13,6 +13,7 @@ import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
 import { quietWebCryptoWarnings } from "../src/node-warnings.js";
 import { AIRDROP, ENOUGH_TO_START, settingsPath } from "../src/wallet.js";
 import { ata, balance, cli, DOMAIN, FEE_BPS, h, HOME, world } from "./harness.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -304,7 +305,7 @@ describe("the first paid job guide", () => {
     h.through = { ...through, airdrop: async () => Promise.reject(new Error("429 Too Many Requests")) };
     const setupAt = STEPS.findIndex((step) => "line" in step && verbOf(step.line) === "setup");
     await follower.follow(STEPS.slice(0, setupAt + 1));
-    h.svm.airdrop(follower.values["address"] as Address, lamports(raw(need)));
+    airdropped(h.svm, follower.values["address"] as Address, lamports(raw(need)));
     const ran = await follower.follow(STEPS.slice(setupAt + 1));
     expect(ran.filter((r) => r.code !== EXIT_OK).map((r) => r.line)).toEqual([
       "intent-engine judge --owner <address> --nonce <nonce> --spec spec.md --artifact wrong.mjs --sandbox viper --yes",

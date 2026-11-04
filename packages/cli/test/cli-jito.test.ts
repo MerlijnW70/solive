@@ -14,6 +14,7 @@ import { ENV_JUPITER_KEY } from "../src/commands.js";
 import { JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, SIMULATION_REFUSED } from "@intent-engine/solver";
 import { ata, cli, ESCROW, FEE_BPS, funded, h, NOW, send, world } from "./harness.js";
 import { createSwap, type Json, unitLimitOf } from "./cli-kit.js";
+import { airdropped } from "./airdrop.js";
 
 describe("cli against the deployed engine", () => {
   let authority: KeyPairSigner;
@@ -74,7 +75,7 @@ describe("cli against the deployed engine", () => {
     expect(h.fetched).toHaveLength(2);
     expect(h.wires).toEqual([]);
     for (const tip of JITO_TIP_ACCOUNTS) {
-      h.svm.airdrop(tip, lamports(1_000_000_000n));
+      airdropped(h.svm, tip, lamports(1_000_000_000n));
     }
     const stash = await funded();
     const stashAccount = await ata(authority, stash.address, outputMint, 1_000_000n);
@@ -126,7 +127,7 @@ describe("cli against the deployed engine", () => {
     await ata(authority, solver.address, inputMint);
     const solverOutput = await ata(authority, solver.address, outputMint);
     for (const tip of JITO_TIP_ACCOUNTS) {
-      h.svm.airdrop(tip, lamports(1_000_000_000n));
+      airdropped(h.svm, tip, lamports(1_000_000_000n));
     }
     const stash = await funded();
     const stashAccount = await ata(authority, stash.address, outputMint, 1_000_000n);

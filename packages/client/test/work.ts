@@ -4,6 +4,7 @@ import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { findAssociatedTokenAddress, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import type { Client, ReleaseOpening } from "../src/index.js";
 import type { World } from "./svm.js";
+import { airdropped } from "./airdrop.js";
 
 export const SOL = 1_000_000_000n;
 export const LOCAL = "http://127.0.0.1:8899";
@@ -29,7 +30,7 @@ export function nativeMint(w: World): void {
 export async function fundedSigner(w: World, sol = 10n): Promise<KeyPairSigner> {
   const signer = await generateKeyPairSigner();
   if (sol > 0n) {
-    w.chain.svm.airdrop(signer.address, lamports(sol * SOL));
+    airdropped(w.chain.svm, signer.address, lamports(sol * SOL));
   }
   return signer;
 }
@@ -44,7 +45,7 @@ export async function keypairSigner(): Promise<Keyed> {
 
 export async function keyed(w: World, sol = 10n): Promise<Keyed> {
   const made = await keypairSigner();
-  w.chain.svm.airdrop(made.signer.address, lamports(sol * SOL));
+  airdropped(w.chain.svm, made.signer.address, lamports(sol * SOL));
   return made;
 }
 

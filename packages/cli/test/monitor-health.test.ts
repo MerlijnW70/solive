@@ -12,6 +12,7 @@ import { MIN_BALANCE_FORMAT } from "../src/monitor-args.js";
 import { FILLER_MAX_FEE_BPS, FILLER_MIN_PROFIT, FILLER_RATE } from "../src/monitor-health.js";
 import { cli, h, NOW, runtime, world } from "./harness.js";
 import { listing } from "./monitor-transport.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const FILLER = readFileSync(join(ROOT, "scripts/filler.sh"), "utf8");
@@ -88,9 +89,9 @@ describe("monitor health checks", () => {
 
   it("alerts when a wallet holds less SOL than its floor, naming the wallet and both amounts, and not when it holds the floor or more", async () => {
     const [low, enough, rich, empty] = await Promise.all([address(), address(), address(), address()]);
-    h.svm.airdrop(low, lamports(SOL / 2n));
-    h.svm.airdrop(enough, lamports(SOL));
-    h.svm.airdrop(rich, lamports(3n * SOL));
+    airdropped(h.svm, low, lamports(SOL / 2n));
+    airdropped(h.svm, enough, lamports(SOL));
+    airdropped(h.svm, rich, lamports(3n * SOL));
     const floors = [low, enough, rich, empty].flatMap((wallet) => ["--min-balance", `${wallet}=1`]);
     const { code, alerts } = await monitor(floors);
     expect(code).toBe(EXIT_ALERTED);
@@ -104,12 +105,12 @@ describe("monitor health checks", () => {
 
   it("raises a low balance once while it stays low, not on every poll", async () => {
     const low = await address();
-    h.svm.airdrop(low, lamports(SOL / 2n));
+    airdropped(h.svm, low, lamports(SOL / 2n));
     let polled = 0;
     const rt = runtime({});
     rt.sleep = async () => {
       polled++;
-      h.svm.airdrop(low, lamports(1_000n));
+      airdropped(h.svm, low, lamports(1_000n));
       h.svm.warpToSlot(h.svm.getClock().slot + 1n);
       return polled < 3;
     };

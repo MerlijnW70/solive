@@ -16,6 +16,7 @@ import { announced, keyed } from "./announce.js";
 import { keyedProfile } from "./encryption-job.js";
 import { balance, creation, FEE_BPS, funded, h, NOW, runtime, transport, world } from "./harness.js";
 import { device, deviceKey, found, MESSAGE, messageThen, SIGN, transactionThen } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 type Json = Record<string, any>;
 
@@ -70,7 +71,7 @@ async function scene(seed: number) {
   preset(NATIVE_MINT);
   preset(DEVNET_TEST_MINT);
   const key = await deviceKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const profile = await keyedProfile(key, KEY_FILE);
   const [worker, other] = await Promise.all([keyed(), keyed()]);
   const client0 = createClient({ url: "http://cluster", transport });
@@ -97,7 +98,7 @@ describe("a Ledger member's committee split over the wallet server", () => {
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
     const key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     const profile = await keyedProfile(key, KEY_FILE);
     const worker: KeyPairSigner = await keyed();
     const members = sortMembers([key.address, (await generateKeyPairSigner()).address]);
@@ -146,7 +147,7 @@ describe("a Ledger member's committee split over the wallet server", () => {
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
     const key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     const profile = await keyedProfile(key, KEY_FILE);
     const [worker, other] = await Promise.all([keyed(), keyed()]);
     const client0 = createClient({ url: "http://cluster", transport });

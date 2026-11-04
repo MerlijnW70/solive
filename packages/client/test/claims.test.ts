@@ -22,6 +22,7 @@ import { jobClaimOf, lineHandover, loadClaimsOf, loadLine } from "../src/interna
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 import { announced, type Delivered, keyed, sha } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -48,7 +49,7 @@ async function setup() {
   const client = createClient({ url: LOCAL, transport });
   const fresh = async () => {
     const signer = await generateKeyPairSigner();
-    w.chain.svm.airdrop(signer.address, lamports(10n * SOL));
+    airdropped(w.chain.svm, signer.address, lamports(10n * SOL));
     return signer;
   };
   const [owner, worker, rival] = await Promise.all([fresh(), fresh(), fresh()]);
@@ -209,7 +210,7 @@ describe("claimed escrows", () => {
     const s = await setup();
     await s.claim(s.worker);
     const third = await generateKeyPairSigner();
-    s.w.chain.svm.airdrop(third.address, lamports(10n * SOL));
+    airdropped(s.w.chain.svm, third.address, lamports(10n * SOL));
     for (const [seq, who] of [s.rival, third].entries()) {
       await s.client.send([await buildStandBy({ worker: who, intent: s.intent, seq, secs: 300 + seq })], who);
     }
@@ -236,7 +237,7 @@ describe("claimed escrows", () => {
     const s = await setup();
     await s.claim(s.worker);
     const third = await generateKeyPairSigner();
-    s.w.chain.svm.airdrop(third.address, lamports(10n * SOL));
+    airdropped(s.w.chain.svm, third.address, lamports(10n * SOL));
     for (const [seq, who] of [s.rival, s.rival, third].entries()) {
       await s.client.send([await buildStandBy({ worker: who, intent: s.intent, seq, secs: 300 })], who);
     }

@@ -29,6 +29,7 @@ import {
 } from "../src/mcp-smoke.js";
 import { main } from "../src/main.js";
 import { DOMAIN, h, HOME, runtime, world } from "./harness.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const SCRIPT = join(ROOT, "scripts/mcp-smoke.sh");
@@ -71,7 +72,7 @@ async function party(name: string, sol: bigint): Promise<{ caller: ToolCaller; a
   const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
   const path = `${HOME}/${name}.json`;
   h.files.set(path, JSON.stringify([...seed, ...getAddressEncoder().encode(signer.address)]));
-  h.svm.airdrop(signer.address, lamports(sol));
+  airdropped(h.svm, signer.address, lamports(sol));
   h.served.length = 0;
   const code = await main(serverArgs("devnet"), { ...runtime({}), env: { [ENV_KEYPAIR]: path } }, { out: () => undefined, err: () => undefined });
   expect(code).toBe(EXIT_OK);

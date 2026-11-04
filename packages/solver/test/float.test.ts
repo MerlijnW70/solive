@@ -62,6 +62,7 @@ import {
   TOKEN_ACCOUNT_BASE,
 } from "../src/index.js";
 import { unpricedWarning } from "./unpriced-warning.js";
+import { airdropped } from "./airdrop.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 const NOW = 1_700_000_000n;
@@ -89,7 +90,7 @@ async function send(payer: KeyPairSigner, ixs: Instruction[]) {
 
 async function funded(): Promise<KeyPairSigner> {
   const kp = await generateKeyPairSigner();
-  svm.airdrop(kp.address, lamports(100_000_000_000n));
+  airdropped(svm, kp.address, lamports(100_000_000_000n));
   return kp;
 }
 

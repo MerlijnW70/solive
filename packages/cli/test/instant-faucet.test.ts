@@ -6,6 +6,7 @@ import { WALLET_START } from "../src/agent/wallet/account.js";
 import { DEVNET_URL } from "../src/tokens.js";
 import { cli, h, instant, runtime, transport, world } from "./harness.js";
 import { fresh, ok } from "./agent-wallet-kit.js";
+import { airdropped } from "./airdrop.js";
 
 const SIGNATURE = "5".repeat(88);
 const SENT = 500_000_000n;
@@ -17,7 +18,7 @@ function answering(status: number, body: unknown, calls: Call[], credit = false)
   return async (url, init) => {
     calls.push({ url, body: init.body, method: init.method });
     if (credit) {
-      h.svm.airdrop((JSON.parse(init.body) as { address: Address }).address, lamports(SENT));
+      airdropped(h.svm, (JSON.parse(init.body) as { address: Address }).address, lamports(SENT));
     }
     return { status, json: async () => body };
   };

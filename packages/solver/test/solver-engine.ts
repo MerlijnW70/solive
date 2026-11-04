@@ -52,6 +52,7 @@ import {
   type Simulated,
   tick,
 } from "../src/index.js";
+import { airdropped } from "./airdrop.js";
 
 export const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const LOOKUP_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
@@ -81,7 +82,7 @@ export function svmTools(at: () => LiteSVM) {
 
   async function funded(): Promise<KeyPairSigner> {
     const kp = await generateKeyPairSigner();
-    at().airdrop(kp.address, lamports(100_000_000_000n));
+    airdropped(at(), kp.address, lamports(100_000_000_000n));
     return kp;
   }
 
@@ -409,7 +410,7 @@ export function engineTools(at: () => Engine): EngineTools {
       opened.push(await open(BigInt(first + i)));
     }
     const tipAccount = (await generateKeyPairSigner()).address;
-    at().svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(at().svm, tipAccount, lamports(1_000_000_000n));
     const before = at().svm.getBalance(tipAccount) ?? 0n;
     const bundles: Base64EncodedWireTransaction[][] = [];
     const report = await solve(stashMarket(at().stash, at().stashAccount, at().outputMint, at().solverOutput, () => MIN_OUT + 4_000n), {

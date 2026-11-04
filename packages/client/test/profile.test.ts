@@ -4,6 +4,7 @@ import { buildCloseProfile, buildCreateProfile, buildUpdateProfile } from "@inte
 import { createClient } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 
@@ -12,7 +13,7 @@ describe("profiles", () => {
     const w = await world();
     const client = createClient({ url: LOCAL, transport: svmTransport(w.chain.svm) });
     const wallet = await generateKeyPairSigner();
-    w.chain.svm.airdrop(wallet.address, lamports(1_000_000_000n));
+    airdropped(w.chain.svm, wallet.address, lamports(1_000_000_000n));
     expect(await client.profile(wallet.address)).toBeNull();
     const published = { skills: ["rust", "anchor"], endpoint: "https://worker.example/jobs", docUrl: "https://worker.example/about", docSha256: "cd".repeat(32) };
     await client.send([await buildCreateProfile({ wallet, ...published })], wallet);

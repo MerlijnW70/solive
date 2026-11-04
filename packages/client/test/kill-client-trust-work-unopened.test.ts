@@ -10,6 +10,7 @@ import { deviceJudgeReady, escrowsJudgedBy, keylessJudges, NoKeyAtCreation, Prof
 import { comparatorsUsedBy, verdicts } from "./kill-client-trust-work-sort.js";
 import { world } from "./svm.js";
 import { LOCAL, nativeMint, nextSlot } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the unopened spec").digest());
@@ -24,7 +25,7 @@ async function setup() {
   const client = createClient({ url: LOCAL, transport });
   const fresh = async () => {
     const signer = await generateKeyPairSigner();
-    w.chain.svm.airdrop(signer.address, lamports(10n * SOL));
+    airdropped(w.chain.svm, signer.address, lamports(10n * SOL));
     return signer;
   };
   const escrow = async (owner: KeyPairSigner, attestor: Address) => {

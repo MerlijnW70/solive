@@ -5,6 +5,7 @@ import { announcementCommitment, blobLayout, buildAnnounceDelivery, sealDelivery
 import { type Announced, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { h, transport } from "./harness.js";
+import { airdropped } from "./airdrop.js";
 
 export const WORK_URL = "https://" + "example.org/work.tar";
 
@@ -12,7 +13,7 @@ export async function keyed(path?: string): Promise<KeyPairSigner> {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
   const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
   const signer = await createKeyPairSignerFromBytes(keypair);
-  h.svm.airdrop(signer.address, lamports(100_000_000_000n));
+  airdropped(h.svm, signer.address, lamports(100_000_000_000n));
   h.keypairs.set(signer.address, keypair);
   if (path !== undefined) {
     h.files.set(path, JSON.stringify(Array.from(keypair)));

@@ -14,6 +14,7 @@ import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, FEE_BPS, funded, h, NOW, runtime, send, transport, world } from "./harness.js";
 import { device, type Device, deviceKey as newKey, found, type Key, MESSAGE, messageThen, SIGN, transactionThen } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 const LEVELS = [44, 501];
 const LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
@@ -148,7 +149,7 @@ describe("intent-engine committee on a split", () => {
   it("a member on a Ledger votes on the split with one message and releases it one transaction at a time", async () => {
     const key: Key = await newKey();
     const p = await panel(async () => {
-      h.svm.airdrop(key.address, lamports(10_000_000_000n));
+      airdropped(h.svm, key.address, lamports(10_000_000_000n));
       const made = await run(["profile", "encryption-key", "new", "--out", "member.enc"], {}, device(key, []));
       expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
       const encryptionKey = String(made.json()["encryption_key"]);

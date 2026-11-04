@@ -11,6 +11,7 @@ import { ENV_KEYPAIR } from "../src/clusters.js";
 import { h, NOW, setNow } from "./harness.js";
 import { device, deviceKey, found } from "./ledger-device.js";
 import { call, commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, run, server, SOLUTION, STAKE, startHirer, workFile } from "./local-worker-kit.js";
+import { airdropped } from "./airdrop.js";
 
 const LEVELS = [44, 501, 2];
 const ANNOUNCEMENT_VERSION_AT = 8 + (ACCOUNT_LAYOUTS.find(({ name }) => name === "announcement")?.versionAt ?? 0);
@@ -119,7 +120,7 @@ describe("a local worker's leftovers at the edges", () => {
   describe("on a Ledger", () => {
     const onDevice = async () => {
       const key = await deviceKey();
-      h.svm.airdrop(key.address, lamports(10_000_000_000n));
+      airdropped(h.svm, key.address, lamports(10_000_000_000n));
       h.env[ENV_KEYPAIR] = "usb://ledger?key=2";
       return server([], { ledger: device(key, found(LEVELS, key)).open });
     };

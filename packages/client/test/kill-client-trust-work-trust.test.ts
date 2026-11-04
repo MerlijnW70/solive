@@ -9,6 +9,7 @@ import { RESTART } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
 import { announced } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -33,7 +34,7 @@ async function setup() {
   const client = createClient({ url: LOCAL, transport });
   const fresh = async (sol = 10n) => {
     const signer = await generateKeyPairSigner();
-    w.chain.svm.airdrop(signer.address, lamports(sol * SOL));
+    airdropped(w.chain.svm, signer.address, lamports(sol * SOL));
     return signer;
   };
   const judge = await fresh();

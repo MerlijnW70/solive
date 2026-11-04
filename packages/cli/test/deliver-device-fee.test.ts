@@ -20,6 +20,7 @@ import { EXIT_OK, main } from "../src/main.js";
 import { keyed } from "./announce.js";
 import { cli, funded, h, HOME, NOW, runtime, transport, world } from "./harness.js";
 import { type Device, device, deviceKey, found, type Key, SIGN, transactionThen } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 type Json = Record<string, unknown>;
 
@@ -129,7 +130,7 @@ describe("delivering from a Ledger wallet to an unsynced committee", () => {
   it("signs one previewed transaction per call: the key sync, then the announcement with its own preview", async () => {
     const w = await world();
     const key: Key = await deviceKey();
-    h.svm.airdrop(key.address, lamports(10_000_000_000n));
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
     const committee = await committeeOf();
     const intent = await escrowTo(w.owner, committee, w.inputMint, w.outputMint);
     expect(synced(committee)).toBe(false);

@@ -24,6 +24,7 @@ import { ata, balance, creation, funded, h, NOW, runtime, setNow, transport, wor
 
 const KEY_FILE = "judge.enc";
 import { type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 type Json = Record<string, unknown>;
 
@@ -36,7 +37,7 @@ type Escrow = { key: Key; owner: Address; worker: Address; workerKey: KeyPairSig
 async function escrow(attestorOf?: (key: Key) => Promise<Address>): Promise<Escrow> {
   const w = await world();
   const key = await deviceKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const profile = await keyedProfile(key, KEY_FILE);
   const workerKey = await keyed();
   const worker = workerKey.address;

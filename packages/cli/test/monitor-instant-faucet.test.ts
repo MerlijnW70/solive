@@ -7,6 +7,7 @@ import { parse } from "../src/args.js";
 import { EXIT_ALERTED, EXIT_OK, main } from "../src/main.js";
 import { cli, h, runtime, world } from "./harness.js";
 import { listing } from "./monitor-transport.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const WORKFLOW = readFileSync(join(ROOT, ".github/workflows/monitor.yml"), "utf8");
@@ -74,9 +75,9 @@ describe("the monitor on the instant faucet's wallet", () => {
     it("alerts below the floor and stays quiet at and above it", async () => {
       const floor = watched().get(INSTANT_WALLET) ?? 0n;
       const [below, at, above] = await Promise.all([generateKeyPairSigner(), generateKeyPairSigner(), generateKeyPairSigner()]);
-      h.svm.airdrop(below.address, lamports(floor - 1n));
-      h.svm.airdrop(at.address, lamports(floor));
-      h.svm.airdrop(above.address, lamports(floor + SOL));
+      airdropped(h.svm, below.address, lamports(floor - 1n));
+      airdropped(h.svm, at.address, lamports(floor));
+      airdropped(h.svm, above.address, lamports(floor + SOL));
       const low = await monitorOnce(below.address, floor);
       expect(low.code).toBe(EXIT_ALERTED);
       expect(low.alerts).toHaveLength(1);

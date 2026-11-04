@@ -11,6 +11,7 @@ import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
 import { SPEC_URL_PLAIN } from "../src/agent/create.js";
 import { ata, creation, ESCROW, funded, h, NOW, ownerSigned, send, transport, type World } from "./harness.js";
 import { connect, exists, execute, fail, type Json, ok, served, swapOf } from "./agent-kit.js";
+import { airdropped } from "./airdrop.js";
 
 describe("agent server against the deployed engine", () => {
   let w: World;
@@ -157,7 +158,7 @@ describe("agent server against the deployed engine", () => {
     await ata(w.authority, broke.address, w.inputMint, 10_000n);
     const unfunded = swap({ owner: broke.address, order: { kind: "swap", amount_in: "100", min_out: "50" } });
     expect((await fail(relaying, "prepare_signed_intent", unfunded))["code"]).not.toBe("NoncePromised");
-    h.svm.airdrop(broke.address, lamports(1_000_000_000n));
+    airdropped(h.svm, broke.address, lamports(1_000_000_000n));
     expect((await ok(relaying, "prepare_signed_intent", unfunded))["nonce"]).toBe("0");
   });
 

@@ -13,6 +13,7 @@ import { type EngineAccountFilter, type EngineTransaction, type Transport } from
 import { intentMatches, matchBytes } from "@intent-engine/client/internal";
 import { testSignature } from "@intent-engine/client/testing";
 import { h, PACKET_LIMIT, send, touch } from "./harness-state.js";
+import { airdropped } from "./airdrop.js";
 
 const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): boolean =>
   data.length >= at + head.length && Array.from(head).every((b, i) => data[at + i] === b);
@@ -154,7 +155,7 @@ export const transport: Transport = {
     if (h.airdropRefused) {
       throw new Error("429 Too Many Requests");
     }
-    h.svm.airdrop(address, lamports(amount));
+    airdropped(h.svm, address, lamports(amount));
     return testSignature(`airdrop ${address} ${amount}`);
   },
 };

@@ -9,6 +9,7 @@ import { loadUser } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, NOW, world, type World } from "./svm.js";
 import { announced, sha } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -51,7 +52,7 @@ async function setup() {
   const fresh = async (sol = 10n) => {
     const signer = await generateKeyPairSigner();
     if (sol > 0n) {
-      w.chain.svm.airdrop(signer.address, lamports(sol * SOL));
+      airdropped(w.chain.svm, signer.address, lamports(sol * SOL));
     }
     return signer;
   };
@@ -162,7 +163,7 @@ describe("one call per action", () => {
     const pay = 1_000_000n;
     const judgeFee = 100_000n;
     const { w, client, owner, nonce, tokens, worker, delivered } = await escrowed(judge, pay, judgeFee);
-    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    airdropped(w.chain.svm, judge.address, lamports(SOL));
     for (const wallet of [worker.address, judge.address, w.feeRecipient.address]) {
       expect(await tokens(wallet)).toBeNull();
     }
@@ -203,7 +204,7 @@ describe("one call per action", () => {
   it("refuses an opening that does not open the announcement, an announcement of another escrow, and one already paid, and sends nothing", async () => {
     const judge = await generateKeyPairSigner();
     const { w, client, counted, owner, nonce, fresh, delivered } = await escrowed(judge, 1_000_000n, 0n);
-    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    airdropped(w.chain.svm, judge.address, lamports(SOL));
     const other = await client.createIntent({ signer: owner, params: proofOf(judge.address, 10n, 0n), inputMint: NATIVE_MINT, outputMint: w.outputMint });
     const elsewhere = await announced(client, await fresh(1n), other.intent, WORK);
     const settle = (changed: Partial<typeof delivered>) => client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, ...changed, result: 1n });
@@ -221,7 +222,7 @@ describe("one call per action", () => {
   it("settleProof refuses a worker whose account a program owns, and a worker token account that moved", async () => {
     const judge = await generateKeyPairSigner();
     const { w, client, counted, owner, nonce, tokens, worker, delivered } = await escrowed(judge, 1_000_000n, 0n);
-    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    airdropped(w.chain.svm, judge.address, lamports(SOL));
     const workerTokens = await ata(worker.address, NATIVE_MINT);
     const settle = () => client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     const sends = counted.sends;
@@ -262,7 +263,7 @@ describe("one call per action", () => {
   it("settleProof refuses an expired escrow", async () => {
     const judge = await generateKeyPairSigner();
     const { w, client, counted, owner, nonce, delivered } = await escrowed(judge, 1_000_000n, 0n);
-    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    airdropped(w.chain.svm, judge.address, lamports(SOL));
     const held = await client.intent({ owner: owner.address, nonce });
     if (held === null) {
       throw new Error("no escrow");
@@ -280,7 +281,7 @@ describe("one call per action", () => {
   it("refuses to settle anything but an open proof intent its judge signs, and sends nothing", async () => {
     const judge = await generateKeyPairSigner();
     const { w, client, counted, owner, nonce, fresh, delivered } = await escrowed(judge, 1_000_000n, 0n);
-    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    airdropped(w.chain.svm, judge.address, lamports(SOL));
     const settle = (n: bigint, by: KeyPairSigner = judge) => client.settleProof({ judge: by, intent: { owner: owner.address, nonce: n }, ...delivered, result: 1n });
 
     const swap = await client.createIntent({ signer: owner, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n }, inputMint: NATIVE_MINT, outputMint: w.outputMint });

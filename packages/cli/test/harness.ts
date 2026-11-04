@@ -32,6 +32,7 @@ import { main } from "../src/main.js";
 import { collectDropped } from "./collect.js";
 import { DOMAIN, enginePath, FEE_BPS, h, harnessLookup, HOME, NOW, saleBook, send } from "./harness-state.js";
 import { fakeFetch, transport } from "./harness-transport.js";
+import { airdropped } from "./airdrop.js";
 
 export { DOMAIN, enginePath, ESCROW, FEE_BPS, h, harnessLookup, HOME, NOW, PACKET_LIMIT, PUBLIC_TEST_ADDRESS, saleBook, send } from "./harness-state.js";
 export { creation, fakeFetch, ownerSigned, transport, unlisting } from "./harness-transport.js";
@@ -140,7 +141,7 @@ export async function funded(): Promise<KeyPairSigner> {
   const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
   const kp = await createKeyPairSignerFromBytes(keypair);
   h.keypairs.set(kp.address, keypair);
-  h.svm.airdrop(kp.address, lamports(WALLET_LAMPORTS));
+  airdropped(h.svm, kp.address, lamports(WALLET_LAMPORTS));
   return kp;
 }
 
@@ -286,7 +287,7 @@ export async function world(): Promise<World> {
   const topUp = WALLET_LAMPORTS - parseAmount(TEST_WALLET_SOL, 9);
   for (const signer of [test.admin, test.feeRecipient]) {
     h.keypairs.set(signer.address, signer.keypair);
-    h.svm.airdrop(signer.address, lamports(topUp));
+    airdropped(h.svm, signer.address, lamports(topUp));
   }
   const authority = test.admin;
   const owner = await funded();

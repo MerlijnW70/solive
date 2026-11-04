@@ -13,6 +13,7 @@ import { ENV_KEYPAIR } from "../src/clusters.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { cli, creation, h, NOW, runtime, transport, world } from "./harness.js";
 import { type Device, device, deviceKey, found, type Key, SIGN, transactionThen } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 type Json = Record<string, unknown>;
 
@@ -39,7 +40,7 @@ async function call(client: Client, name: string, args: object = {}) {
 async function onDevice(): Promise<{ key: Key; owner: KeyPairSigner; intent: Address; ledger: Device; client: Client }> {
   const w = await world();
   const key = await deviceKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const judge = (await generateKeyPairSigner()).address;
   const specHash = new Uint8Array(createHash("sha256").update("a ledger job").digest());
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge, specHash, judgeFee: 0n } as const;

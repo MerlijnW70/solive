@@ -15,6 +15,7 @@ import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { balance, funded, h, NOW, runtime, send, transport, world } from "./harness.js";
 import { type Device, device, deviceKey as newKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 const LEVELS = [44, 501];
 const PAY = 100n;
@@ -24,7 +25,7 @@ const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
 async function deviceKey(): Promise<Key> {
   const key = await newKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   return key;
 }
 
@@ -37,7 +38,7 @@ async function run(argv: string[], keys: Record<string, KeyPairSigner>, ledger: 
 
 async function panel(key: Key) {
   const w = await world();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const made = await run(["profile", "encryption-key", "new", "--out", "member.enc"], {}, device(key, []));
   expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
   const encryptionKey = String(made.json()["encryption_key"]);

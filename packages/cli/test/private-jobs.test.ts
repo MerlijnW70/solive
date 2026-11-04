@@ -13,6 +13,7 @@ import { specMemo } from "@intent-engine/core/internal";
 import { ENV_KEYPAIR, ENV_URL } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { ata, cli, creation, funded, h, ownerSigned, world } from "./harness.js";
+import { airdropped } from "./airdrop.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
@@ -119,13 +120,13 @@ describe("the company-only job guide", () => {
     };
     const [ownerKey, workerKey, strangerKey] = [raw(), raw(), raw()];
     const owner = await createKeyPairSignerFromBytes(ownerKey);
-    h.svm.airdrop(owner.address, lamports(1_000_000_000n));
+    airdropped(h.svm, owner.address, lamports(1_000_000_000n));
     const judgeWallet = "~/.config/intent-engine/wallet.json";
     h.files.set(judgeWallet, JSON.stringify([...ownerKey]));
     h.files.set("worker.json", JSON.stringify([...workerKey]));
     h.files.set("stranger.json", JSON.stringify([...strangerKey]));
     const worker = getAddressDecoder().decode(workerKey.slice(32));
-    h.svm.airdrop(worker, lamports(100_000_000n));
+    airdropped(h.svm, worker, lamports(100_000_000n));
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
     await ata(w.authority, w.feeRecipient.address, NATIVE_MINT);

@@ -23,6 +23,7 @@ import { keyedProfile } from "./encryption-job.js";
 import { creation, funded, h, NOW, runtime, transport, world } from "./harness.js";
 import { device, deviceKey, found, type Key, messageThen, SIGN, TransportError, transactionThen } from "./ledger-device.js";
 import { paddedTransport } from "./pad-budget.js";
+import { airdropped } from "./airdrop.js";
 
 type Json = Record<string, unknown>;
 
@@ -53,7 +54,7 @@ async function escrow(attestorOf?: (key: Key) => Promise<Address>): Promise<Escr
   preset(NATIVE_MINT);
   preset(DEVNET_TEST_MINT);
   const key = await deviceKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const profile = await keyedProfile(key, KEY_FILE);
   const workerKey = await keyed();
   const worker = workerKey.address;

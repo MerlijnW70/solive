@@ -9,6 +9,7 @@ import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, IntentStatu
 import { splitFee } from "@intent-engine/core/internal";
 import { type ClientOptions, createClient, type Transport } from "../src/index.js";
 import { FEE_BPS, funded, world, type World } from "./svm.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/solver.md`, "utf8");
@@ -100,7 +101,7 @@ describe("the solver page's TypeScript solver", () => {
     preset(w, DEVNET_TEST_MINT, w.authority.address);
     const solver = await keyFile(home, "solive-solver.json");
     const token = (await keyFile(home, "solive-token.json")).address;
-    w.chain.svm.airdrop(solver.address, lamports(SOL / 10n));
+    airdropped(w.chain.svm, solver.address, lamports(SOL / 10n));
     preset(w, token, solver.address);
     injected.transport = w.chain.transport;
     const client = createClient({ url: DEVNET, transport: w.chain.transport });

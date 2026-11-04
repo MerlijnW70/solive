@@ -27,6 +27,7 @@ import { EXIT_OK, main } from "../src/main.js";
 import { nextSlot } from "./announce.js";
 import { creation, funded, h, NOW, runtime, send, transport, type World, world } from "./harness.js";
 import { type Device, deviceKey, type Key } from "./ledger-device.js";
+import { airdropped } from "./airdrop.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -64,7 +65,7 @@ export async function job(attestorOf?: (key: Key) => Promise<Address>): Promise<
   const w = await world();
   h.watched = [w.owner.address];
   const key = await deviceKey();
-  h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const made = await run(["profile", "encryption-key", "new", "--out", KEY_FILE]);
   expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
   const publicKey = String(made.json()["encryption_key"]);

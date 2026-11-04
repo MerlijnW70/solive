@@ -37,6 +37,7 @@ import {
   stashMarket,
   swapping,
 } from "./solver-engine.js";
+import { airdropped } from "./airdrop.js";
 
 let svm: LiteSVM;
 
@@ -96,7 +97,7 @@ describe("solver against the deployed engine", () => {
     const freshOutput = await findAssociatedTokenAddress({ owner: solver.address, mint: outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     swapping.current = { mint: inputMint, from: freshInput, to: swapping.current?.to ?? freshInput, authority: solver };
     const tipAccount = (await generateKeyPairSigner()).address;
-    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(svm, tipAccount, lamports(1_000_000_000n));
     const rent = svm.minimumBalanceForRentExemption(BigInt(TOKEN_ACCOUNT_SPACE));
     expect(rentExempt(TOKEN_ACCOUNT_SPACE)).toBe(rent);
     const signers = 2n;
@@ -182,7 +183,7 @@ describe("solver against the deployed engine", () => {
     const market = await wrapOutput();
     const intent = await open(61n);
     const tipAccount = (await generateKeyPairSigner()).address;
-    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(svm, tipAccount, lamports(1_000_000_000n));
     const bare = 2n * LAMPORTS_PER_SIGNATURE;
     const cost = bare + 12_345n;
     const tipped = { tip: { account: tipAccount, lamports: 12_345n } };

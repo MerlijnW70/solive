@@ -18,6 +18,7 @@ import { FAUCET_INTERVAL_MINUTES, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetWa
 import { VERSION } from "../src/version.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
+import { airdropped } from "./airdrop.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -279,7 +280,7 @@ describe("the mandate guide", () => {
     ]);
     const owner = await funded();
     const agent = await generateKeyPairSigner();
-    h.svm.airdrop(agent.address, lamports(LAMPORTS_PER_SOL / 20n));
+    airdropped(h.svm, agent.address, lamports(LAMPORTS_PER_SOL / 20n));
     nativeMint();
     const wrapped = await findAssociatedTokenAddress({ owner: owner.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const rent = h.svm.minimumBalanceForRentExemption(165n);

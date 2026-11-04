@@ -10,6 +10,7 @@ import type { Chain } from "../src/chain.js";
 import { encodeAccount, programConfigCodec, programConfigPda } from "../src/layout.js";
 import { main, type Deps } from "../src/main.js";
 import { SQUADS_PROGRAM } from "../src/squads.js";
+import { airdropped } from "./airdrop.js";
 
 export const SQUADS_SHA256 = "dec8d3e0fae58c7c8f2416e5f67c25e673f047afd6dd2bba4a47e0b29a01d34c";
 export const PROGRAM_METADATA_SHA256 = "3d0c0f7504c01b1f6996d30a5c3dc2cccb8b65dedba80d6fceb60a7cada093e0";
@@ -68,7 +69,7 @@ export class Svm {
   }
 
   fund(key: Address, amount = 10n * SOL): void {
-    this.svm.airdrop(key, lamports(amount));
+    airdropped(this.svm, key, lamports(amount));
   }
 
   set(key: Address, owner: Address, data: Uint8Array, executable = false): void {

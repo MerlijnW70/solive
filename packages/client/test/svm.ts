@@ -6,6 +6,7 @@ import type { LiteSVM } from "litesvm";
 import type { Transport } from "../src/index.js";
 import { DEVNET_GENESIS_HASH } from "../src/job-specs.js";
 import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL, type TestWorld } from "../src/testing.js";
+import { airdropped } from "./airdrop.js";
 
 export const NOW = 1_700_000_000n;
 export const FEE_BPS = 5;
@@ -35,7 +36,7 @@ export const onDevnet = (transport: Transport): Transport => ({ ...transport, ge
 
 export async function funded(chain: Chain): Promise<KeyPairSigner> {
   const signer = await generateKeyPairSigner();
-  chain.svm.airdrop(signer.address, lamports(FUNDED_SOL * SOL));
+  airdropped(chain.svm, signer.address, lamports(FUNDED_SOL * SOL));
   return signer;
 }
 
@@ -71,7 +72,7 @@ export async function world(): Promise<World> {
     },
   };
   for (const topped of [test.admin, test.feeRecipient]) {
-    svm.airdrop(topped.address, lamports(FUNDED_SOL * SOL - parseAmount(TEST_WALLET_SOL, 9)));
+    airdropped(svm, topped.address, lamports(FUNDED_SOL * SOL - parseAmount(TEST_WALLET_SOL, 9)));
   }
   const owner = await funded(chain);
   const inputMint = await test.mint(6);

@@ -9,6 +9,7 @@ import { NOTHING_LEFT, settleLine } from "../src/agent/wallet/worker-return.js";
 import { bookKept, bookLive } from "../src/agent/wallet/worker-books.js";
 import { h, NOW, setNow } from "./harness.js";
 import { commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, rentOf, run, server, SOLUTION, STAKE, startHirer, tokensAt, workFile } from "./local-worker-kit.js";
+import { airdropped } from "./airdrop.js";
 
 const WRAPPED = 5_000_000n;
 const SYSTEM = "11111111111111111111111111111111" as Address;
@@ -149,7 +150,7 @@ describe("a local worker's leftovers, counted exactly", () => {
   it("closes five announcements at a time and says how many more can close", async () => {
     const job = await hire(false);
     const { worker, brief, keypair } = await made(job.intent);
-    h.svm.airdrop(worker, lamports(1_000_000_000n));
+    airdropped(h.svm, worker, lamports(1_000_000_000n));
     const deliver = commandNamed(brief, "deliver");
     for (let n = 0; n < 6; n += 1) {
       const artifact = workFile(new TextEncoder().encode(`export default () => ${n};\n`), `work-${n}.mjs`);

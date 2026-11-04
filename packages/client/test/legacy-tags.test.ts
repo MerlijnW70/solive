@@ -10,6 +10,7 @@ import { specUrlOf } from "../src/job-specs.js";
 import { MEMO_PROGRAM_ADDRESS } from "../src/transport.js";
 import { world, type World } from "./svm.js";
 import { announced, fundedSigner, LOCAL, nativeMint, SOL, specHash, workUrl } from "./work.js";
+import { airdropped } from "./airdrop.js";
 
 type Delivery = { source: string; commitment: string; blob: string };
 
@@ -32,7 +33,7 @@ const bytes = (hex: string): Uint8Array => Uint8Array.from(Buffer.from(hex, "hex
 
 async function funded(w: World, keypair: string): Promise<KeyPairSigner> {
   const signer = await createKeyPairSignerFromBytes(bytes(keypair));
-  w.chain.svm.airdrop(signer.address, lamports(10n * SOL));
+  airdropped(w.chain.svm, signer.address, lamports(10n * SOL));
   return signer;
 }
 

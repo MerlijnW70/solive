@@ -5,6 +5,7 @@ import { CLUSTERS } from "../src/args.js";
 import { AIRDROP, airdropRefused, airdropper, CLI_SMALL_START, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough, smallerAirdrop, whyAirdrop } from "../src/wallet.js";
 import { DEVNET_URL } from "../src/tokens.js";
 import { cli, h, transport, world } from "./harness.js";
+import { airdropped } from "./airdrop.js";
 
 const CUSTOM = "https://" + "rpc.example.org";
 
@@ -22,7 +23,7 @@ const sending = (most: bigint) => {
       if (amount > most) {
         throw new Error("429 Too Many Requests");
       }
-      h.svm.airdrop(address, lamports(amount));
+      airdropped(h.svm, address, lamports(amount));
       return testSignature(`airdrop ${address} ${amount}`);
     },
   };
@@ -57,7 +58,7 @@ describe("setup names the cluster that refused the airdrop", () => {
   it.each(OFF_DEVNET)("a wallet holding too little on %s is told who refused to add more, never devnet", async (flag, url, name) => {
     h.airdropRefused = true;
     const address = (await setupOn(flag))["address"] as Address;
-    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
+    airdropped(h.svm, address, lamports(LAMPORTS_PER_SOL / 50n));
     const held = await setupOn(flag);
     expect(held).toMatchObject({ sol: "0.02", next: heldRefused("0.02", address, url) });
     expect(held["next"]).toContain(`and ${name} refused to add more; `);
@@ -67,7 +68,7 @@ describe("setup names the cluster that refused the airdrop", () => {
   it.each(OFF_DEVNET)("a wallet holding enough on %s is told who refused more, never devnet", async (flag, url, name) => {
     h.airdropRefused = true;
     const address = (await setupOn(flag))["address"] as Address;
-    h.svm.airdrop(address, lamports(ENOUGH_TO_START));
+    airdropped(h.svm, address, lamports(ENOUGH_TO_START));
     const held = await setupOn(flag);
     expect(held["next"]).toBe(refusedEnough("0.06", CLI_SMALL_START, url));
     expect(held["next"]).toMatch(new RegExp(`^${name} refused more free SOL, but your wallet holds 0\\.06 SOL`));

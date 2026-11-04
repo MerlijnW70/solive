@@ -36,6 +36,7 @@ import {
   NOW,
   stashMarket,
 } from "./solver-engine.js";
+import { airdropped } from "./airdrop.js";
 
 let svm: LiteSVM;
 
@@ -91,7 +92,7 @@ describe("solver against the deployed engine", () => {
   it("pays a bundle tip of exactly the lamports it is told to the account it is told, last, from the solver", async () => {
     const intent = await open(14n);
     const tipAccount = (await generateKeyPairSigner()).address;
-    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(svm, tipAccount, lamports(1_000_000_000n));
     const before = svm.getBalance(tipAccount) ?? 0n;
     const solverBefore = svm.getBalance(solver.address) ?? 0n;
     const sent: Base64EncodedWireTransaction[] = [];
@@ -140,7 +141,7 @@ describe("solver against the deployed engine", () => {
       required.set(address, requiredOut(decodeParamsLoose(intent.kind, Uint8Array.from(intent.params)) as IntentParams, remainingOf(intent), NOW));
     }
     const tipAccount = (await generateKeyPairSigner()).address;
-    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(svm, tipAccount, lamports(1_000_000_000n));
     const before = svm.getBalance(tipAccount) ?? 0n;
     const landedInOrder: string[] = [];
     const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
@@ -202,7 +203,7 @@ describe("solver against the deployed engine", () => {
   it("reports every fill of a bundle the engine refused as failed with its error", async () => {
     const opened = [await open(40n), await open(41n)];
     const tipAccount = (await generateKeyPairSigner()).address;
-    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(svm, tipAccount, lamports(1_000_000_000n));
     const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
       tip: { account: tipAccount, lamports: 12_345n },
       sendBundle: async () => {
@@ -218,7 +219,7 @@ describe("solver against the deployed engine", () => {
   it("sends each fill on its own with its own tip when it has no bundle sender, and refuses a bad bundle size", async () => {
     const opened = [await open(50n), await open(51n), await open(52n)];
     const tipAccount = (await generateKeyPairSigner()).address;
-    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    airdropped(svm, tipAccount, lamports(1_000_000_000n));
     const before = svm.getBalance(tipAccount) ?? 0n;
     const sent: Base64EncodedWireTransaction[] = [];
     const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
