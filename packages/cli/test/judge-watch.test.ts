@@ -336,8 +336,8 @@ describe("fetching a delivery to judge", () => {
       ["https://a.example/x", serving(() => new Response("gone", { status: 404 })), "answered 404"],
       ["https://a.example/x", serving(() => new Response("x", { headers: { "content-length": String(MAX_ARTIFACT_BYTES + 1) } })), `is larger than ${MAX_ARTIFACT_BYTES} bytes`],
       ["https://a.example/x", serving(() => new Response(big)), `is larger than ${MAX_ARTIFACT_BYTES} bytes`],
-      ["https://a.example/x", serving(() => Promise.reject(new TypeError("fetch failed", { cause: new Error("unexpected redirect") }))), "could not be fetched: fetch failed"],
-      ["https://a.example/x", serving(() => Promise.reject(new FetchFailed("https://a.example/x", "redirect", "unexpected redirect"))), "could not be fetched: fetch failed"],
+      ["https://a.example/x", serving(() => Promise.reject(new TypeError("fetch failed", { cause: new Error("unexpected redirect") }))), "could not be fetched (fetch failed: unexpected redirect)"],
+      ["https://a.example/x", serving(() => Promise.reject(new FetchFailed("https://a.example/x", "redirect", "unexpected redirect"))), "could not be fetched (fetch failed: unexpected redirect)"],
     ] as const) {
       const fetching = fetchDelivery(get, transport, await delivery(url, hash), 5);
       await expect(fetching, url).rejects.toThrow(new DeliveryUnfit(url, reason));

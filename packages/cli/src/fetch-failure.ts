@@ -1,11 +1,8 @@
 import { isSdkError, type Lookup } from "@intent-engine/client";
-import { MAX_SPEC_BYTES, PLAIN_HTTP_ON_PUBLIC, publicAddresses, SPEC_REDIRECTS } from "@intent-engine/client/internal";
+import { publicAddresses } from "@intent-engine/client/internal";
+import { lastingSpecRead, SPEC_NOT_PUBLIC } from "./fetch-class.js";
 import { InviteRefused } from "./invites.js";
 import { JudgeRefused, JudgeUnreadable } from "./judge-errors.js";
-
-const TEMPORARY_STATUS: ReadonlySet<number> = new Set([408, 425, 429]);
-
-export const temporaryStatus = (status: number): boolean => status >= 500 || TEMPORARY_STATUS.has(status);
 
 export const fetchFailure = (error: unknown): string => {
   if (isSdkError(error, "fetch-failed")) {
@@ -37,20 +34,10 @@ export async function reached(hostname: string, lookup: Lookup, loopback: boolea
   return addresses !== null ? { addresses } : answered ? "private" : "unresolved";
 }
 
-export const SPEC_NOT_HTTP = "is not an http or https url";
-
-export const SPEC_NOT_PUBLIC = "points to a private, loopback or local network address, which is not fetched";
-
 const SPEC_AT = "the spec at ";
 
-const LASTING_SPEC: readonly string[] = ["is not a url", SPEC_NOT_HTTP, PLAIN_HTTP_ON_PUBLIC, SPEC_REDIRECTS, `is larger than ${MAX_SPEC_BYTES} bytes`];
-
 export async function lastingSpecFailure(message: string, lookup: Lookup): Promise<boolean> {
-  const status = / answered (\d{3})$/.exec(message);
-  if (status !== null) {
-    return !temporaryStatus(Number(status[1]));
-  }
-  if (LASTING_SPEC.some((reason) => message.endsWith(` ${reason}`))) {
+  if (lastingSpecRead({ message }, false)) {
     return true;
   }
   const tail = ` ${SPEC_NOT_PUBLIC}`;

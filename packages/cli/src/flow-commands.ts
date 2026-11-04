@@ -3,7 +3,7 @@ import type { Address, TransactionSigner } from "@solana/kit";
 import { U64_MAX } from "@intent-engine/core/internal";
 import { type Transport, TransportLacks } from "@intent-engine/client";
 import type { DeliveryOpener } from "@intent-engine/core";
-import { isLedgerPath, MAX_SPEC_BYTES, memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
+import { isLedgerPath, memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";
@@ -13,7 +13,7 @@ import type { AgentContext } from "./agent/actions.js";
 import { createThenUpload } from "./agent/create.js";
 import { readerLines, specTextProblem, uploadFailed, uploadLine, uploadPlan, uploadsAfterSend, withUploadHint } from "./agent/spec-upload.js";
 import { specPreflight } from "./agent/wallet/escrow-terms.js";
-import { fetchBytes } from "./delivery-fetch.js";
+import { FETCH_CAPS, fetchBytes } from "./delivery-fetch.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { getMandate, loadMandate, prepareAgentCreate, prepareMandate, prepareRevokeMandate } from "./agent/mandate.js";
 import { listIntents } from "./agent/read.js";
@@ -75,7 +75,7 @@ async function createWithUpload(runtime: Runtime, url: string, ctx: AgentContext
     throw new FlowRefused(`--spec-file ${specFile} ${wrong}`);
   }
   const specUrl = terms["spec_url"] as string | undefined;
-  const found = specUrl === undefined ? undefined : await fetchBytes(runtime.specFetch, ctx.transport, specUrl, runtime.lookup, MAX_SPEC_BYTES);
+  const found = specUrl === undefined ? undefined : await fetchBytes(runtime.specFetch, ctx.transport, specUrl, runtime.lookup, FETCH_CAPS.tools);
   const reach: AgentContext = { ...ctx, url, fetch: runtime.specFetch, lookup: runtime.lookup };
   const plan = await uploadPlan(reach, { specHash, specText, found, publish });
   const attestor = (terms["order"] as { attestor?: Address } | undefined)?.attestor;

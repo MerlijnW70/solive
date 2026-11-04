@@ -25,7 +25,7 @@ export function before<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
 async function bounded(response: Response, url: string, signal: AbortSignal): Promise<Uint8Array> {
   if (!response.ok) {
     await discarded(response);
-    throw new SpecUnreadable(url, `answered ${response.status}`);
+    throw new SpecUnreadable(url, `answered ${response.status}`, { status: response.status });
   }
   const declared = Number(response.headers.get("content-length") ?? "0");
   if (declared > MAX_SPEC_BYTES) {

@@ -3,12 +3,15 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type AnnouncementView, type SpecFetch, type Transport } from "@intent-engine/client";
-import { opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS } from "@intent-engine/client/internal";
+import { MAX_SPEC_BYTES, opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS } from "@intent-engine/client/internal";
 import { isLocalWorkUrl } from "@intent-engine/core/internal";
 import { hex } from "./announcement-views.js";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
-import { fetchFailure, lastingFailure, reached, temporaryStatus } from "./fetch-failure.js";
+import { temporaryStatus } from "./fetch-class.js";
+import { fetchFailure, lastingFailure, reached } from "./fetch-failure.js";
 import { type Lookup, systemLookup } from "./public-address.js";
+
+export const FETCH_CAPS = { watch: MAX_ARTIFACT_BYTES, tools: MAX_SPEC_BYTES } as const;
 
 export const FETCHED_NAME = "artifact";
 
@@ -19,8 +22,8 @@ export const WORK_IS_LOCAL = "is local to the worker's machine, so it cannot be 
 export class DeliveryUnfit extends Error {
   readonly reason: string;
 
-  constructor(url: string, reason: string) {
-    super(`the work at ${url} ${reason}; it is not judged again`);
+  constructor(url: string, reason: string, options?: ErrorOptions) {
+    super(`the work at ${url} ${reason}; it is not judged again`, options);
     this.name = "DeliveryUnfit";
     this.reason = reason;
   }
@@ -29,8 +32,8 @@ export class DeliveryUnfit extends Error {
 export class DeliveryUnreadable extends Error {
   readonly reason: string;
 
-  constructor(url: string, reason: string) {
-    super(`the work at ${url} ${reason}; it is fetched again later`);
+  constructor(url: string, reason: string, options?: ErrorOptions) {
+    super(`the work at ${url} ${reason}; it is fetched again later`, options);
     this.name = "DeliveryUnreadable";
     this.reason = reason;
   }
@@ -47,7 +50,7 @@ export const fetchedName = (url: URL): string => {
 
 export const tooLarge = (cap: number): string => `is larger than ${cap} bytes`;
 
-async function body(response: Response, url: string, cap = MAX_ARTIFACT_BYTES): Promise<Uint8Array> {
+async function body(response: Response, url: string, cap: number): Promise<Uint8Array> {
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     const reason = `answered ${response.status}`;
@@ -80,82 +83,73 @@ async function checkedAddresses(transport: Transport, url: URL, lookup: Lookup):
   return reached(url.hostname, lookup, transport.offline === true);
 }
 
-export async function fetchSha256(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ sha256: string } | { problem: string }> {
-  const found = await fetchBytes(get, transport, url, lookup);
-  return "problem" in found ? found : { sha256: createHash("sha256").update(found.bytes).digest("hex") };
-}
+type Checked = { url: URL; addresses: { addresses?: string[] } } | { problem: string; temporary?: true };
 
-export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup, cap = MAX_ARTIFACT_BYTES): Promise<{ bytes: Uint8Array } | { problem: string; temporary?: true }> {
-  if (isLocalWorkUrl(url)) {
+async function checkedUrl(transport: Transport, raw: string, lookup: Lookup): Promise<Checked> {
+  if (isLocalWorkUrl(raw)) {
     return { problem: WORK_IS_LOCAL };
   }
-  let parsed: URL;
+  let url: URL;
   try {
-    parsed = new URL(url);
+    url = new URL(raw);
   } catch {
     return { problem: "is not a url" };
   }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
     return { problem: "is not an http or https url" };
   }
-  if (await plainHttpOnPublic(transport, url)) {
+  if (await plainHttpOnPublic(transport, raw)) {
     return { problem: PLAIN_HTTP_ON_PUBLIC };
   }
-  const addresses = await checkedAddresses(transport, parsed, lookup);
+  const addresses = await checkedAddresses(transport, url, lookup);
   if (addresses === "private") {
     return { problem: NOT_PUBLIC };
   }
   if (addresses === "unresolved") {
     return { problem: UNRESOLVED, temporary: true };
   }
+  return { url, addresses };
+}
+
+type Failed = { problem: string; temporary?: true; cause?: unknown };
+
+function failedFetch(error: unknown): Failed {
+  if (error instanceof DeliveryUnfit) {
+    return { problem: error.reason };
+  }
+  if (error instanceof DeliveryUnreadable) {
+    return { problem: error.reason, temporary: true };
+  }
+  const problem = `could not be fetched (${fetchFailure(error)})`;
+  return lastingFailure(error) ? { problem, cause: error } : { problem, temporary: true, cause: error };
+}
+
+export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup, cap: number = FETCH_CAPS.watch): Promise<{ bytes: Uint8Array } | { problem: string; temporary?: true }> {
+  const checked = await checkedUrl(transport, url, lookup);
+  if ("problem" in checked) {
+    return checked;
+  }
   try {
-    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS), ...addresses }), url, cap) };
+    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS), ...checked.addresses }), url, cap) };
   } catch (error) {
-    if (error instanceof DeliveryUnfit) {
-      return { problem: error.reason };
-    }
-    if (error instanceof DeliveryUnreadable) {
-      return { problem: error.reason, temporary: true };
-    }
-    const problem = `could not be fetched (${fetchFailure(error)})`;
-    return lastingFailure(error) ? { problem } : { problem, temporary: true };
+    const { problem, temporary } = failedFetch(error);
+    return temporary === true ? { problem, temporary } : { problem };
   }
 }
 
 export type Announced = { announcement: AnnouncementView; salt: string; url: string };
 
 export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Announced, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {
-  if (isLocalWorkUrl(delivery.url)) {
-    throw new DeliveryUnfit(delivery.url, WORK_IS_LOCAL);
-  }
-  let url: URL;
-  try {
-    url = new URL(delivery.url);
-  } catch {
-    throw new DeliveryUnfit(delivery.url, "is not a url");
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new DeliveryUnfit(delivery.url, "is not an http or https url");
-  }
-  if (await plainHttpOnPublic(transport, delivery.url)) {
-    throw new DeliveryUnfit(delivery.url, PLAIN_HTTP_ON_PUBLIC);
-  }
-  const addresses = await checkedAddresses(transport, url, lookup);
-  if (addresses === "private") {
-    throw new DeliveryUnfit(delivery.url, NOT_PUBLIC);
-  }
-  if (addresses === "unresolved") {
-    throw new DeliveryUnreadable(delivery.url, UNRESOLVED);
+  const checked = await checkedUrl(transport, delivery.url, lookup);
+  if ("problem" in checked) {
+    throw checked.temporary === true ? new DeliveryUnreadable(delivery.url, checked.problem) : new DeliveryUnfit(delivery.url, checked.problem);
   }
   let bytes: Uint8Array;
   try {
-    bytes = await body(await get(delivery.url, { redirect: "error", signal: AbortSignal.timeout(seconds * 1000), ...addresses }), delivery.url);
+    bytes = await body(await get(delivery.url, { redirect: "error", signal: AbortSignal.timeout(seconds * 1000), ...checked.addresses }), delivery.url, FETCH_CAPS.watch);
   } catch (error) {
-    if (error instanceof DeliveryUnfit || error instanceof DeliveryUnreadable) {
-      throw error;
-    }
-    const reason = `could not be fetched: ${error instanceof Error ? error.message : String(error)}`;
-    throw lastingFailure(error) ? new DeliveryUnfit(delivery.url, reason) : new DeliveryUnreadable(delivery.url, reason);
+    const { problem, temporary, cause } = failedFetch(error);
+    throw temporary === true ? new DeliveryUnreadable(delivery.url, problem, { cause }) : new DeliveryUnfit(delivery.url, problem, { cause });
   }
   const digest = createHash("sha256").update(bytes).digest();
   const sha256 = digest.toString("hex");
@@ -163,7 +157,7 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
     throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, which the commitment ${hex(delivery.announcement.commitment)} of ${delivery.announcement.worker} does not bind`);
   }
   const root = await mkdtemp(join(tmpdir(), "judge-delivery-"));
-  const path = join(root, fetchedName(url));
+  const path = join(root, fetchedName(checked.url));
   await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
   return { root, path, sha256 };
 }

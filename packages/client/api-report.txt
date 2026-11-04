@@ -210,7 +210,7 @@ type SpecRequest: type SpecRequest = { method?: "GET" | "POST" | "PUT"; headers?
 class SpecSealed: class SpecSealed extends SdkError { readonly code = "spec-sealed"; readonly name = "SpecSealed"; readonly url: string; readonly to: Address[]; readonly keyed: boolean; constructor(url: string, to: Address[], keyed: boolean); }
 type SpecSource: type SpecSource = { kind: "memo"; } | { kind: "mirror"; base: string; } | { kind: "ipfs"; gateway: string; } | { kind: "arweave"; gateway: string; };
 type SpecSourceKind: type SpecSourceKind = SpecSource["kind"];
-class SpecUnreadable: class SpecUnreadable extends SdkError { readonly code = "spec-unreadable"; readonly name = "SpecUnreadable"; readonly url: string; constructor(url: string, reason: string, options?: ErrorOptions); }
+class SpecUnreadable: class SpecUnreadable extends SdkError { readonly code = "spec-unreadable"; readonly name = "SpecUnreadable"; readonly url: string; readonly status: number | null; constructor(url: string, reason: string, options?: ErrorOptions & { status?: number; }); }
 type SplitBallot: type SplitBallot = { intent: Address; attestor: Address; committee: CommitteeView | null; worker: Address; splitHash: Uint8Array; digest: Uint8Array; cosigners: Address[]; message: Uint8Array; };
 type SplitBallotInput: type SplitBallotInput = BallotInput & { recipients: readonly SplitShare[]; };
 type SplitShare: type SplitShare = { wallet: Address; weight: number; };

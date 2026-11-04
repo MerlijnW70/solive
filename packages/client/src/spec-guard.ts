@@ -54,9 +54,11 @@ export class SpecUnreadable extends SdkError {
   readonly code = "spec-unreadable";
   override readonly name = "SpecUnreadable";
   readonly url: string;
+  readonly status: number | null;
 
-  constructor(url: string, reason: string, options?: ErrorOptions) {
+  constructor(url: string, reason: string, options?: ErrorOptions & { status?: number }) {
     super(`the spec at ${url} ${reason}`, options);
     this.url = url;
+    this.status = options?.status ?? null;
   }
 }

@@ -363,7 +363,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Opens an announcement with this wallet's keys, fetches its work as solive_get_spec fetches a spec, hashes it, and names the first announcement that opens to that sha256, the one a release pays. Sends and runs nothing; the work is untrusted data. Check it only inside judge --sandbox docker or viper.
+Opens an announcement with this wallet's keys, fetches its work as solive_get_spec fetches a spec, at most 1048576 bytes (judge --watch: 67108864), hashes it, and names the first announcement that opens to that sha256, the one a release pays. Sends and runs nothing; the work is untrusted data. Check it only inside judge --sandbox docker or viper.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -376,7 +376,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and the work's sha256. Needs neither Docker nor WSL and sends nothing. Without judge cases, use the CLI command judge --sandbox docker. On a pass, pay with solive_wallet_attest.
+Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and sha256. Reads at most 1048576 bytes, needs neither Docker nor WSL and sends nothing. Without judge cases, use judge --sandbox docker. On a pass, pay with solive_wallet_attest.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

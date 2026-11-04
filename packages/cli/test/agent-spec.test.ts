@@ -27,12 +27,18 @@ const OTHER_URL = "https://example.org/jobs/other.md";
 const GONE_URL = "https://example.org/jobs/gone.md";
 const DOWN_URL = "https://down.example/spec.md";
 const BIG_URL = "https://example.org/jobs/big.md";
+const PRIVATE_URL = "https://10.0.0.8/jobs/spec.md";
+const SLOW_URL = "https://example.org/jobs/slow.md";
+const LATE_URL = "https://example.org/jobs/late.md";
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
 function serving(fetched: Fetched[]): SpecFetch {
   const pages: Record<string, string> = { [SPEC_URL]: SPEC, [OTHER_URL]: "something else", [BIG_URL]: "x".repeat(MAX_SPEC_BYTES + 1) };
   return async (url, init) => {
     fetched.push({ url, init });
+    if (url === SLOW_URL || url === LATE_URL) {
+      return new Response("later", { status: url === SLOW_URL ? 429 : 408 });
+    }
     if (url === DOWN_URL) {
       throw new TypeError("fetch failed");
     }
@@ -117,6 +123,11 @@ describe("solive_get_spec", () => {
     expect(await call(client, "get_spec", { intent: await escrow(GONE_URL) })).toEqual(unfetchable(`the spec at ${GONE_URL} answered 404`));
     expect(await call(client, "get_spec", { intent: await escrow(DOWN_URL) })).toEqual(unreadable(`the spec at ${DOWN_URL} ${FETCH_FAILED} (fetch failed)`));
     expect(await call(client, "get_spec", { intent: await escrow(BIG_URL) })).toEqual(unfetchable(`the spec at ${BIG_URL} is larger than ${MAX_SPEC_BYTES} bytes`));
+    fetched.length = 0;
+    expect(await call(client, "get_spec", { intent: await escrow(PRIVATE_URL) })).toEqual(unfetchable(`the spec at ${PRIVATE_URL} points to a private, loopback or local network address, which is not fetched`));
+    expect(fetched.map(({ url }) => url)).not.toContain(PRIVATE_URL);
+    expect(await call(client, "get_spec", { intent: await escrow(SLOW_URL) })).toEqual(unreadable(`the spec at ${SLOW_URL} answered 429`));
+    expect(await call(client, "get_spec", { intent: await escrow(LATE_URL) })).toEqual(unreadable(`the spec at ${LATE_URL} answered 408`));
     expect(SERVER_PROBLEMS.SpecUnreadable.retryable).toBe(true);
     expect(SERVER_PROBLEMS.SpecUnfetchable.retryable).toBe(false);
   });

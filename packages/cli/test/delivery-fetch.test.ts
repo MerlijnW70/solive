@@ -4,7 +4,7 @@ import { type SpecFetch, type Transport } from "@intent-engine/client";
 import { DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES } from "@intent-engine/client/internal";
 import { createTestWorld } from "@intent-engine/client/testing";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
-import { fetchSha256, NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
+import { fetchBytes, NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
 import type { Lookup } from "../src/public-address.js";
 
 const cluster = (genesis: string) => ({ genesisHash: async () => genesis }) as unknown as Transport;
@@ -18,6 +18,11 @@ const serving =
   (response: () => Response): SpecFetch =>
   async () =>
     response();
+
+async function fetchSha256(get: SpecFetch, transport: Transport, url: string, lookupOf: Lookup): Promise<{ sha256: string } | { problem: string }> {
+  const found = await fetchBytes(get, transport, url, lookupOf);
+  return "problem" in found ? found : { sha256: sha(found.bytes) };
+}
 
 const MIB = 1024 * 1024;
 

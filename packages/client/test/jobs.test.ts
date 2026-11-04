@@ -184,6 +184,8 @@ describe("spec", () => {
     const gone = await client.createIntent({ ...order, params: proof(judge.address), specUrl: "https://example.org/gone" });
     await expect(client.spec(large.intent)).rejects.toThrow(SpecUnreadable);
     await expect(client.spec(gone.intent)).rejects.toThrow("answered 404");
+    await expect(client.spec(gone.intent)).rejects.toMatchObject({ status: 404 });
+    await expect(client.spec(large.intent)).rejects.toMatchObject({ status: null });
   });
 });
 

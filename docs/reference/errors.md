@@ -55,10 +55,10 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NoSpecUrl` | no | the escrow is not a proof escrow, or no source asked served its spec; ask its owner where its acceptance spec lives |
 | `NotInvited` | no | pay_to was not invited to the job: its spec is sealed to other wallets |
 | `SpecSealed` | no | the spec is sealed to invited wallets, and this server's wallet is not one of them or it has no wallet |
-| `SpecUnreadable` | yes | the spec url could not be read this time: it failed or the node answered a temporary error; try again shortly |
-| `SpecUnfetchable` | no | the spec url cannot be read: it answered not-found, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one |
-| `WorkUnreadable` | yes | the announced work could not be fetched this time: the request failed or the host answered a temporary error; try again shortly |
-| `WorkUnfetchable` | no | the announced work cannot be read here: no announcement opens with this wallet's keys, or its url answers not-found, redirects, is larger than the limit or is not a public https address; do not retry it |
+| `SpecUnreadable` | yes | the spec url could not be read this time: it failed, was rate-limited (429), timed out (408) or answered a server error; try again shortly |
+| `SpecUnfetchable` | no | the spec url cannot be read: it answered not-found or another permanent client error, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one |
+| `WorkUnreadable` | yes | the announced work could not be fetched this time: the request failed, the host rate-limited it (429), timed out (408) or answered a server error; try again shortly |
+| `WorkUnfetchable` | no | the announced work cannot be read here: no announcement opens with this wallet's keys, or its url answers not-found or another permanent client error, redirects, is larger than the limit or is not a public https address; do not retry it |
 | `NotEarliestAnnouncer` | no | another wallet made the first announcement that opens to the delivered work; a release pays that announcement's worker |
 | `AnnouncementsIncomplete` | yes | the RPC node does not list every announcement of the escrow yet, or the escrow is closed, so the first one that opens to the work cannot be known; nothing was signed |
 | `KeyNotGiven` | no | an earlier announcement is sealed to a key this server was not given, so the first one that opens to the work cannot be known; start the server with mcp --encryption-keypair naming that key's file |
@@ -296,7 +296,7 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `transport-lacks` | `TransportLacks` | `method` | the transport does not implement a method the call needs |
 | `confirm-mismatch` | `ConfirmMismatch` | `field`, `first`, `second` | the second RPC node disagrees with the first or could not be read; nothing was signed or sent |
 | `spec-sealed` | `SpecSealed` | `url`, `to`, `keyed` | the spec is sealed to invited wallets and no key given opens it |
-| `spec-unreadable` | `SpecUnreadable` | `url` | the spec url could not be fetched or opened |
+| `spec-unreadable` | `SpecUnreadable` | `url`, `status` | the spec url could not be fetched or opened; status is the http status it answered, or null |
 | `ledger-error` | `LedgerError` | none | the Ledger did not sign; nothing was sent |
 | `ledger-path-error` | `LedgerPathError` | none | the text is not a Ledger path this SDK accepts |
 | `maybe-sent` | `MaybeSent` | `signature`, `lastValidBlockHeight` | the transaction may have landed; resolve it with client.status(signature, lastValidBlockHeight) and do not send it again |

@@ -149,7 +149,7 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
   "transport-lacks": { error: TransportLacks, fields: ["method"], meaning: "the transport does not implement a method the call needs" },
   "confirm-mismatch": { error: ConfirmMismatch, fields: ["field", "first", "second"], meaning: "the second RPC node disagrees with the first or could not be read; nothing was signed or sent" },
   "spec-sealed": { error: SpecSealed, fields: ["url", "to", "keyed"], meaning: "the spec is sealed to invited wallets and no key given opens it" },
-  "spec-unreadable": { error: SpecUnreadable, fields: ["url"], meaning: "the spec url could not be fetched or opened" },
+  "spec-unreadable": { error: SpecUnreadable, fields: ["url", "status"], meaning: "the spec url could not be fetched or opened; status is the http status it answered, or null" },
   "ledger-error": { error: LedgerError, fields: [], meaning: "the Ledger did not sign; nothing was sent" },
   "ledger-path-error": { error: LedgerPathError, fields: [], meaning: "the text is not a Ledger path this SDK accepts" },
   "maybe-sent": {

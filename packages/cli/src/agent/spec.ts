@@ -1,8 +1,9 @@
 import type { Address } from "@solana/kit";
 import { isSdkError, SpecSealed, SpecUnreadable } from "@intent-engine/client";
 import { pinnedFetch } from "@intent-engine/client/node";
-import { intentAt, MAX_SPEC_BYTES, mintOf, readSpec, SPEC_FETCH_FAILED, SPEC_REDIRECTS } from "@intent-engine/client/internal";
+import { intentAt, MAX_SPEC_BYTES, mintOf, readSpec, SPEC_FETCH_FAILED } from "@intent-engine/client/internal";
 import { define, specReach, specReadOf } from "./actions.js";
+import { lastingSpecRead } from "../fetch-class.js";
 import { tool } from "./names.js";
 import { claimOf, specClaimHint } from "./job-claims.js";
 import { AgentRefusal, SERVER_PROBLEMS } from "./problems.js";
@@ -20,12 +21,8 @@ export const FETCH_FAILED = SPEC_FETCH_FAILED;
 
 export const NOT_TEXT = "the spec is not valid UTF-8, so text is left out";
 
-const PERMANENT_SPEC: readonly RegExp[] = [/ is larger than /, /is not an http or https url/, /is not a url/, /private, loopback/, /plain http url/, /is sealed but could not be opened/, /answered 4\d\d/, new RegExp(SPEC_REDIRECTS)];
-
 export const specSealedHint = (invited: number, keyed: boolean): string =>
   `the spec is sealed to ${invited} invited wallet${invited === 1 ? "" : "s"}; ${keyed ? "this wallet is not one of them" : "read it with the key of an invited wallet"}; the untrusted detail names its url`;
-
-export const permanentSpec = (message: string): boolean => PERMANENT_SPEC.some((pattern) => pattern.test(message));
 
 function textOf(bytes: Uint8Array): { text: string } | { text_warning: string } {
   try {
@@ -65,7 +62,7 @@ export const getSpec = define({
         throw new AgentRefusal("SpecSealed", specSealedHint(error.to.length, error.keyed), error.url);
       }
       if (isSdkError(error, "spec-unreadable")) {
-        const code = permanentSpec(error.message) ? "SpecUnfetchable" : "SpecUnreadable";
+        const code = lastingSpecRead(error, true) ? "SpecUnfetchable" : "SpecUnreadable";
         throw new AgentRefusal(code, SERVER_PROBLEMS[code].hint, error.message);
       }
       throw error;

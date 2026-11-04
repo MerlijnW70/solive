@@ -134,6 +134,24 @@ describe("fetching announced work with the wallet", () => {
     expect(full.value["untrusted_text"]).toHaveLength(MAX_SPEC_BYTES);
   }, 60_000);
 
+  it("retries work whose host rate-limits or times out and drops work that is gone", async () => {
+    const intent = await escrowTo(judge);
+    const urls = { slow: "https://" + `${PUBLIC_HOST}/slow`, late: "https://" + `${PUBLIC_HOST}/late`, gone: "https://" + `${PUBLIC_HOST}/gone` };
+    h.specReplies.set(urls.slow, async () => new Response("later", { status: 429 }));
+    h.specReplies.set(urls.late, async () => new Response("later", { status: 408 }));
+    h.specReplies.set(urls.gone, async () => new Response("gone", { status: 404 }));
+    const made = await announced(intent, Object.values(urls));
+    h.genesis = DEVNET_GENESIS_HASH;
+    const fetchAt = (at: number) => call(client, "wallet_fetch_work", { intent, announcement: made[at]?.announcement });
+    const later = (url: string, status: number) => ({
+      error: true,
+      value: { code: "WorkUnreadable", retryable: true, hint: SERVER_PROBLEMS.WorkUnreadable.hint, untrustedDetail: untrusted(`the work at ${url} answered ${status}`) },
+    });
+    expect(await fetchAt(0)).toEqual(later(urls.slow, 429));
+    expect(await fetchAt(1)).toEqual(later(urls.late, 408));
+    expect(await fetchAt(2)).toEqual(refused("WorkUnfetchable", urls.gone, "answered 404"));
+  });
+
   it("retries a fetch that failed this time", async () => {
     const intent = await escrowTo(judge);
     const down = "https://" + "files.example.com/down.txt";

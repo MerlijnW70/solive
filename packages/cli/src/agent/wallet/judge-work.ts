@@ -4,8 +4,9 @@ import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address } from "@solana/kit";
 import { createClient } from "@intent-engine/client/node";
-import { MAX_SPEC_BYTES, opensTo } from "@intent-engine/client/internal";
+import { opensTo } from "@intent-engine/client/internal";
 import { openedBy } from "../../announcement-views.js";
+import { FETCH_CAPS } from "../../delivery-fetch.js";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
@@ -38,7 +39,7 @@ export const JUDGED_FAIL = "the work failed the spec's cases, as cases and host 
 export const artifactDiffers = (path: string, sha256: string): string =>
   `${sanitized(path, ARTIFACT_PATH_LIMIT)} has sha256 ${sha256}, which no announcement this wallet opens committed to, so it is not the announced work; nothing was run`;
 
-export const artifactUnfit = (path: string): string => `${sanitized(path, ARTIFACT_PATH_LIMIT)} is not a readable file of at most ${MAX_SPEC_BYTES} bytes; nothing was run`;
+export const artifactUnfit = (path: string): string => `${sanitized(path, ARTIFACT_PATH_LIMIT)} is not a readable file of at most ${FETCH_CAPS.tools} bytes; nothing was run`;
 
 export const specDiffers = (sha256: string): string => `the spec fetched from the escrow's spec url has sha256 ${sha256}, not the escrow's spec_hash, so it is not the spec a release is signed over; nothing was run`;
 
@@ -128,7 +129,7 @@ export async function boundedRead(file: string, limit: number): Promise<Uint8Arr
 async function workAt(ctx: AgentContext, input: { intent: Address; announcement?: Address | undefined }, path: string): Promise<Fetched> {
   const signer = await signerOf(ctx);
   await proofEscrow(ctx, input.intent, "wallet_receipt");
-  const bytes = await boundedRead(resolve(path), MAX_SPEC_BYTES);
+  const bytes = await boundedRead(resolve(path), FETCH_CAPS.tools);
   if (bytes === null) {
     throw new AgentRefusal("NotJudged", artifactUnfit(path));
   }
@@ -168,7 +169,7 @@ async function workAt(ctx: AgentContext, input: { intent: Address; announcement?
 export const walletJudgeWork = define({
   name: tool("wallet_judge_work"),
   title: "Judge announced work in the ViperJS sandbox",
-  description: `Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and the work's sha256. Needs neither Docker nor WSL and sends nothing. Without judge cases, use the CLI command judge --sandbox docker. On a pass, pay with ${tool("wallet_attest")}.`,
+  description: `Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and sha256. Reads at most ${FETCH_CAPS.tools} bytes, needs neither Docker nor WSL and sends nothing. Without judge cases, use judge --sandbox docker. On a pass, pay with ${tool("wallet_attest")}.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),

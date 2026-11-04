@@ -2,8 +2,8 @@ import type { Address, Instruction } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { buildClaimsWithList, buildOpenClaims, buildOpenClaimsListed, claimantChunks, isSealed, sealedTo } from "@intent-engine/core/internal";
 import { pinnedFetch } from "@intent-engine/client/node";
-import { loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
-import { fetchBytes } from "../../delivery-fetch.js";
+import { loadCommittee } from "@intent-engine/client/internal";
+import { FETCH_CAPS, fetchBytes } from "../../delivery-fetch.js";
 import { priorityLamports } from "../../compute.js";
 import { execute } from "../../flows.js";
 import { type AgentContext, lookupOf } from "../actions.js";
@@ -33,7 +33,7 @@ export type SpecReader = (specUrl: string) => Promise<SpecRead>;
 export function specReader(ctx: AgentContext): SpecReader {
   const read = new Map<string, Promise<SpecRead>>();
   return (specUrl) => {
-    const known = read.get(specUrl) ?? fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, lookupOf(ctx), MAX_SPEC_BYTES);
+    const known = read.get(specUrl) ?? fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, lookupOf(ctx), FETCH_CAPS.tools);
     read.set(specUrl, known);
     return known;
   };
