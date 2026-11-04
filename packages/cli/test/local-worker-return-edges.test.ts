@@ -97,7 +97,7 @@ describe("a local worker's leftovers at the edges", () => {
       sendWire: async (wire, latest) => {
         const signature = await live.sendWire(wire, latest);
         wires += 1;
-        if (wires === 2) {
+        if (wires === 3) {
           const data = new Uint8Array(announcement.data);
           h.svm.setAccount({ ...announcement, data });
           const broken = new Uint8Array(announcement.data);
@@ -110,7 +110,7 @@ describe("a local worker's leftovers at the edges", () => {
     };
     const sending = await server();
     const done = await ok(sending, "wallet_worker", { return_leftovers: worker, send: true });
-    expect(wires).toBe(2);
+    expect(wires).toBe(3);
     expect(done).toMatchObject({ sent: true, kept: [], key_deleted: false });
     expect(lamportsOf(worker)).toBe(0n);
     expect(h.files.has(keypair)).toBe(true);

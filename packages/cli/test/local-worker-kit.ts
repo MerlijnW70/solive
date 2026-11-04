@@ -3,13 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Address, getBase58Decoder, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getBase58Decoder, lamports, none } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { expect } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT } from "@intent-engine/core";
-import { getIntentDecoder, getIntentEncoder } from "@intent-engine/core/internal";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, INTENT_ENGINE_PROGRAM_ADDRESS, NATIVE_MINT } from "@intent-engine/core";
+import { DELIVERY_BOOK_VERSION, findDeliveryBookPda, getDeliveryBookEncoder, getDeliveryBookSize, getIntentDecoder, getIntentEncoder } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -86,7 +86,7 @@ export async function hireWith(client: Client, attestor: Address, claims: boolea
 }
 
 export async function makeWorker(client: Client, intent: Address) {
-  const worker = await ok(client, "wallet_worker", { intent, send: true });
+  const worker = await ok(client, "wallet_worker", await approved(client, "wallet_worker", { intent }));
   return { worker: worker["worker"] as Address, keypair: worker["keypair"] as string, brief: worker["brief"] as string, value: worker };
 }
 
@@ -164,3 +164,12 @@ export async function tokensAt(owner: Address, amount: bigint, mint: Address = D
 }
 
 export const claimsOn = (args: string[], owner: Address, nonce: string) => args.map((word, at) => (args[at - 1] === "--owner" ? owner : args[at - 1] === "--nonce" ? nonce : word));
+
+export async function plantBook(payer: Address, intent?: Address): Promise<{ book: Address; intent: Address; rent: bigint }> {
+  const on = intent ?? (await generateKeyPairSigner()).address;
+  const [book, bump] = await findDeliveryBookPda({ intent: on });
+  const data = Uint8Array.from(getDeliveryBookEncoder().encode({ intent: on, payer, nextSeq: 0n, live: 0n, version: DELIVERY_BOOK_VERSION, bump, padding: new Uint8Array(6) }));
+  const rent = BigInt(h.svm.minimumBalanceForRentExemption(BigInt(getDeliveryBookSize())));
+  h.svm.setAccount({ address: book, data, executable: false, lamports: lamports(rent), programAddress: INTENT_ENGINE_PROGRAM_ADDRESS, space: BigInt(data.length) });
+  return { book, intent: on, rent };
+}

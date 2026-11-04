@@ -19,13 +19,31 @@ import { account, flag, InvalidInput, list, object, optional, text } from "../sc
 import { preparedView } from "../shapes.js";
 import { networkFee, sol } from "./costs.js";
 import { proofEscrow } from "./delivery.js";
-import { access, bookOf, checkSale, deviceOutput, LANDING_SECONDS, limited, live, PREVIEW_FIRST, refusedBeforeSending, salesOf, sent, signerOf } from "./guard.js";
+import {
+  access,
+  bookOf,
+  checkSale,
+  deviceOutput,
+  LANDING_SECONDS,
+  limited,
+  live,
+  PREVIEW_APPROVAL,
+  PREVIEW_APPROVAL_NEXT,
+  refusedBeforeSending,
+  salesOf,
+  sent,
+  signerOf,
+  termsApproval,
+} from "./guard.js";
 import { returnLeftovers, workerJobPath, workerKeyPath, type WorkerJob, workersFolder } from "./worker-return.js";
 import { workerBrief } from "./worker-brief.js";
 
 export const WORKER_SENDS = 4n;
 
 export const WORKER_ON_DEVICE = "this wallet is a Ledger, which signs only a transaction its preview showed, and a worker's new key exists only once it is sent; fund a worker from a key file wallet";
+
+export const WORKER_CHANGED =
+  "this worker's funding differs from its preview: its claim stake, rent, network fees or announce fee changed, or no approval was given; preview it again and show the user";
 
 export const WORKER_SAME_KEY = "the new worker key equals the wallet, owner or attestor, so nothing was sent; call again";
 
@@ -114,17 +132,19 @@ const fundingLines = (funding: Funding, worker: string): string[] => [
 export const walletWorker = define({
   name: tool("wallet_worker"),
   title: "Start a local worker for a job",
-  description: `Makes a separate worker for an open job: a new key in a workers folder beside this wallet's key, funded with only its fees, rent and claim stake, and a brief for a separate agent. Paying still takes the judge's check. return_leftovers instead returns a finished worker's SOL. ${PREVIEW_FIRST}`,
+  description: `Makes a separate worker for an open job: a new key beside this wallet's key, funded with only its fees, rent and claim stake, and a brief for a separate agent. Paying takes the judge's check. return_leftovers returns a finished worker's SOL and needs no approval. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   repeats: true,
   input: object({
     intent: optional(account("the proof escrow's intent address, to make a worker for it")),
-    return_leftovers: optional(account("instead of intent: a worker's address, to return its leftover SOL once its job ended; the key is deleted only when it holds nothing")),
+    return_leftovers: optional(account("instead of intent: a worker's address, to return its leftover SOL once its job ended; the key is deleted only when it holds nothing, delivery books it paid for included")),
     send: optional(flag("true signs and sends; leave out to preview")),
+    approval: optional(text("the approval a worker's preview returned; needed with send and intent")),
   }),
   output: object({
     intent: account("the job"),
     funding: optional(text("whole SOL this send moves to the worker")),
+    approval: optional(text("pass it back with send: true; a send whose funding differs from this preview is refused")),
     returned: optional(text("whole SOL this returns now")),
     kept: optional(list(text(), 16, "why the worker's key stays afterwards: what it still holds")),
     key_deleted: optional(flag("true once the worker's key file was deleted, only when it holds nothing")),
@@ -171,10 +191,14 @@ export const walletWorker = define({
     const funding = await fundingOf(ctx, intent, stake, networkFee({ signers: probe.signers, priority_fee_lamports: probe.priorityLamports }));
     const guard = wallet.limits;
     checkSale(guard, NATIVE_MINT, 9, funding.total, now, await salesOf(wallet, now));
+    const approval = termsApproval({ action: "worker", wallet: signer.address, intent, ...funding });
+    if (input.send === true && input.approval !== approval) {
+      throw new AgentRefusal("ReleaseChanged", WORKER_CHANGED);
+    }
     const prepared = preparedView(await prepare(ctx.transport, [transferOf(funding.total)], signer.address));
-    const shown = { intent, funding: sol(funding.total), prepared };
+    const shown = { intent, funding: sol(funding.total), approval, prepared };
     if (input.send !== true) {
-      return sent(ctx, signer, { ...shown, summary: fundingLines(funding, "a new key") }, false, call);
+      return sent(ctx, signer, { ...shown, summary: fundingLines(funding, "a new key") }, false, call, { preview: PREVIEW_APPROVAL_NEXT });
     }
     const dir = await workersFolder(wallet);
     const keypair = workerKeyPath(dir, key.address);

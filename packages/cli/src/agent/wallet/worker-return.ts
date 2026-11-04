@@ -27,6 +27,7 @@ import { prepare } from "../prepare.js";
 import { AgentRefusal } from "../problems.js";
 import { preparedView } from "../shapes.js";
 import { sol } from "./costs.js";
+import { bookBatches, type BookClose, booksClosed, booksKeptLine, booksOf, booksPaidBy, bookUnclosed, intentsOf, rentOf } from "./worker-books.js";
 import { access, oneAtATime, savedKeypair, sent, signerAt, signerOf, type WalletAccess, type WalletSigner } from "./guard.js";
 
 export const WORKERS_FOLDER = "workers";
@@ -209,13 +210,23 @@ async function sweepOf(transport: Transport, worker: Address, key: TransactionSi
 }
 
 async function holdsNothing(transport: Transport, client: Client, worker: Address, key: TransactionSigner): Promise<boolean> {
-  const [own, tokens, plan, stakes] = await Promise.all([
+  const [own, tokens, plan, stakes, books] = await Promise.all([
     transport.getAccount(worker),
     transport.tokenAccountsOf?.(worker),
     client.plan.reclaim({ worker: key }),
     workerStakes(transport, worker).catch(() => null),
+    booksPaidBy(transport, worker).catch(() => null),
   ]);
-  return (own?.lamports ?? 0n) === 0n && tokens !== undefined && tokens.length === 0 && plan.closed.length + plan.kept.length === 0 && stakes !== null && stakes.length === 0;
+  return (
+    (own?.lamports ?? 0n) === 0n &&
+    tokens !== undefined &&
+    tokens.length === 0 &&
+    plan.closed.length + plan.kept.length === 0 &&
+    stakes !== null &&
+    stakes.length === 0 &&
+    books !== null &&
+    books.length === 0
+  );
 }
 
 async function refuseOpen(client: Client, job: WorkerJob): Promise<void> {
@@ -248,37 +259,46 @@ export async function returnLeftovers(ctx: AgentContext, worker: Address, send: 
   const closing = plan.batches[0] ?? [];
   const rents = await ctx.transport.getAccounts(plan.closed.slice(0, closing.length));
   const closingRent = rents.reduce((sum, view) => sum + (view?.lamports ?? 0n), 0n);
+  const books = await booksOf(ctx.transport, worker, key, intentsOf(rents), await chainTime(ctx.transport), keypair);
   const sweep = await sweepOf(ctx.transport, worker, key, signer.address, keypair);
   const stakesBack = settles.reduce((sum, settle) => sum + settle.toWorker, 0n);
-  const returned = sweep.lamports + closingRent + sweep.tokens.rent + stakesBack;
   const kept = [
     ...keptLines(plan.reasons),
     ...(plan.closed.length > closing.length ? [`${plan.closed.length - closing.length} more announcements can close; call again`] : []),
     ...sweep.tokens.kept,
+    ...books.kept,
   ];
-  const shown = {
-    worker,
-    intent: job.intent,
-    returned: sol(returned),
-    kept,
-    key_deleted: false,
-    summary: [
-      ...settles.map((settle) => settle.line),
-      returnsLine(returned, worker, sweep.tokens.wrapped),
-      "Pays: the network fee, from this wallet",
-      kept.length === 0 ? `Deletes: ${keypair}, once it holds nothing` : `Keeps: ${keypair}, since the worker still holds something`,
-    ],
+  const viewOf = (closed: readonly BookClose[], unclosed: readonly Address[]) => {
+    const keeps = [...kept, ...unclosed.map((book) => bookUnclosed(book, keypair))];
+    const open = [...books.open, ...unclosed];
+    const returned = sweep.lamports + closingRent + sweep.tokens.rent + stakesBack + rentOf(closed);
+    return {
+      worker,
+      intent: job.intent,
+      returned: sol(returned),
+      kept: keeps,
+      key_deleted: false,
+      summary: [
+        ...settles.map((settle) => settle.line),
+        returnsLine(returned, worker, sweep.tokens.wrapped),
+        "Pays: the network fee, from this wallet",
+        ...(closed.length === 0 ? [] : [booksClosed(closed.map(({ book }) => book), rentOf(closed))]),
+        keeps.length === 0 ? `Deletes: ${keypair}, once it holds nothing` : open.length > 0 ? booksKeptLine(keypair, open) : `Keeps: ${keypair}, since the worker still holds something`,
+      ],
+    };
   };
-  const finish = async (done: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  const finish = async (done: Record<string, unknown> & { kept: string[] }): Promise<Record<string, unknown>> => {
     const fresh = unmemoized(ctx.transport);
-    if (kept.length > 0 || wallet.files.removeFile === undefined || !(await holdsNothing(fresh, createClient({ url: ctx.url ?? "", transport: fresh }), worker, key))) {
+    if (done.kept.length > 0 || wallet.files.removeFile === undefined || !(await holdsNothing(fresh, createClient({ url: ctx.url ?? "", transport: fresh }), worker, key))) {
       return done;
     }
     await wallet.files.removeFile(keypair);
     await wallet.files.removeFile(jobFile);
     return { ...done, key_deleted: true };
   };
-  const steps = [settles.map((settle) => settle.instruction), closing, sweep.instructions].filter((step) => step.length > 0);
+  const batches = bookBatches(books.closing);
+  const shown = viewOf(books.closing, []);
+  const steps = [settles.map((settle) => settle.instruction), closing, ...batches.map((batch) => batch.map(({ instruction }) => instruction)), sweep.instructions].filter((step) => step.length > 0);
   const [first] = steps;
   if (first === undefined) {
     return send === true ? finish({ ...shown, sent: false, next: NOTHING_LEFT }) : { ...shown, sent: false, next: NOTHING_LEFT };
@@ -293,10 +313,22 @@ export async function returnLeftovers(ctx: AgentContext, worker: Address, send: 
   for (const step of [settles.map((settle) => settle.instruction), closing].filter((one) => one.length > 0)) {
     signature = await execute(ctx.transport, preparedView(await prepare(unmemoized(ctx.transport), step, signer.address)), signer);
   }
+  const closed: BookClose[] = [];
+  const unclosed: Address[] = [];
+  for (const batch of batches) {
+    try {
+      signature = await execute(ctx.transport, preparedView(await prepare(unmemoized(ctx.transport), batch.map(({ instruction }) => instruction), signer.address)), signer);
+      closed.push(...batch);
+    } catch {
+      unclosed.push(...batch.map(({ book }) => book));
+    }
+  }
+  const landed = viewOf(closed, unclosed);
   const fresh = unmemoized(ctx.transport);
   const after = await sweepOf(fresh, worker, key, signer.address, keypair);
   if (after.instructions.length === 0) {
-    return finish({ ...shown, sent: true, ...(signature === undefined ? {} : { signature }), next: RETURNED });
+    return finish({ ...landed, sent: true, ...(signature === undefined ? {} : { signature }), next: RETURNED });
   }
-  return finish((await sent({ ...ctx, transport: fresh }, signer, { ...shown, prepared: preparedView(await prepare(fresh, after.instructions, signer.address)) }, true, call, { done: RETURNED })) as Record<string, unknown>);
+  const swept = (await sent({ ...ctx, transport: fresh }, signer, { ...landed, prepared: preparedView(await prepare(fresh, after.instructions, signer.address)) }, true, call, { done: RETURNED })) as Record<string, unknown>;
+  return finish({ ...swept, kept: landed.kept });
 }

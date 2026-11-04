@@ -177,15 +177,16 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Makes a separate worker for an open job: a new key in a workers folder beside this wallet's key, funded with only its fees, rent and claim stake, and a brief for a separate agent. Paying still takes the judge's check. return_leftovers instead returns a finished worker's SOL. Previews only; call with send: true after the user says yes.
+Makes a separate worker for an open job: a new key beside this wallet's key, funded with only its fees, rent and claim stake, and a brief for a separate agent. Paying takes the judge's check. return_leftovers returns a finished worker's SOL and needs no approval. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `intent` | address | no | the proof escrow's intent address, to make a worker for it |
-| `return_leftovers` | address | no | instead of intent: a worker's address, to return its leftover SOL once its job ended; the key is deleted only when it holds nothing |
+| `return_leftovers` | address | no | instead of intent: a worker's address, to return its leftover SOL once its job ended; the key is deleted only when it holds nothing, delivery books it paid for included |
 | `send` | boolean | no | true signs and sends; leave out to preview |
+| `approval` | string | no | the approval a worker's preview returned; needed with send and intent |
 
 ## solive_wallet_attest
 

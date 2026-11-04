@@ -54,7 +54,7 @@ describe("the local worker's guards", () => {
       },
     });
     const before = lamportsOf(wallet);
-    expect((await call(racing, "wallet_worker", { intent, send: true })).error).toBe(true);
+    expect((await call(racing, "wallet_worker", await approved(racing, "wallet_worker", { intent }))).error).toBe(true);
     expect(taken).toHaveLength(1);
     expect(h.files.get(taken[0] as string)).toBe("theirs");
     expect(workerFiles().filter((path) => path.endsWith(".job.json"))).toEqual([]);
@@ -70,7 +70,7 @@ describe("the local worker's guards", () => {
     const keys = workerFiles();
     const stale = await server(limit, { saleBook: { ...saleBook, read: async () => [] } });
     const before = lamportsOf(wallet);
-    expect((await call(stale, "wallet_worker", { intent, send: true })).value).toMatchObject({ code: "WalletHourLimit" });
+    expect((await call(stale, "wallet_worker", await approved(stale, "wallet_worker", { intent }))).value).toMatchObject({ code: "WalletHourLimit" });
     expect(workerFiles()).toEqual(keys);
     expect(sales()).toHaveLength(1);
     expect(lamportsOf(wallet)).toBe(before);
@@ -111,7 +111,7 @@ describe("the local worker's guards", () => {
     };
     const refusing = await server(["--wallet-per-hour", "SOL=10"]);
     const before = lamportsOf(wallet);
-    expect((await call(refusing, "wallet_worker", { intent, send: true })).error).toBe(true);
+    expect((await call(refusing, "wallet_worker", await approved(refusing, "wallet_worker", { intent }))).error).toBe(true);
     expect(workerFiles()).toEqual([]);
     expect(sales()).toEqual([]);
     expect(lamportsOf(wallet)).toBe(before);

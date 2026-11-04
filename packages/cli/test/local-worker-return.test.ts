@@ -3,9 +3,10 @@ import { AccountState, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } fr
 import type { Client } from "@modelcontextprotocol/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
-import { getAnnouncementSize } from "@intent-engine/core/internal";
+import { deliveryBookAddress, getAnnouncementSize, getDeliveryBookSize } from "@intent-engine/core/internal";
 import { sol } from "../src/agent/wallet/costs.js";
 import { NOTHING_LEFT, settleLine } from "../src/agent/wallet/worker-return.js";
+import { bookKept, bookLive } from "../src/agent/wallet/worker-books.js";
 import { h, NOW, setNow } from "./harness.js";
 import { commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, rentOf, run, server, SOLUTION, STAKE, startHirer, tokensAt, workFile } from "./local-worker-kit.js";
 
@@ -142,12 +143,12 @@ describe("a local worker's leftovers, counted exactly", () => {
     await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
     const held = lamportsOf(worker);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: worker });
-    expect(preview).toMatchObject({ returned: sol(held + rentOf(getAnnouncementSize())), kept: [] });
+    expect(preview).toMatchObject({ returned: sol(held + rentOf(getAnnouncementSize()) + rentOf(getDeliveryBookSize())), kept: [] });
   }, 60_000);
 
   it("closes five announcements at a time and says how many more can close", async () => {
     const job = await hire(false);
-    const { worker, brief } = await made(job.intent);
+    const { worker, brief, keypair } = await made(job.intent);
     h.svm.airdrop(worker, lamports(1_000_000_000n));
     const deliver = commandNamed(brief, "deliver");
     for (let n = 0; n < 6; n += 1) {
@@ -157,7 +158,8 @@ describe("a local worker's leftovers, counted exactly", () => {
     await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
     const held = lamportsOf(worker);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: worker });
-    expect(preview["kept"]).toEqual(["1 more announcements can close; call again"]);
+    const book = await deliveryBookAddress(job.intent);
+    expect(preview["kept"]).toEqual(["1 more announcements can close; call again", bookKept(book, job.intent, rentOf(getDeliveryBookSize()), bookLive(1n), keypair)]);
     expect(preview["returned"]).toBe(sol(held + 5n * rentOf(getAnnouncementSize())));
   }, 120_000);
 });
