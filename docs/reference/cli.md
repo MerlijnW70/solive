@@ -503,16 +503,16 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`,
 ## committee
 
 ```text
-committee create [--keypair <payer file>] --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote [--keypair <member file>] --owner <address> --nonce <n> --sha256 <64 hex> --result <n> [--encryption-keypair <encryption key file> ...] [--out <file>] [--yes] | release [--keypair <solver file>] --vote <file> [--vote <file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes]
+committee create [--keypair <payer file>] --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote [--keypair <member file>] --owner <address> --nonce <n> --sha256 <64 hex> --result <n> [--encryption-keypair <encryption key file> ...] [--recipients <wallet,...> --weights <bps,...>] [--out <file>] [--yes] | release [--keypair <solver file>] --vote <file> [--vote <file> ...] [--cosign <wallet>:<128 hex> ...] [--lookup-table <address>] [--confirm-url <cluster> | --no-confirm-url] [--yes]
 ```
 
 Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`, `--debug`
 
 Options for `show`: `--url`, `--committee`, `--output`, `--help`, `--debug`
 
-Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--encryption-keypair`, `--result`, `--out`, `--output`, `--help`, `--debug`
+Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--encryption-keypair`, `--result`, `--out`, `--recipients`, `--weights`, `--output`, `--help`, `--debug`
 
-Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`, `--debug`
+Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--cosign`, `--lookup-table`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`, `--debug`
 
 ## claims
 

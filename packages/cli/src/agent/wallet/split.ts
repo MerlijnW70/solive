@@ -1,8 +1,8 @@
-import { type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
+import { type Address, getBase16Decoder, getBase16Encoder, type Instruction } from "@solana/kit";
 import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, settlementWarnings } from "@intent-engine/core/internal";
 import { decodeLookupTable } from "@intent-engine/solver";
-import { mintOf, PACKET_DATA_SIZE, releaseReads, splitPreview } from "@intent-engine/client/internal";
+import { type CoSignature, mintOf, PACKET_DATA_SIZE, type ReleasePreview, releaseReads, type SplitShare, splitPreview } from "@intent-engine/client/internal";
 import { execute } from "../../flows.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
@@ -15,13 +15,13 @@ import { InvalidInput, account, amount, flag, integer, list, object, optional, t
 import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
-import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
+import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners, type WalletSigner } from "./guard.js";
 import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
 import { approvalOf, attestedEscrow, capturedSends, claimsOfRelease, DEVICE_RELEASE, feeFigures, feeLines, feeOutputs, invitedPayees, RELEASE_CHANGED, settleRefused, stakeReturned } from "./attest.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { confirmedRelease } from "./delivery.js";
 
-async function setupLine(ctx: AgentContext, count: number, tokenProgram: Address, device: boolean): Promise<string> {
+export async function setupLine(ctx: AgentContext, count: number, tokenProgram: Address, device: boolean): Promise<string> {
   const rent = await tokenAccountRent(ctx.transport, tokenProgram);
   return `Setup: creates ${count} token account(s), paid by ${device ? "the fee payer" : "this wallet"}: ${sol(rent)} of rent each, ${sol(rent * BigInt(count))} in all`;
 }
@@ -41,11 +41,100 @@ export const willHold = (wallets: readonly string[]) =>
 export const notInSplit = (worker: string, sha256: string) =>
   `${worker} made the first announcement that opens to the work with sha256 ${sha256}, so a split paying for it must include ${worker} among its recipients`;
 
-const coauthor = object({
+export const share = {
   wallet: account("the co-author's wallet"),
   weight: integer(1, 10_000, "this co-author's share in basis points; all weights must add up to 10000"),
+};
+
+export const coauthor = object({
+  ...share,
   signature: optional(text("128 hex: this co-author's signature over the envelope the preview returned; needed with send")),
 });
+
+export const paidOutput = list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives") }), MAX_SPLIT_RECIPIENTS);
+
+export const lookupOutput = list(account(), 24, "put these in an address lookup table and pass it as lookup_table to fit more co-authors");
+
+export const lookupInput = account(
+  "an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send",
+);
+
+type Shares = readonly { wallet: Address; weight: number }[];
+
+export async function checkedShares(ctx: AgentContext, recipients: Shares): Promise<SplitShare[]> {
+  if (recipients.reduce((sum, r) => sum + r.weight, 0) !== 10_000) {
+    throw new InvalidInput([{ path: "recipients", message: SPLIT_WEIGHTS_WRONG }]);
+  }
+  for (const [i, r] of recipients.entries()) {
+    await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
+  }
+  return recipients.map(({ wallet, weight }) => ({ wallet, weight }));
+}
+
+export async function coSignatures(
+  signer: WalletSigner,
+  recipients: readonly { wallet: Address; signature?: string | undefined }[],
+  message: Uint8Array,
+  missing = SPLIT_SIG_NEEDED,
+  keepGiven = false,
+): Promise<CoSignature[]> {
+  return Promise.all(
+    recipients.map(async (r, i) => {
+      if (r.wallet === signer.address && !(keepGiven && r.signature !== undefined)) {
+        return { wallet: r.wallet, signature: new Uint8Array(await signer.signBytes(message)) };
+      }
+      if (r.signature === undefined || !new RegExp(SIGNATURE_PATTERN).test(r.signature)) {
+        throw new InvalidInput([{ path: `recipients.${i}.signature`, message: missing }]);
+      }
+      return { wallet: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)) };
+    }),
+  );
+}
+
+export async function lookupTablesOf(ctx: AgentContext, table: Address | undefined): Promise<Record<Address, Address[]> | undefined> {
+  if (table === undefined) {
+    return undefined;
+  }
+  const view = await ctx.transport.getAccount(table);
+  if (view === null) {
+    throw new AgentRefusal("NotFound", `no lookup table ${table} on this cluster`);
+  }
+  return { [table]: decodeLookupTable(view.data) };
+}
+
+export const sizeOf = async (ctx: AgentContext, instructions: Instruction[], payer: Address, tables: Record<Address, Address[]> | undefined): Promise<number> =>
+  transactionSize(ctx.transport, await ctx.transport.budget(instructions, payer, tables), payer, tables);
+
+export async function fitted(ctx: AgentContext, instructions: Instruction[], payer: Address, tables: Record<Address, Address[]> | undefined, recipients: number): Promise<Instruction[]> {
+  const size = await sizeOf(ctx, instructions, payer, tables);
+  if (size > PACKET_DATA_SIZE) {
+    throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, recipients, tables !== undefined));
+  }
+  return instructions;
+}
+
+export function lookupAccountsOf(settle: Instruction, tokenProgram: Address, payer: Address): Address[] {
+  const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, tokenProgram, payer]);
+  return [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
+}
+
+export const paidShares = (release: ReleasePreview, recipients: Shares, decimals: number) =>
+  recipients.map((r, i) => ({ wallet: r.wallet, weight: BigInt(r.weight), amount: formatAmount(release.payees[i]?.amount ?? 0n, decimals) }));
+
+export const shareLines = (release: ReleasePreview, recipients: Shares, name: string, decimals: number): string[] =>
+  paidShares(release, recipients, decimals).map((r) => `  ${r.wallet}: ${r.weight} bps -> ${r.amount} of ${name}`);
+
+export const committeeFees = (release: ReleasePreview, feeWallet: Address, name: string, decimals: number): string[] =>
+  release.fees.flatMap((leg) =>
+    leg.role === "judge" && leg.paid
+      ? [`Pays the judge fee: ${formatAmount(leg.amount, decimals)} of ${name} to the committee's fee wallet ${feeWallet}, carved out of the escrow`]
+      : feeLines({ ...release, fees: [leg] }, name, decimals),
+  );
+
+export const heldWarnings = (release: ReleasePreview): string[] => {
+  const holding = release.payees.filter((payee) => !payee.accepts).map((payee) => payee.wallet);
+  return holding.length === 0 ? [] : [willHold(holding)];
+};
 
 export const walletAttestSplit = define({
   name: tool("wallet_attest_split"),
@@ -58,7 +147,7 @@ export const walletAttestSplit = define({
     recipients: list(coauthor, MAX_SPLIT_RECIPIENTS, "the co-authors and their weighted shares, up to 8", 1),
     delivered_sha256: text(`the sha256, as 64 hex digits, of the work this release pays for, as ${tool("wallet_fetch_work")} shows it`),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
-    lookup_table: optional(account("an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send")),
+    lookup_table: optional(lookupInput),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -68,8 +157,8 @@ export const walletAttestSplit = define({
     seq: amount(),
     digest: text("64 hex: the split digest every co-author and this wallet sign over"),
     envelope: text("the one message every co-author and this wallet sign, as hex; collect each co-author's signature over it"),
-    lookup_accounts: list(account(), 24, "put these in an address lookup table and pass it as lookup_table to fit more co-authors"),
-    paid: list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives") }), MAX_SPLIT_RECIPIENTS),
+    lookup_accounts: lookupOutput,
+    paid: paidOutput,
     net: text("whole tokens shared among the co-authors"),
     ...feeOutputs,
     result: amount(),
@@ -95,14 +184,8 @@ export const walletAttestSplit = define({
     if (result < params.minResult || result > params.maxResult) {
       throw new InvalidInput([{ path: "result", message: `must be between ${params.minResult} and ${params.maxResult}` }]);
     }
-    const weights = input.recipients.map((r) => r.weight);
-    if (weights.reduce((a, b) => a + b, 0) !== 10_000) {
-      throw new InvalidInput([{ path: "recipients", message: SPLIT_WEIGHTS_WRONG }]);
-    }
-    const wallets = input.recipients.map((r) => r.wallet);
-    for (const [i, r] of input.recipients.entries()) {
-      await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
-    }
+    const shares = await checkedShares(ctx, input.recipients);
+    const wallets = shares.map((r) => r.wallet);
     const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
     const { opening, skipped } = await firstOpeningFor(ctx, signer.address, intent, delivered, device);
     if (!wallets.includes(opening.worker)) {
@@ -112,47 +195,21 @@ export const walletAttestSplit = define({
     const claimed = await claimsOfRelease(ctx, intent, held.claims, wallets);
     const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, payees: wallets, keypair: await walletOpeners(ctx) });
-    const shares = input.recipients.map(({ wallet, weight }) => ({ wallet, weight }));
     const target = { intent: { owner: input.owner, nonce: input.nonce }, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result, recipients: shares };
     const { ballot, preview: release, settle } = await splitPreview(releaseReads(ctx.transport), target, payer).catch(settleRefused);
     const token = await mintOf(ctx.transport, held.inputMint);
-    const holding = release.payees.filter((payee) => !payee.accepts).map((payee) => payee.wallet);
-    const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, payer.address]);
-    const lookupAccounts = [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
     const digestHex = getBase16Decoder().decode(ballot.digest).toLowerCase();
     const approval = approvalOf(ballot.message);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
     const { setup } = release;
-    const shareOf = (i: number) => formatAmount(release.payees[i]?.amount ?? 0n, token.decimals);
     let prepared;
     if (input.send === true) {
-      const signatures = await Promise.all(
-        input.recipients.map(async (r, i) => {
-          if (r.wallet === signer.address) {
-            return { wallet: r.wallet, signature: new Uint8Array(await signer.signBytes(ballot.message)) };
-          }
-          if (r.signature === undefined || !new RegExp(SIGNATURE_PATTERN).test(r.signature)) {
-            throw new InvalidInput([{ path: `recipients.${i}.signature`, message: SPLIT_SIG_NEEDED }]);
-          }
-          return { wallet: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)) };
-        }),
-      );
-      let tables: Record<Address, Address[]> | undefined;
-      if (input.lookup_table !== undefined) {
-        const view = await ctx.transport.getAccount(input.lookup_table);
-        if (view === null) {
-          throw new AgentRefusal("NotFound", `no lookup table ${input.lookup_table} on this cluster`);
-        }
-        tables = { [input.lookup_table]: decodeLookupTable(view.data) };
-      }
+      const signatures = await coSignatures(signer, input.recipients, ballot.message);
+      const tables = await lookupTablesOf(ctx, input.lookup_table);
       const sends = await capturedSends(ctx, (client) => client.settleSplit({ ...target, judge: signer, signatures, payer }));
-      const instructions = sends.at(-1) ?? [];
-      const size = await transactionSize(ctx.transport, await ctx.transport.budget(instructions, payer.address, tables), payer.address, tables);
-      if (size > PACKET_DATA_SIZE) {
-        throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, input.recipients.length, input.lookup_table !== undefined));
-      }
+      const instructions = await fitted(ctx, sends.at(-1) ?? [], payer.address, tables, shares.length);
       for (const accounts of sends.slice(0, -1)) {
         await execute(ctx.transport, preparedView(await prepare(ctx.transport, accounts, payer.address)), payer);
       }
@@ -165,8 +222,8 @@ export const walletAttestSplit = define({
       seq: opening.seq,
       digest: digestHex,
       envelope: getBase16Decoder().decode(ballot.message).toLowerCase(),
-      lookup_accounts: lookupAccounts,
-      paid: input.recipients.map((r, i) => ({ wallet: r.wallet, weight: BigInt(r.weight), amount: shareOf(i) })),
+      lookup_accounts: lookupAccountsOf(settle, token.tokenProgram, payer.address),
+      paid: paidShares(release, shares, token.decimals),
       net: formatAmount(release.net, token.decimals),
       ...feeFigures(release, token.decimals),
       result,
@@ -174,8 +231,8 @@ export const walletAttestSplit = define({
       delivered_sha256: delivered,
       ...skippedField(skipped),
       summary: [
-        `Splits: ${formatAmount(release.net, token.decimals)} of ${name} among ${input.recipients.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
-        ...input.recipients.map((r, i) => `  ${r.wallet}: ${r.weight} bps -> ${shareOf(i)} of ${name}`),
+        `Splits: ${formatAmount(release.net, token.decimals)} of ${name} among ${shares.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
+        ...shareLines(release, shares, name, token.decimals),
         `For: the work with sha256 ${delivered}, announced by ${opening.worker} in ${opening.announcement} (seq ${opening.seq}), the first that opens to it`,
         ...feeLines(release, name, token.decimals),
         `Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`,
@@ -185,7 +242,7 @@ export const walletAttestSplit = define({
         ...leavesBoard(left),
         ...(setup.length === 0 ? [] : [`${await setupLine(ctx, setup.length, token.tokenProgram, device)}, in its own transaction before the release`]),
       ],
-      warnings: [...settlementWarnings(params), WARN_COAUTHORS, ...(holding.length === 0 ? [] : [willHold(holding)])],
+      warnings: [...settlementWarnings(params), WARN_COAUTHORS, ...heldWarnings(release)],
       prepared,
     };
     return sent(ctx, payer, view, input.send, call, {

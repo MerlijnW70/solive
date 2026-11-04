@@ -186,6 +186,7 @@ export const OPTIONS = {
   "fee-wallet": { type: "string" },
   committee: { type: "string" },
   vote: { type: "string", multiple: true },
+  cosign: { type: "string", multiple: true },
   worker: { type: "string" },
   reader: { type: "string" },
   seed: { type: "string", multiple: true },
@@ -211,10 +212,10 @@ export const OPTIONS = {
 
 export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as const;
 
-export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "seed", "encryption-keypair"]);
+export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "cosign", "seed", "encryption-keypair"]);
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "no-setup" | "sandbox-gpu" | "i-trust-this-work" | "no-publish-spec" | "allow-wrong-spec";
-export type Many = "max-fill" | "min-balance" | "vote" | "seed" | "encryption-keypair";
+export type Many = "max-fill" | "min-balance" | "vote" | "cosign" | "seed" | "encryption-keypair";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
   [K in Many]?: string[] | undefined;
@@ -408,6 +409,10 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "encryption-keypair",
     "confirm-url",
     "no-confirm-url",
+    "recipients",
+    "weights",
+    "cosign",
+    "lookup-table",
   ],
   claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs", "seq", "workers"],
   profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key", "out"],
@@ -466,8 +471,8 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
   committee: {
     create: ["url", "priority-fee", "keypair", "yes", "members", "threshold", "fee-wallet"],
     show: ["url", "committee"],
-    vote: ["url", "keypair", "yes", "owner", "nonce", "sha256", "encryption-keypair", "result", "out"],
-    release: ["url", "priority-fee", "keypair", "yes", "vote", "confirm-url", "no-confirm-url"],
+    vote: ["url", "keypair", "yes", "owner", "nonce", "sha256", "encryption-keypair", "result", "out", "recipients", "weights"],
+    release: ["url", "priority-fee", "keypair", "yes", "vote", "cosign", "lookup-table", "confirm-url", "no-confirm-url"],
   },
   claims: {
     show: ["url", "owner", "nonce"],

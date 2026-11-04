@@ -192,7 +192,7 @@ type SendStatus: type SendStatus = { status: "confirmed"; signature: Signature; 
 type Sent: type Sent = { signature: Signature; intent?: Address; nonce?: bigint; summary: string; };
 type SettleCommitteeInput: type SettleCommitteeInput = BallotInput & { solver: TransactionSigner; votes: readonly CommitteeVote[]; payer?: TransactionSigner; };
 type SettleProofInput: type SettleProofInput = { judge: MessageSigner; intent: IntentRef; announcement: Address; opening: ReleaseOpening; result: bigint; payer?: TransactionSigner; };
-type SettleSplitInput: type SettleSplitInput = SplitBallotInput & { judge: MessageSigner; signatures: readonly CoSignature[]; payer?: TransactionSigner; };
+type SettleSplitInput: type SettleSplitInput = SplitBallotInput & { signatures: readonly CoSignature[]; payer?: TransactionSigner; } & ({ judge: MessageSigner; solver?: undefined; votes?: undefined; } | { solver: TransactionSigner; votes: readonly CommitteeVote[]; judge?: undefined; });
 type SignatureLanding: type SignatureLanding = "landed" | "failed";
 type SignerCannot: type SignerCannot = (input: never) => Promise<never>;
 type SimpleClient: type SimpleClient<S extends TransactionSigner = TransactionSigner> = { readonly url: string; readonly signer: S; readonly client: Client; balance(tokens?: readonly string[]): Promise<WalletBalance>; swap<I extends SwapInput>(input: I): Promise<Outcome<I>>; limit<I extends LimitInput>(input: I): Promise<Outcome<I>>; payForWork<I extends PayForWorkInput>(input: I): Promise<Outcome<I>>; findWork(filter?: { judge?: Address; }): Promise<OpenWork[]>; readonly deliver: [S] extends [SaltSigner] ? DeliverSend : SignerCannot; readonly release: [S] extends [MessageSigner] ? ReleaseSend : SignerCannot; deliveries(input: DeliveriesInput): Promise<Announcement[]>; openings(input: EscrowOpeningsInput): Promise<Openings>; receipt(input: ReceiptInput): Promise<ReleaseReceipt>; cancel<I extends CancelInput>(input: I): Promise<Outcome<I>>; watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>; };
@@ -209,7 +209,7 @@ class SpecSealed: class SpecSealed extends SdkError { readonly code = "spec-seal
 type SpecSource: type SpecSource = { kind: "memo"; } | { kind: "mirror"; base: string; } | { kind: "ipfs"; gateway: string; } | { kind: "arweave"; gateway: string; };
 type SpecSourceKind: type SpecSourceKind = SpecSource["kind"];
 class SpecUnreadable: class SpecUnreadable extends SdkError { readonly code = "spec-unreadable"; readonly name = "SpecUnreadable"; readonly url: string; constructor(url: string, reason: string, options?: ErrorOptions); }
-type SplitBallot: type SplitBallot = { intent: Address; attestor: Address; worker: Address; splitHash: Uint8Array; digest: Uint8Array; cosigners: Address[]; message: Uint8Array; };
+type SplitBallot: type SplitBallot = { intent: Address; attestor: Address; committee: CommitteeView | null; worker: Address; splitHash: Uint8Array; digest: Uint8Array; cosigners: Address[]; message: Uint8Array; };
 type SplitBallotInput: type SplitBallotInput = BallotInput & { recipients: readonly SplitShare[]; };
 type SplitShare: type SplitShare = { wallet: Address; weight: number; };
 class StaleRead: class StaleRead extends SdkError { readonly code = "stale-read"; readonly name = "StaleRead"; readonly slot: bigint; readonly seen: bigint; constructor(slot: bigint, seen: bigint); }

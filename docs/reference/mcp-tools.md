@@ -244,7 +244,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Votes, as a member of an escrow's judging committee, that it pays the first announcement that opens to delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with solive_wallet_committee_release. Previews only; after the user says yes, call with send: true and its approval.
+Votes as a committee member that an escrow pays the first announcement opening to delivered_sha256, or splits it among recipients. A team judges together: each member checks the work against the spec and votes; pass votes to solive_wallet_committee_release. Co-authors sign the returned envelope. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -254,6 +254,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
 | `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for, as solive_wallet_fetch_work shows it; the release pays the first announcement that opens to it |
+| `recipients` | list of object, 1 to 8 | no | for a split release: the co-authors and their weighted shares, up to 8; one must have made the announcement |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the vote; leave out to preview |
 
@@ -261,7 +262,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Pays a worker once a judging committee agrees: any one wallet collects the members' votes from solive_wallet_committee_vote, at least the committee's threshold, and submits them to pay the announcement they voted on. Every vote is checked before sending. This wallet pays the fee and rent. Previews only; after the user says yes, call with send: true and its approval.
+Pays a worker, or co-authors by weight, once a judging committee agrees: any one wallet collects the members' votes from solive_wallet_committee_vote, at least its threshold, and submits them; every vote is checked first. This wallet pays the fee and rent. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -272,6 +273,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
 | `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for, as solive_wallet_fetch_work shows it; the release pays the first announcement that opens to it |
 | `votes` | list of object, 1 to 8 | yes | one vote per member, in any order |
+| `recipients` | list of object, 1 to 8 | no | for a split release: the co-authors and their weighted shares, up to 8; one must have made the announcement |
+| `lookup_table` | address | no | an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true submits the release; leave out to preview |
 

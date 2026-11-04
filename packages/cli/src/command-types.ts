@@ -163,8 +163,16 @@ export type Command =
       result: bigint;
       out: string | undefined;
       encryptionKeypairs?: string[] | undefined;
+      split?: { recipients: Address[]; weights: number[] } | undefined;
     })
-  | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; confirmUrl?: string | undefined })
+  | (Keyed & {
+      name: "committee-release";
+      yes: boolean;
+      votes: string[];
+      cosigns: { wallet: Address; signature: string }[];
+      lookupTable?: Address | undefined;
+      confirmUrl?: string | undefined;
+    })
   | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
   | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint; workers: Address[] | undefined })
   | (Keyed & { name: "claims-list"; yes: boolean; nonce: bigint; workers: Address[] })

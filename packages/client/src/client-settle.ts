@@ -1,5 +1,4 @@
 import type { Address } from "@solana/kit";
-import { InvalidInput } from "@intent-engine/core";
 import {
   attestedDeliveryFields,
   attestedDeliveryPreimage,
@@ -12,7 +11,7 @@ import {
   signEd25519Instruction,
   verifyCommitteeVote,
 } from "@intent-engine/core/internal";
-import { loadCommittee } from "./client-committee.js";
+import { loadCommittee, quorumOf } from "./client-committee.js";
 import { NotSettleable, VoteRejected } from "./client-errors.js";
 import type {
   BallotInput,
@@ -85,13 +84,7 @@ export function committeeSettlement(context: ClientContext) {
         throw new VoteRejected(vote.member, plan.intent);
       }
     }
-    const distinct = [...new Map(input.votes.map((vote) => [vote.member, vote])).values()];
-    if (distinct.length < committee.threshold) {
-      throw new InvalidInput("votes", "missing", `committee ${committee.address} needs ${committee.threshold} distinct votes, got ${distinct.length}`);
-    }
-    const needed = distinct
-      .sort((a, b) => committee.members.indexOf(a.member) - committee.members.indexOf(b.member))
-      .slice(0, committee.threshold);
+    const needed = quorumOf(committee, input.votes);
     const { instruction, mask } = buildCommitteeBatch(committee, digest, needed);
     const settle = await buildFillAttestedCommittee({
       ...plan.fill,

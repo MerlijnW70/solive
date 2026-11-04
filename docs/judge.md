@@ -307,7 +307,7 @@ A member whose key is on a Ledger votes with `committee vote --keypair usb://led
 
 A member on a Ledger can also judge, with `judge --keypair usb://ledger --fee-payer <key file> --encryption-keypair <file>`. It opens the announcements with the encryption key its profile publishes and, with `--yes`, signs its vote on the device; without `--yes` it prints the vote's `digest` and signs nothing. Without an encryption key file it refuses announced work.
 
-Because that message lists every member, a release by a large committee, especially one that also splits the pay, can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
+Because that message lists every member, a release by a large committee can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
 
 Each vote names the `announcement` it pays, the work's `sha256` and that announcement's `salt`. `committee release` refuses votes that differ in any of them, and pays that announcement.
 
@@ -316,6 +316,20 @@ Any member who voted then submits the votes:
 ```powershell
 intent-engine committee release --keypair a.json --vote a.json.verdict --vote b.json.verdict --yes
 ```
+
+### Split a committee's release
+
+A committee can split the pay among co-authors, one of them the worker who made the announcement. Each member votes on the split with `committee vote` and `--recipients <wallet,...> --weights <bps,...>`; the preview shows each co-author's share and the `envelope` the vote signs, one message that lists every co-author and every member.
+
+Every co-author signs that envelope too. `committee release` takes the vote files and each other co-author's signature as `--cosign <wallet>:<128 hex>`, checks every signature and pays each co-author its weight. Over MCP, `solive_wallet_committee_vote` and `solive_wallet_committee_release` take `recipients`, and the release takes each co-author's `signature`.
+
+With four or more keys in that message, co-authors and members together, the release usually exceeds one transaction; its preview then says so and lists `lookup_accounts`. Put those in an address lookup table and pass it with `--lookup-table <address>`, or `lookup_table` over MCP. A Ledger member votes with one message on the device. A Ledger release signs the token account setup and the release as separate transactions, one at a time.
+
+A preview signs nothing. A releasing wallet that is a co-author without a vote signs its share only on send; on a Ledger over MCP that send signs only the envelope and returns the signature to pass back.
+
+Beware a member who is also a co-author: its one signature counts both as its consent to the split and as its vote, so it votes on its own pay. When that matters, use a committee with no co-author among its members.
+
+A single judge may also be one of its split's co-authors; it signs the split once and so approves its own share.
 
 ## Job claims
 

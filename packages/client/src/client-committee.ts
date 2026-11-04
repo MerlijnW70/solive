@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { type Config, type IntentParams, Kind, NotAnEngineAccount } from "@intent-engine/core";
+import { type CommitteeVote, type Config, type IntentParams, InvalidInput, Kind, NotAnEngineAccount } from "@intent-engine/core";
 import {
   buildCreateCommittee,
   COMMITTEE_DISCRIMINATOR,
@@ -33,6 +33,14 @@ export async function loadCommittee(transport: Transport, address: Address): Pro
     throw new NotAnEngineAccount(address, `${address} holds a committee whose contents address ${derived.address}`);
   }
   return { ...terms, address, id: derived.id, createdAt: stored.createdAt };
+}
+
+export function quorumOf(committee: CommitteeView, votes: readonly CommitteeVote[]): CommitteeVote[] {
+  const distinct = [...new Map(votes.map((vote) => [vote.member, vote])).values()];
+  if (distinct.length < committee.threshold) {
+    throw new InvalidInput("votes", "missing", `committee ${committee.address} needs ${committee.threshold} distinct votes, got ${distinct.length}`);
+  }
+  return distinct.sort((a, b) => committee.members.indexOf(a.member) - committee.members.indexOf(b.member)).slice(0, committee.threshold);
 }
 
 export type EscrowCommittee = { committee?: Address };

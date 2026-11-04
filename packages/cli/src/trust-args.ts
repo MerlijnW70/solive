@@ -16,7 +16,7 @@ import {
   TOKEN_AMOUNT_PATTERN,
 } from "@intent-engine/core/internal";
 import { OPTIONS, PROFILE_OPTIONS, type Values } from "./arg-options.js";
-import { addressList, confirmUrlOf, encryptionKeypairOf, key, noSub, parseAddress, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
+import { addressList, confirmUrlOf, encryptionKeypairOf, key, noSub, parseAddress, parseBounded, required, sha256Of, splitOf, u64, UsageError } from "./arg-values.js";
 import { maxPagesOf } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 
@@ -28,6 +28,18 @@ function votesOf(values: Values): string[] {
     throw new UsageError("committee release needs at least one --vote <file>");
   }
   return votes;
+}
+
+export const COSIGN_SHAPE = "--cosign takes a co-author's wallet and its signature over the split envelope, as <wallet>:<128 hex>";
+
+function cosignsOf(values: Values): { wallet: Address; signature: string }[] {
+  return (values.cosign ?? []).map((text) => {
+    const [wallet, signature, ...rest] = text.split(":");
+    if (wallet === undefined || signature === undefined || rest.length > 0 || !/^[0-9a-fA-F]{128}$/.test(signature)) {
+      throw new UsageError(COSIGN_SHAPE);
+    }
+    return { wallet: parseAddress(wallet, "cosign"), signature: signature.toLowerCase() };
+  });
 }
 
 function membersOf(values: Values): Address[] {
@@ -66,6 +78,7 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
         result: u64(values, "result"),
         out: values.out,
         ...encryptionKeypairOf(values),
+        ...splitOf(values),
       };
     case "release":
       return {
@@ -74,6 +87,8 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
         keypair: required(values, "keypair"),
         yes: values.yes === true,
         votes: votesOf(values),
+        cosigns: cosignsOf(values),
+        ...(values["lookup-table"] === undefined ? {} : { lookupTable: parseAddress(values["lookup-table"], "lookup-table") }),
         ...confirmUrlOf(values, remote.url),
       };
     default:

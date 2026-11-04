@@ -1,37 +1,44 @@
 import { createHash } from "node:crypto";
-import { type Address, getBase16Decoder, type Instruction } from "@solana/kit";
-import { Kind } from "@intent-engine/core";
-import { buildCreateCommittee, committeeEnvelope, decodeParams, findIntentPda, getCommitteeSize, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD } from "@intent-engine/core/internal";
+import type { Address, Instruction } from "@solana/kit";
+import { buildCreateCommittee, committeeEnvelope, findIntentPda, getCommitteeSize, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD, MAX_SPLIT_RECIPIENTS } from "@intent-engine/core/internal";
 import { type CommitteeBallot, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { intentAt } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
 import { AgentRefusal, ENGINE_PROBLEMS } from "../problems.js";
-import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
+import { account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
 import { rentFor, rentRate } from "../budget.js";
-import { SIGNATURE_FORMAT, signatureBytes } from "../../delivery-shared.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
 import { confirmedRelease } from "./delivery.js";
 import { DEVICE_DIGEST, invitedPayees, RELEASE_CHANGED, settleRefused } from "./attest.js";
+import { coauthor, lookupInput, lookupOutput, share } from "./split.js";
+import {
+  type BallotArgs,
+  hex,
+  memberOnly,
+  NOT_A_MEMBER,
+  releaseApproval,
+  SPLIT_RECIPIENTS,
+  splitOutput,
+  splitRelease,
+  splitVote,
+  VOTE_CHANGED,
+  votesOf,
+} from "./committee-split.js";
 
-export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
+export { NOT_A_MEMBER, VOTE_CHANGED } from "./committee-split.js";
 
 export const COMMITTEE_CHANGED = "this committee differs from its preview: its members, threshold or fee wallet changed, or no approval was given; preview it again and show the user";
 
 export const COMMITTEE_EXISTS = `this committee already exists; name it as attestor in ${tool("wallet_escrow")}`;
 
 export const COMMITTEE_LIVE = `committee live; name it as attestor in ${tool("wallet_escrow")}, then each member votes with ${tool("wallet_committee_vote")}`;
-
-export const NOT_A_MEMBER = "this server's wallet is not a member of the committee this escrow names, so it has no vote";
-
-const hex = (bytes: Uint8Array) => getBase16Decoder().decode(bytes).toLowerCase();
 
 const ballotInput = {
   owner: account("the wallet that made the escrow"),
@@ -40,19 +47,12 @@ const ballotInput = {
   delivered_sha256: text(`the sha256, as 64 hex digits, of the work the release pays for, as ${tool("wallet_fetch_work")} shows it; the release pays the first announcement that opens to it`),
 };
 
-type BallotArgs = { owner: Address; nonce: bigint; result: bigint; delivered_sha256: string };
-
 async function ballotOf(ctx: AgentContext, input: BallotArgs, judge: Address, device: boolean, voting: boolean) {
   const client = createClient({ url: ctx.url ?? "", transport: ctx.transport });
   const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
   const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
   if (voting) {
-    const held = await intentAt(ctx.transport, intent);
-    const params = held === null ? null : decodeParams(held.kind, Uint8Array.from(held.params));
-    const judging = params === null || params.kind !== Kind.AttestedResult ? null : await client.committee(params.attestor);
-    if (judging !== null && !judging.members.includes(judge)) {
-      throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
-    }
+    await memberOnly(ctx, intent, judge);
   }
   const { opening, skipped } = await firstOpeningFor(ctx, judge, intent, delivered, device);
   const target = { intent: { owner: input.owner, nonce: input.nonce }, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result: input.result };
@@ -66,9 +66,6 @@ async function ballotOf(ctx: AgentContext, input: BallotArgs, judge: Address, de
 }
 
 const ballotApproval = (ballot: CommitteeBallot) => createHash("sha256").update(ballot.digest).digest("hex").slice(0, 16);
-
-const releaseApproval = (ballot: CommitteeBallot, setup: readonly string[]) =>
-  createHash("sha256").update(ballot.digest).update(JSON.stringify(setup)).digest("hex").slice(0, 16);
 
 async function setupLines(ctx: AgentContext, setup: readonly Instruction[], payer: Address, device: boolean): Promise<string[]> {
   const where = device ? "in the release transaction" : "in its own transaction before the release";
@@ -99,10 +96,11 @@ const announced = {
 export const walletCommitteeVote = define({
   name: tool("wallet_committee_vote"),
   title: "Vote on a release as a committee member",
-  description: `Votes, as a member of an escrow's judging committee, that it pays the first announcement that opens to delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with ${tool("wallet_committee_release")}. ${PREVIEW_APPROVAL}`,
+  description: `Votes as a committee member that an escrow pays the first announcement opening to delivered_sha256, or splits it among recipients. A team judges together: each member checks the work against the spec and votes; pass votes to ${tool("wallet_committee_release")}. Co-authors sign the returned envelope. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
+    recipients: optional(list(object(share), MAX_SPLIT_RECIPIENTS, SPLIT_RECIPIENTS, 1)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the vote; leave out to preview")),
   }),
@@ -112,7 +110,8 @@ export const walletCommitteeVote = define({
     ...announced,
     approval: text(),
     digest: text(DEVICE_DIGEST),
-    summary: list(text(), 8),
+    ...splitOutput,
+    summary: list(text(), 20),
     signed: flag(),
     vote: optional(object({ member: account(), signature: text("the member's ed25519 signature as 128 hex digits") })),
     next: optional(text()),
@@ -120,6 +119,9 @@ export const walletCommitteeVote = define({
   }),
   run: async (ctx: AgentContext, input) => {
     const signer = await signerOf(ctx);
+    if (input.recipients !== undefined) {
+      return splitVote(ctx, input, signer, input.recipients);
+    }
     const { ballot, delivered, opening, skipped } = await ballotOf(ctx, input, signer.address, signer.device !== undefined, true);
     const approval = ballotApproval(ballot);
     const shown = {
@@ -147,11 +149,13 @@ export const walletCommitteeVote = define({
 export const walletCommitteeRelease = define({
   name: tool("wallet_committee_release"),
   title: "Release an escrow on its committee's votes",
-  description: `Pays a worker once a judging committee agrees: any one wallet collects the members' votes from ${tool("wallet_committee_vote")}, at least the committee's threshold, and submits them to pay the announcement they voted on. Every vote is checked before sending. This wallet pays the fee and rent. ${PREVIEW_APPROVAL}`,
+  description: `Pays a worker, or co-authors by weight, once a judging committee agrees: any one wallet collects the members' votes from ${tool("wallet_committee_vote")}, at least its threshold, and submits them; every vote is checked first. This wallet pays the fee and rent. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
     votes: list(object({ member: account(), signature: text("the member's ed25519 signature as 128 hex digits") }), 8, "one vote per member, in any order", 1),
+    recipients: optional(list(coauthor, MAX_SPLIT_RECIPIENTS, SPLIT_RECIPIENTS, 1)),
+    lookup_table: optional(lookupInput),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true submits the release; leave out to preview")),
   }),
@@ -161,23 +165,24 @@ export const walletCommitteeRelease = define({
     ...announced,
     signers: list(account(), 8),
     approval: text(),
+    digest: optional(text("for a split: 64 hex, the split digest the votes and the co-authors sign; a Ledger shows it when it signs the envelope: compare the two before approving on the device")),
+    ...splitOutput,
+    lookup_accounts: optional(lookupOutput),
+    cosign: optional(object({ wallet: account(), signature: text("this Ledger wallet's co-author signature over the envelope, as 128 hex digits; pass it in recipients") })),
     ...deviceOutput,
     skipped: skippedOutput,
-    summary: list(text(), 12),
+    summary: list(text(), 24),
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
+    if (input.recipients !== undefined) {
+      return splitRelease(ctx, { ...input, recipients: input.recipients }, signer, call);
+    }
     const { client, target, ballot, delivered, opening, skipped } = await ballotOf(ctx, input, signer.address, false, false);
-    const votes = input.votes.map((vote, i) => {
-      const signature = signatureBytes(vote.signature);
-      if (signature === undefined) {
-        throw new InvalidInput([{ path: `votes.${i}.signature`, message: SIGNATURE_FORMAT }]);
-      }
-      return { member: vote.member, signature };
-    });
+    const votes = votesOf(input.votes);
     let release;
     try {
       release = await client.plan.settleCommittee({ ...target, solver: signer, votes });
@@ -189,7 +194,7 @@ export const walletCommitteeRelease = define({
     }
     const device = signer.device !== undefined;
     const setup = await setupLines(ctx, release.setup, signer.address, device);
-    const approval = releaseApproval(ballot, setup);
+    const approval = releaseApproval(ballot.digest, setup);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }

@@ -5,7 +5,7 @@ import { committeePlans } from "./client-committee.js";
 import { createIntentPlan } from "./client-create.js";
 import { intentPlans } from "./client-intents.js";
 import { committeeSettlement, proofSettlement } from "./client-settle.js";
-import { splitSettlement } from "./client-split.js";
+import { splitPayer, splitSettlement } from "./client-split.js";
 import { claimHeldPlan } from "./held-claim.js";
 import type { Client, ClientContext, ClientPlans } from "./client-types.js";
 import { planOf, type Sends, submit, submitted } from "./plan.js";
@@ -65,7 +65,7 @@ export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
     close: async (cranker, intent) => submit(send, await plan.close(cranker, intent), cranker),
     settleProof: async (input) => submit(send, await plan.settleProof(input), input.payer ?? input.judge),
     settleCommittee: async (input) => submit(send, await plan.settleCommittee(input), input.payer ?? input.solver),
-    settleSplit: async (input) => submit(send, await plan.settleSplit(input), input.payer ?? input.judge),
+    settleSplit: async (input) => submit(send, await plan.settleSplit(input), splitPayer(input)),
     claimHeld: async (input) => submit(send, await plan.claimHeld(input), input.payer ?? input.wallet),
     refute: async (input) => {
       const planned = await plan.refute(input);
