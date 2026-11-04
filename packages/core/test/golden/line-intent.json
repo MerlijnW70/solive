@@ -1,0 +1,107 @@
+[
+  {
+    "case": "a claim board",
+    "account": "claim board",
+    "length": null,
+    "intentAt": 0,
+    "named": true
+  },
+  {
+    "case": "a claim board cut right after its held field",
+    "account": "claim board",
+    "length": 128,
+    "intentAt": 0,
+    "named": true
+  },
+  {
+    "case": "a claim board one byte short of its held field",
+    "account": "claim board",
+    "length": 127,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "a claim board of its discriminator alone",
+    "account": "claim board",
+    "length": 8,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "a claim list",
+    "account": "claim list",
+    "length": null,
+    "intentAt": 0,
+    "named": true
+  },
+  {
+    "case": "a claim list cut right after its intent",
+    "account": "claim list",
+    "length": 40,
+    "intentAt": 0,
+    "named": true
+  },
+  {
+    "case": "a claim list one byte short of its intent",
+    "account": "claim list",
+    "length": 39,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "a claim list of its discriminator alone",
+    "account": "claim list",
+    "length": 8,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "a stand-by entry",
+    "account": "stand-by entry",
+    "length": null,
+    "intentAt": 32,
+    "named": true
+  },
+  {
+    "case": "a stand-by entry cut right after its intent",
+    "account": "stand-by entry",
+    "length": 72,
+    "intentAt": 32,
+    "named": true
+  },
+  {
+    "case": "a stand-by entry one byte short of its intent",
+    "account": "stand-by entry",
+    "length": 71,
+    "intentAt": 32,
+    "named": false
+  },
+  {
+    "case": "an intent",
+    "account": "intent",
+    "length": null,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "a mandate",
+    "account": "mandate",
+    "length": null,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "an account of no engine discriminator",
+    "account": "none",
+    "length": null,
+    "intentAt": 0,
+    "named": false
+  },
+  {
+    "case": "no data",
+    "account": "none",
+    "length": 0,
+    "intentAt": 0,
+    "named": false
+  }
+]

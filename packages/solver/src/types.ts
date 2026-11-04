@@ -16,6 +16,7 @@ export type Chain = {
   now(): Promise<bigint>;
   tokenProgram(mint: Address): Promise<Address>;
   exists(address: Address): Promise<boolean>;
+  account?(address: Address): Promise<Uint8Array | null>;
   lookupTables(addresses: readonly Address[]): Promise<Record<Address, Address[]>>;
   blockhash(): Promise<{ blockhash: Blockhash; lastValidBlockHeight: bigint }>;
   tokenAmount(address: Address): Promise<bigint>;

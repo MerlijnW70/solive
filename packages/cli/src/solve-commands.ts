@@ -227,6 +227,7 @@ export async function solverOptions(
     now: () => chainTime(transport),
     tokenProgram: (mint) => tokenProgramOf(transport, mint),
     mintData: async (mint) => (await transport.getAccount(mint))?.data ?? null,
+    account: async (address) => (await transport.getAccount(address))?.data ?? null,
     rent: () => rentRate(transport),
     exists: async (address) => (await createdAccount(transport, address)) !== null,
     tokenAmount: async (address) => tokenAmountOf((await transport.getAccount(address))?.data ?? null) ?? 0n,

@@ -62,6 +62,7 @@ export type { ClaimHeldInput, ClaimHeldPlan } from "./held-claim.js";
 export type { HeldShare, HeldShares, HeldSharesOptions, HeldSplit } from "./held-shares.js";
 export type { HeldPayout, HeldState, WithheldFee } from "./release-holds.js";
 export type {
+  AgentPayout,
   Balances,
   BallotInput,
   Client,
@@ -87,6 +88,7 @@ export type {
   Mint,
   ParamsWithSpec,
   ProofBallot,
+  RelayerPayout,
   ReleaseOpening,
   SettleCommitteeInput,
   SettleProofInput,

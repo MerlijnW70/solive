@@ -10,6 +10,7 @@ export * from "./jito.js";
 export * from "./jupiter.js";
 export * from "./listing.js";
 export * from "./lookup.js";
+export * from "./mandate.js";
 export * from "./market.js";
 export * from "./net.js";
 export * from "./plan.js";

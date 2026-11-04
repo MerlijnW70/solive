@@ -19,8 +19,6 @@ import { createdAtOf, scan } from "./jobs.js";
 import { releasedDelivery } from "./release-reads.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
-const FILL_EVENTS: ReadonlySet<string> = new Set(["IntentFilled", "FillEnded"]);
-
 function eventsIn(transactions: readonly EngineTransaction[], intent: Address): HistoryEvent[] {
   return transactions
     .filter(({ failed }) => !failed)
@@ -33,8 +31,17 @@ function eventsIn(transactions: readonly EngineTransaction[], intent: Address): 
     );
 }
 
-const fillIn = (intent: Address) => (transaction: EngineTransaction): boolean =>
-  eventsIn([transaction], intent).some(({ name }) => FILL_EVENTS.has(name));
+const createdIn = (intent: Address) => (transaction: EngineTransaction): boolean =>
+  eventsIn([transaction], intent).some(({ name }) => name === "IntentCreated");
+
+function payoutsIn(events: readonly HistoryEvent[], fill: string): Pick<Fill, "agentPaid" | "relayerPaid"> {
+  const agent = events.find((event) => event.name === "AgentPaid" && event.signature === fill);
+  const relayer = events.find((event) => event.name === "RelayerPaid");
+  return {
+    agentPaid: agent?.name === "AgentPaid" ? { agent: agent.fields.agent, account: agent.fields.account, fee: agent.fields.fee } : null,
+    relayerPaid: relayer?.name === "RelayerPaid" ? { relayer: relayer.fields.relayer, account: relayer.fields.account, fee: relayer.fields.fee } : null,
+  };
+}
 
 export const HISTORY_LIMIT_RANGE = `limit must be a whole number from 1 to ${HISTORY_LIMIT_MAX}`;
 
@@ -73,18 +80,18 @@ export function clientReads({ transport, mint }: ClientContext) {
   const fillOf = async (ref: IntentRef): Promise<Fill | null> => {
     const intent = await intentAddress(ref);
     const floor = await createdAtOf(transport, intent);
-    const events = eventsIn((await scan(transport, intent, { floor, until: fillIn(intent) })).transactions, intent);
+    const events = eventsIn((await scan(transport, intent, { floor, until: createdIn(intent) })).transactions, intent);
     for (const event of events) {
       const { signature, slot, blockTime } = event;
       if (event.name === "IntentFilled") {
         const { solver, delivered, required, fee, net } = event.fields;
-        return { steps: 1, solver, delivered, required, fee, net, signature, slot, blockTime };
+        return { steps: 1, solver, delivered, required, fee, net, signature, slot, blockTime, ...payoutsIn(events, signature) };
       }
       if (event.name === "FillEnded") {
         const begun = events.find((other) => other.name === "FillBegun" && other.signature === signature);
         if (begun?.name === "FillBegun") {
           const { solver, delivered, required } = event.fields;
-          return { steps: 2, solver, delivered, required, fee: begun.fields.fee, net: begun.fields.net, signature, slot, blockTime };
+          return { steps: 2, solver, delivered, required, fee: begun.fields.fee, net: begun.fields.net, signature, slot, blockTime, ...payoutsIn(events, signature) };
         }
       }
     }

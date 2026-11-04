@@ -141,6 +141,10 @@ export type FillInput = {
   route?: readonly Instruction[];
 };
 
+export type AgentPayout = { agent: Address; account: Address; fee: bigint };
+
+export type RelayerPayout = { relayer: Address; account: Address; fee: bigint };
+
 export type Fill = {
   steps: 1 | 2;
   solver: Address;
@@ -151,6 +155,8 @@ export type Fill = {
   signature: Signature;
   slot: bigint;
   blockTime: bigint | null;
+  agentPaid: AgentPayout | null;
+  relayerPaid: RelayerPayout | null;
 };
 
 export type TokenBalance = { mint: Address; name: string | undefined; account: Address; amount: bigint; decimals: number };

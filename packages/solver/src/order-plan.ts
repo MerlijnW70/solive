@@ -17,6 +17,7 @@ import {
 } from "./build.js";
 import { withoutTip } from "./bundle.js";
 import { INVENTORY_ONLY, ownIntent } from "./float.js";
+import { deadMandate } from "./mandate.js";
 import { decide, standing } from "./plan.js";
 import { freshly, fromCache } from "./quote-cache.js";
 import { type Planned, type Ready, skipped } from "./outcome.js";
@@ -35,6 +36,11 @@ export async function planOrder(o: SolverOptions, config: Config, now: bigint, a
   const waiting = o.backoff?.waiting(address, intent) ?? null;
   if (waiting !== null) {
     return skipped(address, backingOff(waiting.failures, waiting.seconds));
+  }
+  const read = o.chain.account;
+  const dead = read === undefined ? null : await deadMandate(intent, (at) => read.call(o.chain, at));
+  if (dead !== null) {
+    return skipped(address, dead);
   }
   const [inputTokenProgram, outputTokenProgram] = await Promise.all([o.chain.tokenProgram(intent.inputMint), o.chain.tokenProgram(intent.outputMint)]);
   const payable = async (draft: Parameters<typeof payoutAccounts>[0]) => {

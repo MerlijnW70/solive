@@ -148,6 +148,9 @@ export function lineIntent(data: ReadonlyUint8Array): Address | null {
   if (board !== null) {
     return board.intent;
   }
+  if (CLAIM_LIST_DISCRIMINATOR.every((b, i) => data[i] === b)) {
+    return data.length < HEAD + 32 ? null : getAddressDecoder().decode(data.slice(HEAD, HEAD + 32));
+  }
   if (!STANDBY_DISCRIMINATOR.every((b, i) => data[i] === b) || data.length < HEAD + 64) {
     return null;
   }

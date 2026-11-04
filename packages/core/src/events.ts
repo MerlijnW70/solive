@@ -112,6 +112,8 @@ const PARSERS = {
   UserInitialized: parseUserInitializedEvent,
 } satisfies Record<EngineEventName, (data: Uint8Array) => object>;
 
+export const ENGINE_EVENT_NAMES = Object.freeze(Object.keys(PARSERS)) as readonly EngineEventName[];
+
 export type EngineEvent = {
   [K in EngineEventName]: { name: K; notable: boolean; fields: ReturnType<(typeof PARSERS)[K]> };
 }[EngineEventName];
