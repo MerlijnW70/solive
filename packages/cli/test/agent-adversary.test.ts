@@ -233,7 +233,7 @@ describe("the wallet's delivery tool under hostile input", () => {
 
   it("answers arbitrary JSON and every input its schema allows with a result or a named problem, never an internal failure", async () => {
     const call = await hostile("solive_wallet_deliver");
-    const sent = await call({ intent: known[0], sha256: "AB".repeat(32), url: "https://example.org/work", send: true });
+    const sent = await call(await approved(client, "wallet_deliver", { intent: known[0], sha256: "AB".repeat(32), url: "https://example.org/work", send: true }));
     expect(checkShape(sent)).toBeNull();
     expect(checkShape(await call({ intent: known[1], sha256: "ab".repeat(32), url: "https://example.org/work" }))?.code).toBe("NotFound");
   }, BUDGET_MS * 2);

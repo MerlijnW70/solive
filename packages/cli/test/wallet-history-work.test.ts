@@ -85,8 +85,8 @@ describe("wallet_history of a worker paid for announced work", () => {
     const worker = await funded();
     useKey(worker);
     const work = "c4".repeat(32);
-    const announced = await ok(client, "wallet_deliver", { intent, sha256: work, url: URL_OF_WORK, send: true });
-    const unpaid = await ok(client, "wallet_deliver", { intent: other, sha256: "c5".repeat(32), url: URL_OF_WORK, send: true });
+    const announced = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: work, url: URL_OF_WORK, send: true }));
+    const unpaid = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent: other, sha256: "c5".repeat(32), url: URL_OF_WORK, send: true }));
 
     h.files.set(defaultWallet(HOME), payerKey);
     const attested = await sent(client, "wallet_attest", { owner: payer, nonce: paidJob["nonce"], delivered_sha256: work });
@@ -122,7 +122,7 @@ describe("wallet_history of a worker paid for announced work", () => {
     const intent = job["intent"] as Address;
     const worker = await funded();
     useKey(worker);
-    const mine = await ok(client, "wallet_deliver", { intent, sha256: "d1".repeat(32), url: URL_OF_WORK, send: true });
+    const mine = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: "d1".repeat(32), url: URL_OF_WORK, send: true }));
     const rival = await keyed();
     await announced(intent, rival, "d2".repeat(32), URL_OF_WORK, h.through ?? undefined);
     h.files.set(defaultWallet(HOME), payerKey);

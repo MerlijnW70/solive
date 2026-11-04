@@ -67,7 +67,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Sells an exact amount in a falling-price (Dutch) auction you design: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until it expires. A solver fills when the ask meets what it can pay. For a simple market sell, use solive_wallet_swap. Previews only; call with send: true after the user says yes.
+Sells an exact amount in a falling-price (Dutch) auction you design: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until it expires. A solver fills when the ask meets what it can pay. For a simple market sell, use solive_wallet_swap. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -81,6 +81,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `falls_over` | integer 60..31536000 | yes | seconds the asked amount takes to fall from start_receive to end_receive |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent, never less than falls_over; default 3600 |
 | `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
+| `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_recurring
@@ -336,7 +337,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Tells a job's judge the work is done: an on-chain announcement of the work's sha256, its url sealed to the judge. This wallet pays rent, fee and any announce fee; the escrow's tokens do not move. Host it where nobody can guess and announce right after hosting. Previews only; call with send: true after the user says yes.
+Tells a job's judge the work is done: an on-chain announcement of the work's sha256, url sealed to the judge. This wallet pays rent, fee and any announce fee; the escrow's tokens do not move. Host it where nobody can guess and announce right after hosting. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -346,6 +347,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256 |
 | `url` | string | yes | where the judge fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting |
 | `send` | boolean | no | true signs and sends; leave out to preview |
+| `approval` | string | no | the approval the preview returned; needed with send |
 
 ## solive_wallet_check_delivery
 
@@ -407,7 +409,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Closes up to 5 of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window; each one's rent returns to the wallet that paid it; reasons says why each other one stays. Previews only; call with send: true after the user says yes.
+Closes up to 5 of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window, then each delivery book left empty; each one's rent returns to the wallet that paid it; reasons says why each other one stays. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 

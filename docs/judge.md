@@ -275,7 +275,7 @@ The escrow cannot close while it holds a share: `close` refuses it, `crank` pass
 
 `receipt` names each held share with its `state`: `held`, `received` once claimed, or `returned` to the owner with the close transaction. It also names a fee whose account could not take it, the protocol fee too, under `withheld`. `wallet_history` and `get_reputation` show a returned share as `returned`, outside the co-author's pay.
 
-Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent; it keeps an earlier announcement that can still refute a paid release until 30 days after that release, and `close-book --intent <address>` closes an escrow's empty delivery book.
+Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent, then each delivery book they leave empty, its rent back to whoever paid it; it keeps an earlier announcement that can still refute a paid release until 30 days after that release, and `close-book --intent <address>` closes an escrow's empty delivery book.
 
 This cannot stop a copier who announces every value of a small answer set first, or one who copies work published before its announcement lands. A job claim or a spec with many possible answers covers those.
 

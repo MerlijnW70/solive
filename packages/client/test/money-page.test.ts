@@ -19,7 +19,7 @@ const CLAIMS = {
   wrapped:
     "A release of a proof escrow in SOL pays the worker and the judge in wrapped SOL, into their token accounts for `NATIVE_MINT`; `unwrap` closes that account and returns its balance and its rent to the wallet as SOL.",
   rent: "`announce` takes the announcement's rent from the worker's own wallet, and on the first announcement to an escrow the delivery book's rent too, unless `payer` names another wallet to pay them.",
-  reclaim: `\`reclaim\` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one ${delivery.REFUTE_WINDOW_SECS / DAY} days after the release; \`closeBook\` then returns the delivery book's rent to whoever paid it.`,
+  reclaim: `\`reclaim\` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one ${delivery.REFUTE_WINDOW_SECS / DAY} days after the release, then closes each delivery book it leaves empty, that rent also back to whoever paid it.`,
   escrowed:
     "After a release the intent reads `Filled`, and `escrowed` and `filled` both read the amount escrowed at create; the `net` of its `IntentAttested` event is what the worker received.",
 };
@@ -95,25 +95,22 @@ describe("the section of the client page on what a release moves", () => {
     const idle = await world.wallet();
     const made = await world.client.announce({ worker: idle, intent: unpaid.intent, sha256: sha("idle"), url: workUrl() });
     const rent = await lamportsOf(world, made.announcement);
+    const idleBook = await lamportsOf(world, await deliveryBookAddress(unpaid.intent));
     expect((await world.client.plan.reclaim({ worker: idle })).kept).toEqual([made.announcement]);
     await world.client.cancel(unpaid.owner, unpaid.intent);
     const idleBefore = solOf(world, idle);
-    expect((await world.client.reclaim({ worker: idle })).closed).toEqual([made.announcement]);
-    expect(solOf(world, idle) - idleBefore).toBe(rent - SIGNATURE_FEE);
+    expect(await world.client.reclaim({ worker: idle })).toMatchObject({ closed: [made.announcement], books: [await deliveryBookAddress(unpaid.intent)] });
+    expect(solOf(world, idle) - idleBefore).toBe(rent + idleBook - 2n * SIGNATURE_FEE);
 
     const paid = await released(world);
     const paidRent = await lamportsOf(world, paid.made.announcement);
     world.warp(delivery.REFUTE_WINDOW_SECS - 1n);
     expect((await world.client.plan.reclaim({ worker: paid.worker })).kept).toEqual([paid.made.announcement]);
     world.warp(1);
-    const workerBefore = solOf(world, paid.worker);
-    expect((await world.client.reclaim({ worker: paid.worker })).closed).toEqual([paid.made.announcement]);
-    expect(solOf(world, paid.worker) - workerBefore).toBe(paidRent - SIGNATURE_FEE);
-
     const book = await lamportsOf(world, await deliveryBookAddress(paid.intent));
-    const bookBefore = solOf(world, paid.worker);
-    await world.client.closeBook(paid.intent, paid.owner);
-    expect(solOf(world, paid.worker) - bookBefore).toBe(book);
+    const workerBefore = solOf(world, paid.worker);
+    expect(await world.client.reclaim({ worker: paid.worker })).toMatchObject({ closed: [paid.made.announcement], books: [await deliveryBookAddress(paid.intent)] });
+    expect(solOf(world, paid.worker) - workerBefore).toBe(paidRent + book - 2n * SIGNATURE_FEE);
   });
 
   it(CLAIMS.escrowed, async () => {

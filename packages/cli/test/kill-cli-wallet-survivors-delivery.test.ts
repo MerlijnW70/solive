@@ -4,10 +4,11 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
-import { sortMembers } from "@intent-engine/core/internal";
+import { getDeliveryBookSize, sortMembers } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
+import { bookCreated } from "../src/agent/wallet/delivery.js";
 import { NO_BOOK } from "../src/agent/wallet/openings.js";
 import { WORK_DIFFERS } from "../src/agent/wallet/work.js";
 import { EXIT_OK, main } from "../src/main.js";
@@ -77,15 +78,17 @@ describe("announcing work and judging it", () => {
   it("names the announcement, the seal and the cost, and a committee key sync only when one is owed", async () => {
     const escrow = await hire(judgeWallet);
     const intent = escrow["intent"] as Address;
+    const bookRent = BigInt(h.svm.minimumBalanceForRentExemption(BigInt(getDeliveryBookSize())));
     const preview = await ok(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL });
     expect(preview["summary"]).toStrictEqual([
       `Announces: the work with sha256 ${WORK} to the proof escrow ${intent} in ${preview["announcement"]}, whose commitment ${preview["commitment"]} binds it to this wallet and a salt only its key derives`,
       `Seals: the salt and the url ${WORK_URL} to ${judgeWallet} (the key derived from its wallet), so only they can open it`,
       "Pays: the announcement's rent and the transaction fee, from this wallet; the rent returns when the announcement closes, and the escrow's tokens do not move",
+      bookCreated(bookRent, "this wallet"),
     ]);
     const prepared = await prepare(intent);
     expect(prepared["sync_first"]).toBe(false);
-    expect(prepared["summary"]).toHaveLength(3);
+    expect(prepared["summary"]).toHaveLength(4);
     const other = await keyed();
     const members = sortMembers([judgeWallet, other.address]);
     const payer = await funded();
@@ -94,8 +97,8 @@ describe("announcing work and judging it", () => {
     const committee = created.json()["committee"] as Address;
     const teamed = await hire(committee, "6e");
     const syncing = await ok(worker, "wallet_deliver", { intent: teamed["intent"], sha256: WORK, url: WORK_URL });
-    expect(syncing["summary"]).toHaveLength(4);
-    expect((syncing["summary"] as string[])[3]).toBe(`Syncs first, in its own transaction: the key snapshot of committee ${committee}`);
+    expect(syncing["summary"]).toHaveLength(5);
+    expect((syncing["summary"] as string[])[4]).toBe(`Syncs first, in its own transaction: the key snapshot of committee ${committee}`);
     const sync = await prepare(teamed["intent"] as Address);
     expect(sync["sync_first"]).toBe(true);
     expect(sync["next"]).toBe("sign and send this key sync, then call again for the announcement");
@@ -106,9 +109,9 @@ describe("announcing work and judging it", () => {
     const intent = escrow["intent"] as Address;
     const rival = await keyed();
     await announced(intent, rival, "a1".repeat(32), WORK_URL, h.through ?? undefined);
-    await ok(worker, "wallet_deliver", { intent, sha256: "b1".repeat(32), url: WORK_URL, send: true });
+    await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent, sha256: "b1".repeat(32), url: WORK_URL, send: true }));
     await announced(intent, rival, "a2".repeat(32), WORK_URL, h.through ?? undefined);
-    await ok(worker, "wallet_deliver", { intent, sha256: "b2".repeat(32), url: WORK_URL, send: true });
+    await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent, sha256: "b2".repeat(32), url: WORK_URL, send: true }));
     const listed = await ok(worker, "wallet_check_delivery", { intent });
     expect(listed["mine"]).toMatchObject([
       { seq: "2", earlier: 1 },
@@ -123,13 +126,13 @@ describe("announcing work and judging it", () => {
     const intent = escrow["intent"] as Address;
     const marked = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode("marked")]);
     h.specPages.set(WORK_URL, marked);
-    await ok(worker, "wallet_deliver", { intent, sha256: createHash("sha256").update(marked).digest("hex"), url: WORK_URL, send: true });
+    await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent, sha256: createHash("sha256").update(marked).digest("hex"), url: WORK_URL, send: true }));
     const shown = await ok(judge, "wallet_fetch_work", { intent });
     expect(shown["untrusted_text"]).toBe("﻿marked");
     const binary = new Uint8Array([0x80, 0x81, 0x82]);
     const second = await hire(judgeWallet, "6f");
     h.specPages.set(WORK_URL, binary);
-    await ok(worker, "wallet_deliver", { intent: second["intent"], sha256: createHash("sha256").update(binary).digest("hex"), url: WORK_URL, send: true });
+    await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent: second["intent"], sha256: createHash("sha256").update(binary).digest("hex"), url: WORK_URL, send: true }));
     const raw = await ok(judge, "wallet_fetch_work", { intent: second["intent"] });
     expect(raw).not.toHaveProperty("untrusted_text");
     expect(raw["bytes"]).toBe(3);
@@ -138,7 +141,7 @@ describe("announcing work and judging it", () => {
   it("says no announcement opens to a fetched work that is not the announced one, and that a worker announces first", async () => {
     const escrow = await hire(judgeWallet);
     const intent = escrow["intent"] as Address;
-    await ok(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL, send: true });
+    await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL, send: true }));
     h.specPages.set(WORK_URL, new TextEncoder().encode("a different work\n"));
     const shown = await ok(judge, "wallet_fetch_work", { intent });
     expect(shown["opens_commitment"]).toBe(false);

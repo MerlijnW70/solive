@@ -151,7 +151,7 @@ describe("wallet_history of a job a contractor resold", () => {
     const contractor = await funded();
     useKey(contractor);
     const work = "e4".repeat(32);
-    const delivered = await ok(client, "wallet_deliver", { intent: jobIntent, sha256: work, url: URL_OF_WORK, send: true });
+    const delivered = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent: jobIntent, sha256: work, url: URL_OF_WORK, send: true }));
     const announcement = delivered["announcement"] as Address;
     const announced: EngineTransaction = {
       signature: delivered["signature"] as Signature,

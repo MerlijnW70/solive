@@ -113,7 +113,7 @@ describe("the wallet tools through a job on announcements", () => {
     const intent = escrow["intent"] as Address;
     const preview = await ok(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL });
     expect(preview["next"]).toContain(SYNC_FIRST);
-    const delivered = await ok(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL, send: true });
+    const delivered = await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL, send: true }));
     expect(delivered).toMatchObject({ sent: true, seq: "1", sealed_to: members });
     expect(synced(committee)).toBe(true);
     const fetched = await ok(judge, "wallet_fetch_work", { intent });

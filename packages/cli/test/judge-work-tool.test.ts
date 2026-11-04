@@ -103,7 +103,7 @@ describe("wallet_judge_work", () => {
     const intent = escrow["intent"] as Address;
     const preview = await ok(worker, "wallet_deliver", { intent, sha256: sha(work), url: WORK_URL });
     expect(preview["sent"]).toBe(false);
-    expect(await ok(worker, "wallet_deliver", { intent, sha256: sha(work), url: WORK_URL, send: true })).toMatchObject({ sent: true });
+    expect(await ok(worker, "wallet_deliver", await approved(worker, "wallet_deliver", { intent, sha256: sha(work), url: WORK_URL, send: true }))).toMatchObject({ sent: true });
     return { intent, nonce: escrow["nonce"] as string };
   }
 

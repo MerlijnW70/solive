@@ -96,7 +96,7 @@ describe("closing the announcements of an escrow that ended", () => {
     const judge = await keyed();
     const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: "5e".repeat(32), expires_in: 3_600 }));
     for (let at = 1; at <= 6; at++) {
-      await ok(client, "wallet_deliver", { intent: escrow["intent"], sha256: at.toString(16).padStart(2, "0").repeat(32), url: "https://" + "example.org/work-" + at, send: true });
+      await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent: escrow["intent"], sha256: at.toString(16).padStart(2, "0").repeat(32), url: "https://" + "example.org/work-" + at, send: true }));
     }
     setNow(NOW + 3_600n + 60n);
     const first = await ok(client, "wallet_reclaim", { send: true });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { chainTime, CLOCK_SYSVAR, explain, mintOf, unmemoized } from "@intent-engine/client/internal";
+import { chainTime, CLOCK_SYSVAR, explain, loadConfig, mintOf, unmemoized } from "@intent-engine/client/internal";
+import type { Transport } from "@intent-engine/client";
 import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
 import { type AfterCreate, createIntent } from "../create.js";
@@ -26,6 +27,13 @@ export const offerOutput = object(offerFields);
 
 export const OFFER_CHANGED = "this offer differs from its preview, or no approval was given; preview it again and show the user";
 
+export type CreateFees = { create_fee: bigint; crank_bounty: bigint };
+
+export async function createFeesOf(transport: Transport): Promise<CreateFees> {
+  const { config } = await loadConfig(transport);
+  return { create_fee: BigInt(config.createFee), crank_bounty: BigInt(config.crankBounty) };
+}
+
 export type Token = Awaited<ReturnType<typeof mintOf>>;
 
 type Order = typeof orderSchema extends Schema<infer T> ? T : never;
@@ -42,7 +50,10 @@ export type Offer = {
   previewNext?: string | undefined;
   approval?: string | undefined;
   changed?: string | undefined;
+  fees?: CreateFees | undefined;
 };
+
+const sameFees = (a: CreateFees, b: CreateFees): boolean => a.create_fee === b.create_fee && a.crank_bounty === b.crank_bounty;
 
 export async function offered(
   ctx: AgentContext,
@@ -76,11 +87,15 @@ export async function offered(
       input.after,
     )) as Record<string, unknown>;
     const { intent, nonce, summary, warnings, prepared } = view;
-    return { intent, nonce, summary, warnings, prepared };
+    return { shown: { intent, nonce, summary, warnings, prepared }, fees: { create_fee: BigInt(String(view["create_fee"])), crank_bounty: BigInt(String(view["crank_bounty"])) } };
   };
-  const first = await created(ctx);
+  const opened = await created(ctx);
+  const first = opened.shown;
   input.priced?.(networkFee(first.prepared as Parameters<typeof networkFee>[0]));
   if (input.send === true && approval !== undefined && input.approval !== approval) {
+    throw new AgentRefusal("ReleaseChanged", input.changed ?? OFFER_CHANGED);
+  }
+  if (input.send === true && input.fees !== undefined && !sameFees(opened.fees, input.fees)) {
     throw new AgentRefusal("ReleaseChanged", input.changed ?? OFFER_CHANGED);
   }
   if (input.send !== true) {
@@ -102,7 +117,11 @@ export async function offered(
       if (mayHaveSent(error) || !nonceTaken(error)) {
         throw error;
       }
-      return await sent(ctx, signer, await created({ ...ctx, transport: unmemoized(ctx.transport) }), true, call, { done });
+      const again = await created({ ...ctx, transport: unmemoized(ctx.transport) });
+      if (!sameFees(again.fees, input.fees ?? opened.fees)) {
+        throw new AgentRefusal("ReleaseChanged", input.changed ?? OFFER_CHANGED);
+      }
+      return await sent(ctx, signer, again.shown, true, call, { done });
     }
   } catch (error) {
     if (path !== undefined && refusedBeforeSending(error)) {

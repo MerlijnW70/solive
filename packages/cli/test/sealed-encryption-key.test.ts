@@ -101,7 +101,7 @@ describe("sealing to a judge whose profile publishes an encryption key", () => {
 
     useKey(worker);
     h.specPages.set(WORK_URL, bytesOf(WORK));
-    const delivered = await ok(plain, "wallet_deliver", { intent, sha256: sha(WORK), url: WORK_URL, send: true });
+    const delivered = await ok(plain, "wallet_deliver", await approved(plain, "wallet_deliver", { intent, sha256: sha(WORK), url: WORK_URL, send: true }));
     expect(delivered).toMatchObject({ sent: true, sealed_to: [judge.address] });
     expect(delivered["summary"] as string[]).toContain(`Seals: the salt and the url ${WORK_URL} to ${judge.address} (the encryption key its profile publishes), so only they can open it`);
     expect(publicKey).not.toBe("");

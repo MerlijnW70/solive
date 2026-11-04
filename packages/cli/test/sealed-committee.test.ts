@@ -118,7 +118,7 @@ describe("sealing to a committee", () => {
     const intent = escrow["intent"] as Address;
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     const work = sha("the report\n");
-    const delivered = await ok(client, "wallet_deliver", { intent, sha256: work, url: "https://" + "example.org/report", send: true });
+    const delivered = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: work, url: "https://" + "example.org/report", send: true }));
     expect(new Set(delivered["sealed_to"] as Address[])).toEqual(new Set(members.map(({ address }) => address)));
     for (const member of members) {
       const first = await createClient({ url: "http://cluster", transport }).firstOpening({ intent, sha256: work, keypair: h.keypairs.get(member.address) });

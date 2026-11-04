@@ -1,6 +1,6 @@
 import type { Address, TransactionPartialSigner } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { type AnnounceInput, type RefuteInput, type Transport } from "@intent-engine/client";
+import { type AnnounceInput, type ReclaimBook, type RefuteInput, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { loadAnnouncement, loadDeliveryBook, mintOf, secretInputOf } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
@@ -21,6 +21,20 @@ type AnnounceCommand = Extract<Command, { name: "deliver" | "deliveries" | "refu
 export { ALREADY_ANNOUNCED, NOTHING_HELD } from "./delivery-shared.js";
 
 export const NOTHING_TO_RECLAIM = "none of this wallet's announcements can close now: its Keeps lines say why each one stays; nothing was sent";
+
+const SOL_DECIMALS = 9;
+
+export const BOOKS_UNCLOSED = "the program refused to close the delivery books in unclosed, so they stay; the announcements and other books still closed, and close-book tries one again";
+
+export function reclaimBooksLine(books: readonly Pick<ReclaimBook, "book" | "rent" | "rentTo">[], sends: number): string {
+  const rent = formatAmount(
+    books.reduce((sum, { rent }) => sum + rent, 0n),
+    SOL_DECIMALS,
+  );
+  const payers = [...new Set(books.map(({ rentTo }) => rentTo))].join(", ");
+  const named = books.map(({ book }) => book).join(", ");
+  return `Closes: the delivery book${books.length === 1 ? "" : "s"} ${named} left empty here, in ${sends} more ${sends === 1 ? "transaction" : "transactions"}, so a refused one stops no other; ${rent} SOL of rent returns to ${payers}, which paid it`;
+}
 
 export const WORK_URL_NEEDED =
   "refute needs --work-url, the url the earlier announcement sealed: this wallet derives its delivery secrets from it, and no secrets file of this machine names it; nothing was sent";
@@ -121,21 +135,34 @@ async function refute(command: Extract<AnnounceCommand, { name: "refute" }>, run
 async function reclaim(command: Extract<AnnounceCommand, { name: "reclaim" }>, runtime: Runtime, transport: Transport): Promise<object> {
   const worker = await transactionSigner(runtime, command.keypair);
   const payer = await payerOf(runtime, command, worker);
-  const probe = capturing(transport);
-  const planned = await createClient({ url: command.url, transport: probe.transport }).reclaim({ worker, payer });
+  const client = createClient({ url: command.url, transport });
+  const planned = await client.plan.reclaim({ worker, payer });
+  const sends = planned.batches.length;
   const summary = [
-    `Closes: ${planned.closed.length} of this wallet's announcements, in ${probe.sends.length} ${probe.sends.length === 1 ? "transaction" : "transactions"}; each one's rent returns to the wallet that paid it`,
+    ...(planned.closed.length === 0 && planned.books.length > 0
+      ? []
+      : [`Closes: ${planned.closed.length} of this wallet's announcements, in ${sends} ${sends === 1 ? "transaction" : "transactions"}; each one's rent returns to the wallet that paid it`]),
+    ...(planned.books.length === 0 ? [] : [reclaimBooksLine(planned.books, planned.bookBatches.length)]),
     ...keptLines(planned.reasons),
   ];
-  const shown = { worker: worker.address, closed: planned.closed, kept: planned.kept, reasons: planned.reasons, summary };
-  if (planned.closed.length === 0) {
+  const shown = { worker: worker.address, closed: planned.closed, books: planned.books.map(({ book }) => book), kept: planned.kept, reasons: planned.reasons, summary };
+  if (planned.closed.length === 0 && planned.books.length === 0) {
     return { ...shown, sent: false, next: NOTHING_TO_RECLAIM };
   }
   if (!command.yes) {
-    return previewed(transport, probe.sends[0]?.instructions ?? [], payer, { ...shown, transactions: probe.sends.length }, false);
+    return previewed(transport, planned.batches[0] ?? planned.bookBatches[0] ?? [], payer, { ...shown, transactions: sends + planned.bookBatches.length }, false);
   }
-  const done = await createClient({ url: command.url, transport }).reclaim({ worker, payer });
-  return { ...shown, closed: done.closed, kept: done.kept, reasons: done.reasons, sent: true, signatures: done.signatures };
+  const done = await client.reclaim({ worker, payer });
+  return {
+    ...shown,
+    closed: done.closed,
+    books: done.books,
+    ...(done.unclosed.length === 0 ? {} : { unclosed: done.unclosed, next: BOOKS_UNCLOSED }),
+    kept: done.kept,
+    reasons: done.reasons,
+    sent: true,
+    signatures: done.signatures,
+  };
 }
 
 export const HELD_UNSURE = "no held share found, but the read was incomplete, so one may still be held: reasons and unreadable say why";

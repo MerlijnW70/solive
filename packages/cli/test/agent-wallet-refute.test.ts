@@ -25,7 +25,7 @@ describe("the wallet server's refutations and reclaims", () => {
     const judge = await keyed();
     const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: "5c".repeat(32) }));
     const intent = escrow["intent"] as Address;
-    const earlier = await ok(client, "wallet_deliver", { intent, sha256: WORK, url: url("mine.tar"), send: true });
+    const earlier = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: WORK, url: url("mine.tar"), send: true }));
     expect((await call(client, "wallet_reclaim")).value).toMatchObject({ code: "NothingToReclaim" });
     const later = await announced(intent, await keyed(), WORK, url("later.tar"));
     await createClient({ url: "http://cluster", transport }).settleProof({
@@ -60,8 +60,8 @@ describe("the wallet server's refutations and reclaims", () => {
     const escrowing = { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: "5d".repeat(32) };
     const lapsing = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...escrowing, expires_in: 3_600 }));
     const paying = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", escrowing));
-    const lapsed = await ok(client, "wallet_deliver", { intent: lapsing["intent"], sha256: WORK, url: url("lapsed.tar"), send: true });
-    const refuter = await ok(client, "wallet_deliver", { intent: paying["intent"], sha256: WORK, url: url("mine.tar"), send: true });
+    const lapsed = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent: lapsing["intent"], sha256: WORK, url: url("lapsed.tar"), send: true }));
+    const refuter = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent: paying["intent"], sha256: WORK, url: url("mine.tar"), send: true }));
     const later = await announced(paying["intent"] as Address, await keyed(), WORK, url("later.tar"));
     await createClient({ url: "http://cluster", transport }).settleProof({
       judge,

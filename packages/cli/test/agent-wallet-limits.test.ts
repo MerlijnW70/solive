@@ -13,7 +13,7 @@ import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { WRAPPED } from "../src/agent/create.js";
 import { InvalidInput } from "../src/agent/schema.js";
 import { toolIndex } from "../src/agent/mcp.js";
-import { DEFAULT_EXPIRES_IN, ESTIMATE_NEXT, ESTIMATE_SCAN, FILL_UNKNOWN, LANDING_SECONDS, MAINNET_GENESIS, NO_FILLS, UNREAD, RECORD_MINT_NEEDED, PREVIEW_ONLY, stillWaiting, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
+import { DEFAULT_EXPIRES_IN, ESTIMATE_NEXT, ESTIMATE_SCAN, FILL_UNKNOWN, LANDING_SECONDS, MAINNET_GENESIS, NO_FILLS, UNREAD, RECORD_MINT_NEEDED, PREVIEW_APPROVAL_NEXT, stillWaiting, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -131,11 +131,11 @@ describe("the wallet server's limits and reads", () => {
     const owner = made["address"] as Address;
     const args = { sell: "SOL", buy: "TEST", amount: "0.05", start_receive: "12", end_receive: "9.5", falls_over: 600 };
     const preview = await ok(client, "wallet_auction", args);
-    expect(preview).toMatchObject({ nonce: "0", sent: false, next: PREVIEW_ONLY });
+    expect(preview).toMatchObject({ nonce: "0", sent: false, next: PREVIEW_APPROVAL_NEXT });
     expect(preview["summary"]).toContain("Setup: wraps 0.05 of your SOL into your wrapped SOL account");
     expect(h.svm.getAccount(preview["intent"] as Address).exists).toBe(false);
     const now = h.svm.getClock().unixTimestamp;
-    expect(await ok(client, "wallet_auction", { ...args, send: true })).toMatchObject({ intent: preview["intent"], sent: true });
+    expect(await ok(client, "wallet_auction", await approved(client, "wallet_auction", { ...args, send: true }))).toMatchObject({ intent: preview["intent"], sent: true });
     h.watched.push(owner);
     const [listed] = (await ok(client, "wallet_intents"))["intents"] as Json[];
     const start = now + BigInt(LANDING_SECONDS);
@@ -208,7 +208,7 @@ describe("the wallet server's limits and reads", () => {
       retryable: true,
       hint: "this server sells at most 0.15 SOL per hour and has 0.05 left; this sells 0.06",
     });
-    await ok(client, "wallet_auction", { ...auction, amount: "0.05", send: true });
+    await ok(client, "wallet_auction", await approved(client, "wallet_auction", { ...auction, amount: "0.05", send: true }));
     expect((await call(client, "wallet_swap", { ...swap, amount: "0.001" })).value).toMatchObject({ code: "WalletHourLimit" });
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
     expect(await ok(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap, amount: "0.1" }))).toMatchObject({ sent: true });

@@ -190,7 +190,7 @@ describe("the announcements a release and a worker see", () => {
     const { intent } = await proofEscrow(client, wallet, "72");
     const work = "e3".repeat(32);
     await announced(intent, await keyed(), work, URL_OF_WORK);
-    const own = await ok(client, "wallet_deliver", { intent, sha256: work, url: URL_OF_WORK, send: true });
+    const own = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: work, url: URL_OF_WORK, send: true }));
     const checked = await ok(client, "wallet_check_delivery", { intent });
     expect(checked["mine"]).toEqual([{ announcement: own["announcement"], seq: "2", state: "announced", earlier: 1 }]);
   });

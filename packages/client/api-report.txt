@@ -156,9 +156,10 @@ type ProofBallot: type ProofBallot = { intent: Address; attestor: Address; payee
 type PublishSpecOptions: type PublishSpecOptions = { transport: Transport; fetch?: SpecFetch; lookup?: Lookup | null; rpcUrl?: string; mirror?: string | null; budgetMs?: number; };
 class RateLimited: class RateLimited extends SdkError { readonly code = "rate-limited"; readonly name = "RateLimited"; readonly method: string; readonly retryAfterMs: number | null; constructor(method: string, retryAfterMs: number | null, options?: ErrorOptions); }
 type ReceiptInput: type ReceiptInput = { escrow: Address; };
+type ReclaimBook: type ReclaimBook = { book: Address; intent: Address; rentTo: Address; rent: bigint; after: Address[]; instruction: Instruction; };
 type ReclaimInput: type ReclaimInput = { worker: TransactionSigner; payer?: TransactionSigner; };
-type ReclaimPlan: type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; batches: Instruction[][]; };
-type Reclaimed: type Reclaimed = { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; signatures: Signature[]; };
+type ReclaimPlan: type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; batches: Instruction[][]; books: ReclaimBook[]; bookBatches: Instruction[][]; };
+type Reclaimed: type Reclaimed = { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; books: Address[]; unclosed: Address[]; signatures: Signature[]; };
 type Refusal: type Refusal = { reason: RefusalReason; announcement?: Address; seq?: bigint; worker?: Address; sealedTo?: readonly SealedSlot[]; missing?: readonly bigint[]; closed?: boolean; holder?: Address; };
 type RefusalReason: type RefusalReason = "incomplete" | "key-not-given" | "nothing-opens" | "claim-held";
 type RefutationRecord: type RefutationRecord = { refutation: Address; earlier: Address; earlierSeq: bigint; earlierWorker: Address; standing: RefutationStanding; };

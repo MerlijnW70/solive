@@ -1,4 +1,4 @@
-import type { Signature } from "@solana/kit";
+import type { Address, Signature } from "@solana/kit";
 import { announcementPlan } from "./announce.js";
 import { announcementPlans } from "./announcement-sends.js";
 import { committeePlans } from "./client-committee.js";
@@ -9,6 +9,7 @@ import { splitPayer, splitSettlement } from "./client-split.js";
 import { claimHeldPlan } from "./held-claim.js";
 import type { Client, ClientContext, ClientPlans } from "./client-types.js";
 import { planOf, type Sends, submit, submitted } from "./plan.js";
+import { BOOK_BATCH, batched, type ReclaimBook } from "./reclaim-books.js";
 import { feedbackInstructions } from "./reputation.js";
 
 export function clientPlans(context: ClientContext): ClientPlans {
@@ -74,10 +75,32 @@ export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
     reclaim: async (input) => {
       const planned = await plan.reclaim(input);
       const signatures: Signature[] = [];
+      const by = input.payer ?? input.worker;
       for (const batch of planned.batches) {
-        signatures.push(await submit(send, planOf({ payer: planned.payer, instructions: batch }), input.payer ?? input.worker));
+        signatures.push(await submit(send, planOf({ payer: planned.payer, instructions: batch }), by));
       }
-      return { closed: planned.closed, kept: planned.kept, reasons: planned.reasons, signatures };
+      const books: Address[] = [];
+      const unclosed: Address[] = [];
+      const closeOf = async (shelf: readonly ReclaimBook[]): Promise<boolean> => {
+        try {
+          signatures.push(await submit(send, planOf({ payer: planned.payer, instructions: shelf.map(({ instruction }) => instruction) }), by));
+          books.push(...shelf.map(({ book }) => book));
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      for (const shelf of batched(planned.books, BOOK_BATCH)) {
+        if (await closeOf(shelf)) {
+          continue;
+        }
+        for (const one of shelf) {
+          if (shelf.length === 1 || !(await closeOf([one]))) {
+            unclosed.push(one.book);
+          }
+        }
+      }
+      return { closed: planned.closed, kept: planned.kept, reasons: planned.reasons, books, unclosed, signatures };
     },
     closeBook: async (intent, by) => submit(send, await plan.closeBook(intent, by), by),
     feedback: async (input) => submit(send, await plan.feedback(input), input.owner),

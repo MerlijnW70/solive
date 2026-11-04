@@ -110,7 +110,7 @@ describe("an invite-only job with wallet tools only", () => {
   const announce = async (intent: Address, hosted: Uint8Array, sha256: string) => {
     useKey(worker);
     h.specPages.set(WORK_URL, hosted);
-    return (await ok(client, "wallet_deliver", { intent, sha256, url: WORK_URL, send: true }))["announcement"] as Address;
+    return (await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256, url: WORK_URL, send: true })))["announcement"] as Address;
   };
 
   it("seals the spec, escrows it, lets the invited worker read it and announce work, and lets the judge fetch, check and release it", async () => {

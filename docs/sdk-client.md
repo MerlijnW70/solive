@@ -191,7 +191,7 @@ console.log(received.map((amount) => formatAmount(amount, sell.decimals)).join("
 
 - A release of a proof escrow in SOL pays the worker and the judge in wrapped SOL, into their token accounts for `NATIVE_MINT`; `unwrap` closes that account and returns its balance and its rent to the wallet as SOL.
 - `announce` takes the announcement's rent from the worker's own wallet, and on the first announcement to an escrow the delivery book's rent too, unless `payer` names another wallet to pay them.
-- `reclaim` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one 30 days after the release; `closeBook` then returns the delivery book's rent to whoever paid it.
+- `reclaim` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one 30 days after the release, then closes each delivery book it leaves empty, that rent also back to whoever paid it.
 - After a release the intent reads `Filled`, and `escrowed` and `filled` both read the amount escrowed at create; the `net` of its `IntentAttested` event is what the worker received.
 
 ## Program activity
@@ -320,6 +320,8 @@ await client.unwrap(signer);
 
 `refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now and that cannot still refute a release, rent back to whoever paid it, and says in `reasons` why each one in `kept` stays, and `closeBook` closes an escrow's empty delivery book. [Judge work](judge.md) does all of this from the command line.
 
+`reclaim` then closes each delivery book its closes leave empty, in transactions of their own, and lists those books in `books` and any the program refused in `unclosed`.
+
 `refute` of a split release checks that `claim` hashes to the split the paid announcement records, the same recipients and weights in the same order, and throws `NotRefutable` before it sends when it does not.
 
 ## Standing
@@ -447,7 +449,7 @@ server.close();
 - `plan.createIntent` returns a `CreateIntentPlan`: a `Plan` that also names the `intent`, its `nonce`, `expiresAt` and `payTo`.
 - A wallet that gives only its address plans with kit's `createNoopSigner(address)`: compile each part with that address as fee payer, have the wallet sign the compiled transaction, and send it.
 - Each write sends its own plan, `setup` first, and refuses a signer that is not the plan's `payer`.
-- `reclaim` splits its instructions into `batches`, one transaction each. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.
+- `reclaim` splits its instructions into `batches`, one transaction each, and the closes of the delivery books it leaves empty into `bookBatches`, sent after them. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.
 - Every call that names one intent takes its address or `{ owner, nonce }`.
 - `createIntent` takes `partner` with `partnerBps`, from 1 to 100, a partner fee each fill pays, and `payTo`, the wallet that receives what a swap, limit order or auction buys; a proof escrow takes no `payTo`.
 - `amount` turns decimal text into base units at the mint's decimals and refuses a negative, a non-number or too many decimals with `InvalidInput`; `format` turns base units back into text.

@@ -7,10 +7,12 @@ import {
   announcementCommitment,
   blobLayout,
   buildAnnounceDelivery,
+  buildCloseAnnouncement,
   buildCreateProfile,
   buildOpenClaimsListed,
   buildSetAnnounceFee,
   delivery,
+  deliveryBookAddress,
   newEncryptionKeyFile,
   readEncryptionKeyFile,
   sealDeliveryV4,
@@ -57,6 +59,7 @@ const SENTENCES = {
   relay: "Here your wallet pays for the worker's announcement and for the release, so neither new key needs SOL.",
   signs: "`settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release.",
   history: "`history` reads the paid work's sha256 and salt from the release itself.",
+  books: "`reclaim` then closes each delivery book its closes leave empty, in transactions of their own, and lists those books in `books` and any the program refused in `unclosed`.",
   cleanup:
     "`refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now and that cannot still refute a release, rent back to whoever paid it, and says in `reasons` why each one in `kept` stays, and `closeBook` closes an escrow's empty delivery book.",
 };
@@ -307,8 +310,15 @@ describe("the announcement sentences of the full client page", () => {
     const second = await escrowTo(judge.signer.address, w);
     await announced(second.client, early, second.intent, WORK);
     await second.client.cancel(second.owner, { owner: second.owner.address, nonce: second.nonce });
-    expect((await client.reclaim({ worker: early })).closed).toHaveLength(2);
-    await client.closeBook(second.intent, owner);
+    const reclaimed = await client.reclaim({ worker: early });
+    expect(reclaimed.closed).toHaveLength(2);
+    expect(reclaimed).toMatchObject({ books: [await deliveryBookAddress(second.intent)], unclosed: [] });
     expect((await client.announcements(second.intent)).announcements).toEqual([]);
+    const third = await escrowTo(judge.signer.address, w);
+    const last = await announced(third.client, early, third.intent, WORK);
+    await third.client.cancel(third.owner, { owner: third.owner.address, nonce: third.nonce });
+    await client.send([await buildCloseAnnouncement({ by: early, announcement: last.announcement, intent: third.intent, rentTo: early.address })], early);
+    await client.closeBook(third.intent, owner);
+    expect(w.chain.svm.getAccount(await deliveryBookAddress(third.intent)).exists).toBe(false);
   });
 });

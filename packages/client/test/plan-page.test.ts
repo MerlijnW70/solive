@@ -56,7 +56,7 @@ const CLAIMS = {
   wallet:
     "A wallet that gives only its address plans with kit's `createNoopSigner(address)`: compile each part with that address as fee payer, have the wallet sign the compiled transaction, and send it.",
   sends: "Each write sends its own plan, `setup` first, and refuses a signer that is not the plan's `payer`.",
-  empty: "`reclaim` splits its instructions into `batches`, one transaction each. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.",
+  empty: "`reclaim` splits its instructions into `batches`, one transaction each, and the closes of the delivery books it leaves empty into `bookBatches`, sent after them. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.",
   ref: "Every call that names one intent takes its address or `{ owner, nonce }`.",
   terms: `\`createIntent\` takes \`partner\` with \`partnerBps\`, from 1 to ${MAX_PARTNER_BPS}, a partner fee each fill pays, and \`payTo\`, the wallet that receives what a swap, limit order or auction buys; a proof escrow takes no \`payTo\`.`,
   amounts: "`amount` turns decimal text into base units at the mint's decimals and refuses a negative, a non-number or too many decimals with `InvalidInput`; `format` turns base units back into text.",
@@ -186,7 +186,7 @@ describe("the plan section of the client page", () => {
     const plan = await world.client.plan.reclaim({ worker });
     expect(plan.batches.map((batch) => batch.length)).toEqual([RECLAIM_BATCH, 1]);
     expect(plan.batches.flat()).toEqual(plan.instructions);
-    expect((await world.client.reclaim({ worker })).signatures).toHaveLength(2);
+    expect((await world.client.reclaim({ worker })).signatures).toHaveLength(3);
     expect(await world.client.plan.unwrap(await world.wallet())).toMatchObject({ setup: [], instructions: [] });
     const payer = await world.wallet();
     const terms = { payer, members: [payer.address, worker.address], threshold: 2, feeWallet: payer.address };

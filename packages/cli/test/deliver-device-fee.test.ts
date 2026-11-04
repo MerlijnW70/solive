@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { checkAccountVersion, findConfigPda, getCommitteeDecoder, getConfigDecoder, getConfigEncoder, saltMessage, sortMembers } from "@intent-engine/core/internal";
 import { createClient, messageHash } from "@intent-engine/client/node";
+import { approved } from "./approved.js";
 import { tool } from "../src/agent/names.js";
 import { SEALED_UNCHECKED } from "../src/agent/wallet/seal.js";
 import { notAttestor, SYNC_FIRST, SYNC_FIRST_FIELD, SYNC_ONLY, SYNCED_NEXT, walletDeliver } from "../src/agent/wallet/delivery.js";
@@ -145,7 +146,7 @@ describe("delivering from a Ledger wallet to an unsynced committee", () => {
     expect(String(syncShown["next"])).toContain(SYNC_ONLY);
     expect(transactionsSigned(ledger)).toEqual([]);
 
-    const syncSent = await ok(client, "wallet_deliver", { ...args, send: true });
+    const syncSent = await ok(client, "wallet_deliver", { ...args, approval: syncShown["approval"], send: true });
     expect(transactionsSigned(ledger)).toHaveLength(1);
     expect(messageHash(transactionsSigned(ledger)[0] ?? new Uint8Array())).toBe(syncShown["message_hash"]);
     expect(syncSent).toMatchObject({ sent: true, sync_first: true, as_previewed: true, message_hash: syncShown["message_hash"], next: SYNCED_NEXT });
@@ -158,7 +159,7 @@ describe("delivering from a Ledger wallet to an unsynced committee", () => {
     expect(announceShown["message_hash"]).not.toBe(syncShown["message_hash"]);
     expect(transactionsSigned(ledger)).toHaveLength(1);
 
-    const announced = await ok(client, "wallet_deliver", { ...args, send: true });
+    const announced = await ok(client, "wallet_deliver", { ...args, approval: announceShown["approval"], send: true });
     ledger.store.ensureQueueEmpty();
     expect(transactionsSigned(ledger)).toHaveLength(2);
     expect(messageHash(transactionsSigned(ledger)[1] ?? new Uint8Array())).toBe(announceShown["message_hash"]);
@@ -180,7 +181,7 @@ describe("delivering from a key file to an unsynced committee", () => {
     const shown = await ok(client, "wallet_deliver", args);
     expect(shown).toMatchObject({ sent: false, sync_first: true });
     expect(String(shown["next"])).toContain(SYNC_FIRST);
-    const sent = await ok(client, "wallet_deliver", { ...args, send: true });
+    const sent = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { ...args, send: true }));
     expect(sent).toMatchObject({ sent: true, seq: "1", sync_first: true, signature: expect.any(String) });
     expect(synced(committee)).toBe(true);
     expect(h.svm.getAccount(sent["announcement"] as Address).exists).toBe(true);

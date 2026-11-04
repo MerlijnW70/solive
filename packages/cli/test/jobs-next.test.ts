@@ -96,7 +96,7 @@ describe("delivery tool texts", () => {
   });
 
   it("say in the deliver preview that only send: true is passed back", () => {
-    expect(DELIVER_NEXT).toBe("not sent; show the summary, then resend with send: true after approval; the commitment is shown only, never passed back");
+    expect(DELIVER_NEXT).toBe("not sent; show the summary, then resend with send: true and the approval above; the commitment is shown only, never passed back");
     expect(JSON.stringify(walletDeliver.output.json)).toContain("the chain holds it in place of the hash");
   });
 });

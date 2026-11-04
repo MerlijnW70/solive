@@ -89,7 +89,7 @@ describe("wallet_judge_work at its edges", () => {
   };
 
   const announce = async (by: Client, intent: Address, sha256: string, url: string) => {
-    expect(await ok(by, "wallet_deliver", { intent, sha256, url, send: true })).toMatchObject({ sent: true });
+    expect(await ok(by, "wallet_deliver", await approved(by, "wallet_deliver", { intent, sha256, url, send: true }))).toMatchObject({ sent: true });
   };
 
   const delivered = async (work: Uint8Array) => {

@@ -10,7 +10,7 @@ import { tool } from "../names.js";
 import { AgentRefusal, problemOf, UNTRUSTED_DETAIL } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, oneAtATime, signerOf, termsApproval } from "./guard.js";
-import { offerFields, type Token } from "./offer.js";
+import { createFeesOf, offerFields, type Token } from "./offer.js";
 import { costLines, escrowCosts, pieceCostLines } from "./costs.js";
 import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimTerms, refuseWrongSpec, specPreflight, wrongSpecLines } from "./escrow-terms.js";
 import { pieceUploadPlans, planLines, readerLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
@@ -133,12 +133,14 @@ export const walletEscrow = define({
       sends = count;
     };
     let approval = "";
+    const fees = await createFeesOf(ctx.transport);
     const bound = { previewNext: PREVIEW_APPROVAL_NEXT, approval: input.approval, changed: ESCROW_CHANGED };
     const escrowed = await offeredWithClaims(ctx, call, { sell: sold, buy, send: input.send, priced, ...bound }, (token, _, now) => {
       const amountIn = raw(input.amount, token.decimals, "amount");
       const judgeFee = input.judge_fee === undefined ? 0n : raw(input.judge_fee, token.decimals, "judge_fee");
       approval = termsApproval({
         action: "escrow",
+        ...fees,
         owner: signer.address,
         sell: sold,
         buy,
@@ -395,8 +397,10 @@ export const walletEscrowPlan = define({
         }),
       ),
     );
+    const fees = { create_fee: BigInt(config.createFee), crank_bounty: BigInt(config.crankBounty) };
     const approval = termsApproval({
       action: "escrow_plan",
+      ...fees,
       owner: signer.address,
       sell: sold,
       buy,
@@ -456,7 +460,7 @@ export const walletEscrowPlan = define({
     const pieces = [{ ...listed(head), intent: first["intent"], nonce: first["nonce"], signature: first["signature"] }];
     for (const [i, piece] of rest.entries()) {
       try {
-        const made = await offeredWithClaims(ctx, call, { sell: sold, buy, send: true }, terms(piece), undefined, listedOf(i + 1), signer);
+        const made = await offeredWithClaims(ctx, call, { sell: sold, buy, send: true, fees, changed: ESCROW_CHANGED }, terms(piece), undefined, listedOf(i + 1), signer);
         pieces.push({ ...listed(piece), intent: made["intent"], nonce: made["nonce"], signature: made["signature"] });
       } catch (error) {
         for (const undo of call.undo.splice(0)) {

@@ -45,7 +45,7 @@ describe("refuting, reclaiming and closing", () => {
     expect(await client.reputation(late.address)).toMatchObject({ refuted: 1, paid: 0 });
   });
 
-  it("reclaims every announcement the program lets its worker close now, then anyone closes the empty book", async () => {
+  it("reclaims every announcement the program lets its worker close now, and the book they leave empty in the same flow", async () => {
     const { w, client, owner, intent, nonce } = await job();
     const [worker, relayer] = [await fundedSigner(w), await fundedSigner(w)];
     const own = await announced(client, worker, intent, WORK);
@@ -54,6 +54,8 @@ describe("refuting, reclaiming and closing", () => {
       closed: [],
       kept: [own.announcement, relayed.announcement],
       reasons: [own.announcement, relayed.announcement].map((announcement) => ({ announcement, reason: `its escrow ${intent} is still open` })),
+      books: [],
+      unclosed: [],
       signatures: [],
     });
     await expect(client.closeBook(intent, owner)).rejects.toThrow(BookNotClosable);
@@ -61,19 +63,18 @@ describe("refuting, reclaiming and closing", () => {
     await expect(client.closeBook(intent, owner)).rejects.toThrow("still holds 2 announcements");
     const [workerBefore, relayerBefore] = [w.chain.svm.getBalance(worker.address) ?? 0n, w.chain.svm.getBalance(relayer.address) ?? 0n];
     const rent = w.chain.svm.getBalance(relayed.announcement) ?? 0n;
-    const reclaimed = await client.reclaim({ worker, payer: relayer });
-    expect(reclaimed.closed).toEqual([own.announcement, relayed.announcement]);
-    expect(reclaimed.signatures).toHaveLength(1);
-    expect((await client.announcements(intent)).announcements).toEqual([]);
-    expect((w.chain.svm.getBalance(worker.address) ?? 0n) - workerBefore).toBe(rent);
-    expect((w.chain.svm.getBalance(relayer.address) ?? 0n) - relayerBefore).toBeGreaterThan(0n);
     const book = await deliveryBookAddress(intent);
     const bookRent = w.chain.svm.getBalance(book) ?? 0n;
-    const stranger: TransactionSigner = await fundedSigner(w);
-    const workerBeforeBook = w.chain.svm.getBalance(worker.address) ?? 0n;
-    await client.closeBook(intent, stranger);
+    const planned = await client.plan.reclaim({ worker, payer: relayer });
+    expect(planned.books).toEqual([{ book, intent, rentTo: worker.address, rent: bookRent, after: [own.announcement, relayed.announcement], instruction: expect.anything() }]);
+    const reclaimed = await client.reclaim({ worker, payer: relayer });
+    expect(reclaimed).toMatchObject({ closed: [own.announcement, relayed.announcement], books: [book], unclosed: [] });
+    expect(reclaimed.signatures).toHaveLength(2);
+    expect((await client.announcements(intent)).announcements).toEqual([]);
     expect(w.chain.svm.getAccount(book).exists).toBe(false);
-    expect((w.chain.svm.getBalance(worker.address) ?? 0n) - workerBeforeBook).toBe(bookRent);
+    expect((w.chain.svm.getBalance(worker.address) ?? 0n) - workerBefore).toBe(rent + bookRent);
+    expect((w.chain.svm.getBalance(relayer.address) ?? 0n) - relayerBefore).toBeGreaterThan(0n);
+    const stranger: TransactionSigner = await fundedSigner(w);
     await expect(client.closeBook(intent, stranger)).rejects.toThrow("does not exist");
   });
 
@@ -96,7 +97,8 @@ describe("refuting, reclaiming and closing", () => {
     expect(size).toBeLessThanOrEqual(PACKET_DATA_SIZE);
     const reclaimed = await client.reclaim({ worker });
     expect(reclaimed.closed).toHaveLength(RECLAIM_BATCH + 1);
-    expect(reclaimed.signatures).toHaveLength(2);
+    expect(reclaimed.books).toHaveLength(RECLAIM_BATCH + 1);
+    expect(reclaimed.signatures).toHaveLength(3);
     expect(intents).toHaveLength(RECLAIM_BATCH + 1);
   });
 

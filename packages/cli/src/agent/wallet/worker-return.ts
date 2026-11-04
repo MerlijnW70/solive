@@ -27,7 +27,7 @@ import { prepare } from "../prepare.js";
 import { AgentRefusal } from "../problems.js";
 import { preparedView } from "../shapes.js";
 import { sol } from "./costs.js";
-import { bookBatches, type BookClose, booksClosed, booksKeptLine, booksOf, booksPaidBy, bookUnclosed, intentsOf, rentOf } from "./worker-books.js";
+import { bookBatches, type BookClose, booksClosed, booksKeptLine, booksOf, booksPaidBy, bookUnclosed, closeEach, intentsOf, rentOf } from "./worker-books.js";
 import { access, oneAtATime, savedKeypair, sent, signerAt, signerOf, type WalletAccess, type WalletSigner } from "./guard.js";
 
 export const WORKERS_FOLDER = "workers";
@@ -313,17 +313,9 @@ export async function returnLeftovers(ctx: AgentContext, worker: Address, send: 
   for (const step of [settles.map((settle) => settle.instruction), closing].filter((one) => one.length > 0)) {
     signature = await execute(ctx.transport, preparedView(await prepare(unmemoized(ctx.transport), step, signer.address)), signer);
   }
-  const closed: BookClose[] = [];
-  const unclosed: Address[] = [];
-  for (const batch of batches) {
-    try {
-      signature = await execute(ctx.transport, preparedView(await prepare(unmemoized(ctx.transport), batch.map(({ instruction }) => instruction), signer.address)), signer);
-      closed.push(...batch);
-    } catch {
-      unclosed.push(...batch.map(({ book }) => book));
-    }
-  }
-  const landed = viewOf(closed, unclosed);
+  const shut = await closeEach(ctx.transport, signer, batches, ({ instruction }) => instruction);
+  signature = shut.signature ?? signature;
+  const landed = viewOf(shut.closed, shut.unclosed.map(({ book }) => book));
   const fresh = unmemoized(ctx.transport);
   const after = await sweepOf(fresh, worker, key, signer.address, keypair);
   if (after.instructions.length === 0) {

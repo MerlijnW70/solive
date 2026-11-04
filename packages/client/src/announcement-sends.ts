@@ -19,6 +19,7 @@ import { type AnnouncementView, announcementsBy, loadAnnouncement, loadDeliveryB
 import type { ClientContext, ClientPlans } from "./client-types.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { type Plan, planOf } from "./plan.js";
+import { BOOK_BATCH, batched, closableBooks, type ReclaimBook } from "./reclaim-books.js";
 import { type KeptAnnouncement, keptReason, refutersKept } from "./reclaim-reasons.js";
 import { hex, readableIntent } from "./job-proofs.js";
 import type { Transport } from "./transport.js";
@@ -36,11 +37,11 @@ export type Refuted = { refutation: Address; signature: Signature };
 
 export type ReclaimInput = { worker: TransactionSigner; payer?: TransactionSigner };
 
-export type Reclaimed = { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; signatures: Signature[] };
+export type Reclaimed = { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; books: Address[]; unclosed: Address[]; signatures: Signature[] };
 
 export type RefutePlan = Plan & { refutation: Address };
 
-export type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; batches: Instruction[][] };
+export type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; batches: Instruction[][]; books: ReclaimBook[]; bookBatches: Instruction[][] };
 
 export const RECLAIM_BATCH = 5;
 
@@ -191,16 +192,15 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
     const instructions = await Promise.all(
       closing.map(({ address, intent, payer: rentTo }) => buildCloseAnnouncement({ by: worker, announcement: address, intent, rentTo })),
     );
-    const batches: Instruction[][] = [];
-    for (let at = 0; at < instructions.length; at += RECLAIM_BATCH) {
-      batches.push(instructions.slice(at, at + RECLAIM_BATCH));
-    }
+    const shut = await closableBooks(transport, worker, closing, [...new Set([worker.address, payer.address])], now);
     return {
       ...planOf({ payer: payer.address, instructions }),
       closed: closing.map(({ address }) => address),
       kept: reasons.map(({ announcement }) => announcement),
       reasons,
-      batches,
+      batches: batched(instructions, RECLAIM_BATCH),
+      books: shut,
+      bookBatches: batched(shut.map(({ instruction }) => instruction), BOOK_BATCH),
     };
   };
 

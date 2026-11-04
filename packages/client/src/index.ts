@@ -31,6 +31,7 @@ export type { SaltSigner, SecretInput } from "./announce-keys.js";
 export type { Announced, AnnounceInput, AnnouncementPlan } from "./announce.js";
 export type { AnnouncementList, AnnouncementScan, AnnouncementView } from "./announcement-reads.js";
 export type { Reclaimed, ReclaimInput, ReclaimPlan, Refuted, RefuteInput, RefutePlan } from "./announcement-sends.js";
+export type { ReclaimBook } from "./reclaim-books.js";
 export type { KeptAnnouncement } from "./reclaim-reasons.js";
 export type { Priority } from "./budget.js";
 export { type ActivityEvent, type ActivityOptions, type ActivityPage, type EscrowTerms, escrowTermsIn, TransactionUnread } from "./client-activity.js";

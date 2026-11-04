@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { NATIVE_MINT } from "@intent-engine/core";
-import { deliveryBookAddress, refutationAddress, signCommitteeVote, signMessageBytes } from "@intent-engine/core/internal";
+import { buildCloseAnnouncement, deliveryBookAddress, refutationAddress, signCommitteeVote, signMessageBytes } from "@intent-engine/core/internal";
 import { createTestWorld, type TestWallet, type TestWorld } from "../src/testing.js";
 import { checkCase, delivered, escrow, sha, statusOf, workUrl } from "./plan-driver.js";
 
@@ -132,9 +132,9 @@ describe("every release write is its plan, sent", () => {
       plan: (client, { worker }) => client.plan.reclaim({ worker }),
       write: (client, { worker }) => client.reclaim({ worker }),
       payer: ({ worker }) => worker,
-      observe: async (w, { intent }) => ({ left: (await w.client.announcements(intent)).announcements.length }),
+      observe: async (w, { intent }) => ({ left: (await w.client.announcements(intent)).announcements.length, book: w.svm.getAccount(await deliveryBookAddress(intent)).exists }),
     });
-    expect(result.written).toEqual({ left: 0 });
+    expect(result.written).toEqual({ left: 0, book: false });
   });
 
   it("closeBook", async () => {
@@ -143,9 +143,9 @@ describe("every release write is its plan, sent", () => {
       lane: async (w) => {
         const job = await escrow(w);
         const worker = await w.wallet();
-        await delivered(w, job.intent, worker);
+        const made = await delivered(w, job.intent, worker);
         await w.client.cancel(job.owner, job.intent);
-        await w.client.reclaim({ worker });
+        await w.client.send([await buildCloseAnnouncement({ by: worker, announcement: made.announcement, intent: job.intent, rentTo: worker.address })], worker);
         return { ...job, closer: await w.wallet() };
       },
       plan: (client, { intent, closer }) => client.plan.closeBook(intent, closer),

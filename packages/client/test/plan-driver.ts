@@ -40,11 +40,12 @@ export async function sendByKit(world: TestWorld, instructions: readonly Instruc
   return world.transport.sendWire(getBase64EncodedWireTransaction(await signTransactionMessageWithSigners(message)), latest);
 }
 
-export type Batched = Plan & { batches?: Instruction[][] };
+export type Batched = Plan & { batches?: Instruction[][]; bookBatches?: Instruction[][] };
 
 export const transactionsOf = (plan: Batched): Instruction[][] => [
   ...(plan.setup.length === 0 ? [] : [plan.setup]),
   ...(plan.batches ?? (plan.instructions.length === 0 ? [] : [plan.instructions])),
+  ...(plan.bookBatches ?? []),
 ];
 
 export async function sendPlan(world: TestWorld, plan: Batched, payer: TransactionSigner): Promise<void> {

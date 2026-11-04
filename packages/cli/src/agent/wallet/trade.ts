@@ -22,13 +22,13 @@ import {
   checkSale,
   checkHour,
   refusedBeforeSending,
-  PREVIEW_FIRST,
   PREVIEW_APPROVAL,
+  PREVIEW_APPROVAL_NEXT,
   oneAtATime,
   signerOf,
   termsApproval,
 } from "./guard.js";
-import { offerFields, offerOutput, offered } from "./offer.js";
+import { createFeesOf, offerFields, offered } from "./offer.js";
 import { recentFills, bestOf, medianOf, openingAsk, type Fill } from "./fills.js";
 import { payoutItems, payoutView } from "./payout-view.js";
 
@@ -50,6 +50,10 @@ export const orderPreviewNext = (opening: boolean) =>
 const ORDER_APPROVAL = "pass it back with send: true; a send whose floor, start or terms differ from this preview is refused";
 
 const APPROVAL_INPUT = "the approval the preview returned; needed with send";
+
+export const AUCTION_CHANGED = "this auction differs from its preview: the create fee, the crank bounty or its terms changed, or no approval was given; preview it again and show the user";
+
+const AUCTION_APPROVAL = "pass it back with send: true; a send whose terms, create fee or crank bounty differ from this preview is refused";
 
 export function marketFloor(fills: Fill[], amount: bigint, slippageBps: number | undefined): bigint {
   const typical = medianOf(fills);
@@ -108,7 +112,7 @@ export const walletSwap = define({
             ? openingAsk(fills, amountIn, floor)
             : raw(input.start_receive, bought.decimals, "start_receive");
       const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
-      approval = termsApproval({ action: "swap", sell: inputMint, buy: outputMint, amount: amountIn, floor, ask, falls, expires_in: expiresIn, pay_to: input.pay_to ?? null });
+      approval = termsApproval({ action: "swap", sell: inputMint, buy: outputMint, amount: amountIn, floor, ask, falls, expires_in: expiresIn, pay_to: input.pay_to ?? null, ...(await createFeesOf(ctx.transport)) });
       if (ask <= floor) {
         return { order: { kind: "swap", amount_in: amountIn, min_out: floor }, expires_at: now + expiresIn + BigInt(LANDING_SECONDS), approval };
       }
@@ -195,7 +199,8 @@ export const walletRecurring = define({
     }
     const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
     const every = BigInt(input.every);
-    const approval = termsApproval({ action: "recurring", sell: inputMint, buy: outputMint, amount: amountIn, floor, ask, falls, every, times: input.times, pay_to: input.pay_to ?? null });
+    const fees = await createFeesOf(ctx.transport);
+    const approval = termsApproval({ action: "recurring", sell: inputMint, buy: outputMint, amount: amountIn, floor, ask, falls, every, times: input.times, pay_to: input.pay_to ?? null, ...fees });
     const sales = await salesOf(wallet, now);
     checkSale(wallet.limits, inputMint, inputToken.decimals, amountIn, now, sales);
     checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now, sales);
@@ -227,7 +232,7 @@ export const walletRecurring = define({
     const orders = [{ opens_at: opens[0] as bigint, intent: first["intent"], nonce: first["nonce"], signature: first["signature"] }];
     for (const open of opens.slice(1)) {
       try {
-        const made = (await offered(ctx, call, { ...input, send: true }, terms(open))) as Record<string, unknown>;
+        const made = (await offered(ctx, call, { ...input, send: true, fees, changed: ORDER_CHANGED }, terms(open))) as Record<string, unknown>;
         orders.push({ opens_at: open, intent: made["intent"], nonce: made["nonce"], signature: made["signature"] });
       } catch (error) {
         for (const undo of call.undo.splice(0)) {
@@ -261,7 +266,7 @@ export const walletRecurring = define({
 export const walletAuction = define({
   name: tool("wallet_auction"),
   title: "Auction from the wallet",
-  description: `Sells an exact amount in a falling-price (Dutch) auction you design: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until it expires. A solver fills when the ask meets what it can pay. For a simple market sell, use ${tool("wallet_swap")}. ${PREVIEW_FIRST}`,
+  description: `Sells an exact amount in a falling-price (Dutch) auction you design: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until it expires. A solver fills when the ask meets what it can pay. For a simple market sell, use ${tool("wallet_swap")}. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -275,29 +280,42 @@ export const walletAuction = define({
       integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent, never less than falls_over; default ${DEFAULT_EXPIRES_IN}`),
     ),
     pay_to: optional(account(PAY_TO)),
+    approval: optional(text(APPROVAL_INPUT)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
-  output: offerOutput,
-  run: async (ctx: AgentContext, input, call: Call) =>
-    offered(ctx, call, input, (sold, bought, now) => {
+  output: object({ ...offerFields, approval: text(AUCTION_APPROVAL) }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    let approval = "";
+    const options = { ...input, previewNext: PREVIEW_APPROVAL_NEXT, changed: AUCTION_CHANGED };
+    const result = await offered(ctx, call, options, async (sold, bought, now, inputMint, outputMint) => {
       const start = now + BigInt(LANDING_SECONDS);
+      const amountIn = raw(input.amount, sold.decimals, "amount");
       const startOut = raw(input.start_receive, bought.decimals, "start_receive");
       const endOut = raw(input.end_receive, bought.decimals, "end_receive");
       if (startOut <= endOut) {
         throw new InvalidInput([{ path: "start_receive", message: `must be more than end_receive, or the ask does not fall; for a fixed price use ${tool("wallet_swap")}` }]);
       }
+      const expiresIn = input.expires_in ?? DEFAULT_EXPIRES_IN;
+      approval = termsApproval({
+        action: "auction",
+        sell: inputMint,
+        buy: outputMint,
+        amount: amountIn,
+        start_out: startOut,
+        end_out: endOut,
+        falls_over: input.falls_over,
+        expires_in: expiresIn,
+        pay_to: input.pay_to ?? null,
+        ...(await createFeesOf(ctx.transport)),
+      });
       return {
-        order: {
-          kind: "dutch",
-          amount_in: raw(input.amount, sold.decimals, "amount"),
-          start_out: startOut,
-          end_out: endOut,
-          start_time: start,
-          end_time: start + BigInt(input.falls_over),
-        },
-        expires_at: start + BigInt(Math.max(input.expires_in ?? DEFAULT_EXPIRES_IN, input.falls_over)),
+        order: { kind: "dutch", amount_in: amountIn, start_out: startOut, end_out: endOut, start_time: start, end_time: start + BigInt(input.falls_over) },
+        expires_at: start + BigInt(Math.max(expiresIn, input.falls_over)),
+        approval,
       };
-    }, ORDER_DONE),
+    }, ORDER_DONE);
+    return { ...result, approval };
+  },
 });
 
 export const ESTIMATE_NEXT =

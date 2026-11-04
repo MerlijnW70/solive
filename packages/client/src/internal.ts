@@ -26,6 +26,7 @@ export * from "./first-opening.js";
 export * from "./funding.js";
 export * from "./held-claim.js";
 export * from "./held-shares.js";
+export * from "./reclaim-books.js";
 export * from "./release-holds.js";
 export * from "./release-plan.js";
 export * from "./release-preview.js";

@@ -64,7 +64,7 @@ describe("a worker without the claim on a job that takes claims", () => {
   const announce = async (worker: KeyPairSigner, intent: Address) => {
     useKey(worker);
     h.svm.warpToSlot(h.svm.getClock().slot + 1n);
-    return (await ok(client, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL, send: true }))["signature"] as string;
+    return (await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL, send: true })))["signature"] as string;
   };
 
   beforeEach(async () => {

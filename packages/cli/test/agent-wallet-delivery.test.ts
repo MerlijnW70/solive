@@ -9,7 +9,7 @@ import { getIntentCreatedEventEncoder, saltMessage, specMemo } from "@intent-eng
 import { loadAnnouncement } from "@intent-engine/client/internal";
 import { claimsOf } from "../src/agent/claims.js";
 import { SKIP_REASONS } from "../src/announcement-views.js";
-import { ANNOUNCE_FIRST, DELIVER_NEXT, planOf } from "../src/agent/wallet/delivery.js";
+import { ANNOUNCE_FIRST, DELIVER_NEXT, FEE_AT_LANDING, planOf } from "../src/agent/wallet/delivery.js";
 import { NO_JOB_NOW, PUBLISH_PROFILE } from "../src/agent/jobs.js";
 import { notEarliest } from "../src/agent/wallet.js";
 import { WORK_DIFFERS, WORK_OPENS } from "../src/agent/wallet/work.js";
@@ -73,7 +73,7 @@ describe("the wallet server's deliveries", () => {
     expect(preview["summary"][1]).toBe(`Seals: the salt and the url ${delivery.url} to ${judge} (the key derived from its wallet), so only they can open it`);
     expect(await loadAnnouncement(transport, preview["announcement"] as Address)).toBeNull();
     h.wires.length = 0;
-    const sent = await ok(client, "wallet_deliver", { ...delivery, send: true });
+    const sent = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { ...delivery, send: true }));
     expect(sent).toMatchObject({
       announcement: preview["announcement"],
       seq: "1",
@@ -135,7 +135,7 @@ describe("the wallet server's deliveries", () => {
     const forged = await griefed(intent, forger, wallet, [forger.address], "e7".repeat(32));
     const work = "e7".repeat(32);
     h.specPages.set(url("sealed.tar"), new TextEncoder().encode("ignored"));
-    const own = await ok(client, "wallet_deliver", { intent, sha256: work, url: url("sealed.tar"), send: true });
+    const own = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent, sha256: work, url: url("sealed.tar"), send: true }));
     expect(own).toMatchObject({ seq: "3", sent: true });
     expect(await ok(client, "wallet_check_delivery", { intent })).toMatchObject({ mine: [{ announcement: own["announcement"], seq: "3", state: "announced", earlier: 2 }] });
     const plain = await connect(["mcp", "--url", "devnet"]);
@@ -170,7 +170,7 @@ describe("the wallet server's deliveries", () => {
     const signed = Buffer.from(await signBytes(worker.keyPair.privateKey, saltMessage(intent, work))).toString("hex");
     const delivery = { ...unsigned, salt_signature: signed };
     const prepared = await ok(plain, "prepare_deliver", delivery);
-    expect(prepared).toMatchObject({ intent, attestor: judge, sha256: work, url: delivery.url, sealed_to: [judge], sync_first: false, warnings: [ANNOUNCE_FIRST] });
+    expect(prepared).toMatchObject({ intent, attestor: judge, sha256: work, url: delivery.url, sealed_to: [judge], sync_first: false, warnings: [ANNOUNCE_FIRST, FEE_AT_LANDING] });
     expect(prepared["summary"][0]).toContain(`binds it to ${worker.address} and a salt only its key derives`);
     const view = prepared["prepared"] as { transaction: string; signers: string[] };
     expect(view.signers).toEqual([worker.address]);

@@ -1,14 +1,15 @@
-import { type Address, getAddressDecoder, getAddressEncoder, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Address, getAddressDecoder, type Instruction, type TransactionPartialSigner, type TransactionSigner } from "@solana/kit";
 import { IntentStatus } from "@intent-engine/core";
-import { buildCloseDeliveryBook, decodeDeliveryBookAccount, DELIVERY_BOOK_DISCRIMINATOR, getDeliveryBookSize } from "@intent-engine/core/internal";
-import { intentAt } from "@intent-engine/client/internal";
-import type { EngineAccount, Transport } from "@intent-engine/client";
+import { buildCloseDeliveryBook, decodeDeliveryBookAccount } from "@intent-engine/core/internal";
+import { BOOK_BATCH, batched, booksPaidBy, intentAt, unmemoized } from "@intent-engine/client/internal";
+import type { Transport } from "@intent-engine/client";
+import { execute } from "../../flows.js";
 import { tool } from "../names.js";
+import { prepare } from "../prepare.js";
+import { preparedView } from "../shapes.js";
 import { sol } from "./costs.js";
 
-export const BOOK_PAYER_AT = 40;
-
-export const BOOK_BATCH = 6;
+export { BOOK_BATCH, BOOK_PAYER_AT, booksPaidBy } from "@intent-engine/client/internal";
 
 export const ANNOUNCEMENT_INTENT_AT = 8;
 
@@ -38,25 +39,32 @@ export type Books = { closing: BookClose[]; open: Address[]; kept: string[] };
 
 export const rentOf = (closing: readonly BookClose[]): bigint => closing.reduce((sum, { rent }) => sum + rent, 0n);
 
-export function bookBatches(closing: readonly BookClose[]): BookClose[][] {
-  const batches: BookClose[][] = [];
-  for (let at = 0; at < closing.length; at += BOOK_BATCH) {
-    batches.push(closing.slice(at, at + BOOK_BATCH));
-  }
-  return batches;
-}
+export const bookBatches = (closing: readonly BookClose[]): BookClose[][] => batched(closing, BOOK_BATCH);
 
-const payerIs = (data: Uint8Array, worker: Address): boolean => {
-  const bytes = getAddressEncoder().encode(worker);
-  return data.length >= BOOK_PAYER_AT + bytes.length && bytes.every((b, i) => data[BOOK_PAYER_AT + i] === b);
-};
+export type BatchesClosed<T> = { closed: T[]; unclosed: T[]; signature: string | undefined };
 
-export async function booksPaidBy(transport: Transport, worker: Address): Promise<EngineAccount[] | null> {
-  if (transport.engineAccounts === undefined) {
-    return null;
+export async function closeEach<T>(transport: Transport, signer: TransactionPartialSigner, batches: readonly (readonly T[])[], instructionOf: (item: T) => Instruction): Promise<BatchesClosed<T>> {
+  const done: BatchesClosed<T> = { closed: [], unclosed: [], signature: undefined };
+  const closeOf = async (items: readonly T[]): Promise<boolean> => {
+    try {
+      done.signature = await execute(transport, preparedView(await prepare(unmemoized(transport), items.map(instructionOf), signer.address)), signer);
+      done.closed.push(...items);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const batch of batches) {
+    if (await closeOf(batch)) {
+      continue;
+    }
+    for (const item of batch) {
+      if (batch.length === 1 || !(await closeOf([item]))) {
+        done.unclosed.push(item);
+      }
+    }
   }
-  const found = await transport.engineAccounts({ discriminator: DELIVERY_BOOK_DISCRIMINATOR, dataSize: getDeliveryBookSize(), match: [{ offset: BOOK_PAYER_AT, address: worker }] });
-  return found.filter(({ data }) => payerIs(data, worker));
+  return done;
 }
 
 export const intentsOf = (announcements: readonly ({ data: Uint8Array } | null | undefined)[]): Address[] =>
