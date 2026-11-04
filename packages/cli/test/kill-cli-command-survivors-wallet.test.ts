@@ -6,7 +6,7 @@ import { FlowRefused } from "../src/flows.js";
 import type { Launched } from "../src/launch.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { belowRent, newWallet, walletExists } from "../src/wallet-commands.js";
-import { CLI_SMALL_START, CLI_START, ENOUGH_TO_START, FUND_BELOW, holdsEnough, refusedEnough, SWAP_START } from "../src/wallet.js";
+import { CLI_SMALL_START, CLI_START, ENOUGH_TO_START, FUND_BELOW, holdsEnough, refusedEnough, startOn, SWAP_START } from "../src/wallet.js";
 import { cli, h, runtime, world, type World } from "./harness.js";
 import { NPM_REGISTRY } from "../src/npm-registry.js";
 import { DEVNET_URL } from "../src/tokens.js";
@@ -68,7 +68,7 @@ describe("setup thresholds", () => {
     airdropped(h.svm, address, lamports(FUND_BELOW));
     const held = (await run(["setup", ...keypair])).json();
     expect(held["url"]).toBe(CLUSTERS["mainnet-beta"]);
-    expect(held["next"]).toBe(holdsEnough(sol(FUND_BELOW), CLI_START));
+    expect(held["next"]).toBe(holdsEnough(sol(FUND_BELOW), startOn(CLI_START, CLUSTERS["mainnet-beta"] ?? "")));
   });
 
   it("offers the starter swap hint from the exact amount that pays for it", async () => {

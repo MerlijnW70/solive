@@ -35,7 +35,7 @@ export function workerBrief(job: BriefJob): string {
     `If you cannot finish in time, give the job back: ${CLI} claims drop ${key} --owner ${job.owner} --nonce ${job.nonce}${url} --yes`,
   ];
   return [
-    "You are a worker on a paid job on Solana devnet. This text is all you are told.",
+    "You are a worker on a paid job on a Solana test network. This text is all you are told.",
     `Job: intent ${job.intent}`,
     `Spec: spec_url ${sanitized(job.specUrl, MAX_MEMO_URL)}, spec_hash ${job.specHash}`,
     `Your wallet's key file: ${job.keypair}. Use only this key, and no other wallet.`,

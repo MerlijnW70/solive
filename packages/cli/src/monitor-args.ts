@@ -3,13 +3,13 @@ import { parseAmount } from "@intent-engine/core";
 import type { Values } from "./arg-options.js";
 import { https, parseAddress, parseBounded, parseU64, UsageError } from "./arg-values.js";
 import type { Command, Remote } from "./command-types.js";
+import { MAX_FOLLOW_INTERVAL } from "./arg-solve.js";
 import { LAMPORT_DECIMALS } from "./monitor-health.js";
 import { tokenNamed } from "./tokens.js";
 
 export const EXIT_ALERTED = 4;
 export const MONITOR_INTERVAL = 30;
 export const MIN_MONITOR_INTERVAL = 5;
-export const MAX_MONITOR_INTERVAL = 3_600;
 export const MAX_MONITOR_FILLS = 999;
 export const MAX_MONITOR_SINCE = 86_400;
 export const MAX_SWAP_WAIT = 86_400;
@@ -88,7 +88,7 @@ export function monitorOf(remote: Remote, values: Values): Command {
   if (values.since !== undefined && values.once !== true) {
     throw new UsageError(SINCE_NEEDS_ONCE);
   }
-  const interval = parseBounded(values.interval ?? String(MONITOR_INTERVAL), "interval", MAX_MONITOR_INTERVAL, MIN_MONITOR_INTERVAL);
+  const interval = parseBounded(values.interval ?? String(MONITOR_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, MIN_MONITOR_INTERVAL);
   return {
     name: "monitor",
     ...remote,

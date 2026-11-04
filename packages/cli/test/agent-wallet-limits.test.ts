@@ -102,9 +102,9 @@ describe("the wallet server's limits and reads", () => {
     expect((made["other_ways"] as string[])[2]).toContain(faucetLink(address));
     expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" })).value).toMatchObject({
       code: "WalletEmpty",
-      hint: walletEmpty(address),
+      hint: walletEmpty(address, DEVNET_URL),
     });
-    expect(walletEmpty(address)).toContain(faucetLink(address));
+    expect(walletEmpty(address, DEVNET_URL)).toContain(faucetLink(address));
   });
 
   it("reads the cluster once per server and refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name", async () => {

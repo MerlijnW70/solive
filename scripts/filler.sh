@@ -10,6 +10,11 @@ fi
 keypair="${FILLER_KEYPAIR:?set FILLER_KEYPAIR to the keypair of the test token mint authority}"
 url="${FILLER_URL:-devnet}"
 interval="${FILLER_INTERVAL:-5}"
+if [[ ! "$interval" =~ ^[0-9]{1,4}$ ]] || ((10#$interval < 1 || 10#$interval > 3600)); then
+  echo "refusing: FILLER_INTERVAL is a whole number of seconds from 1 to 3600, not \"$interval\"" >&2
+  exit 2
+fi
+interval=$((10#$interval))
 wrapped_sol=So11111111111111111111111111111111111111112
 test_token=ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88
 if ! "${cli[@]}" treasury --url "$url" --create --mints "$wrapped_sol" --keypair "$keypair" --yes; then

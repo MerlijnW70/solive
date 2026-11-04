@@ -68,7 +68,7 @@ export async function offered(
   const outputMint = mintNamed(input.buy, wallet.url, "buy");
   await ctx.transport.warm?.([signer.address, inputMint, outputMint, CLOCK_SYSVAR]);
   if (((await ctx.transport.getAccount(signer.address))?.lamports ?? 0n) === 0n) {
-    throw new AgentRefusal("WalletEmpty", walletEmpty(signer.address));
+    throw new AgentRefusal("WalletEmpty", walletEmpty(signer.address, wallet.url));
   }
   const [inputToken, outputToken, now] = await Promise.all([
     mintOf(ctx.transport, inputMint),

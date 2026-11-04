@@ -10,6 +10,7 @@ import type { JobReads } from "../job-reads.js";
 import { tokenNamed } from "../tokens.js";
 import { sanitized } from "../untrusted-text.js";
 import { type AgentContext, define, specReach, specReadOf } from "./actions.js";
+import { forCluster } from "./cluster-text.js";
 import { tool } from "./names.js";
 import { CLAIM_FIRST } from "./job-claims.js";
 import { AgentRefusal } from "./problems.js";
@@ -70,7 +71,7 @@ function mintOfName(name: string, url: string): Address {
     throw new InvalidInput([{ path: "mint", message: mint.message }]);
   }
   if (!isAddress(mint)) {
-    throw new InvalidInput([{ path: "mint", message: "name SOL, TEST or a token mint address" }]);
+    throw new InvalidInput([{ path: "mint", message: forCluster("name SOL, TEST or a token mint address", url) }]);
   }
   return mint;
 }

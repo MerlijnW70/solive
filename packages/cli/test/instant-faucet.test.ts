@@ -181,7 +181,7 @@ describe("the instant faucet in setup", () => {
       expect(made["sol"]).toBe("0");
       expect(made["next"]).toBe(airdropRefused(address, DEVNET_URL));
       expect((made["next"] as string).split(/[.!?](?:\s|$)/).filter((part) => part !== "").length).toBeLessThanOrEqual(2);
-      expect(made["other_ways"]).toEqual(otherWays(address, GH_HINT));
+      expect(made["other_ways"]).toEqual(otherWays(address, GH_HINT, DEVNET_URL));
       expect(made["next"]).not.toContain("GitHub");
     }
   });

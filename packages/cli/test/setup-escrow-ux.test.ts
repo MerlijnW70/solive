@@ -109,7 +109,7 @@ describe("setup, escrow and balance explain themselves", () => {
     expect(low).toMatchObject({ sol: "0.02", next: heldRefused("0.02", address, DEVNET_URL) });
     expect(low["next"]).toContain(`your wallet holds 0.02 SOL, less than the ${formatAmount(ENOUGH_TO_START, 9)} SOL setup counts as enough to start`);
     expect(low["next"]).not.toContain("--faucet");
-    expect(low["other_ways"]).toEqual(otherWays(address, ""));
+    expect(low["other_ways"]).toEqual(otherWays(address, "", DEVNET_URL));
     airdropped(h.svm, address, lamports(ENOUGH_TO_START - LAMPORTS_PER_SOL / 50n));
     const small = await ok(client, "wallet_setup");
     expect(small).toMatchObject({ sol: "0.06", next: refusedEnough("0.06", WALLET_SMALL_START, DEVNET_URL) });
@@ -133,7 +133,7 @@ describe("setup, escrow and balance explain themselves", () => {
     expect(holdsEnough("1", CLI_START)).toBe("your wallet holds 1 SOL, enough to start; try offering 0.05 SOL for at least 5 TEST");
     const { tools } = await client.listTools();
     const setup = tools.find((t) => t.name === "solive_wallet_setup")?.description ?? "";
-    expect(setup).toContain("asks devnet for free SOL below 0.5 SOL. Devnet may refuse; next says what the wallet holds and whether that is enough to start");
+    expect(setup).toContain("requests a free airdrop below 0.5 SOL. It may refuse; next says what the wallet holds and whether that is enough to start");
     expect(setup).not.toContain("tops it up");
   });
 

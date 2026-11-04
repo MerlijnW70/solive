@@ -24,6 +24,7 @@ import {
   findConfigPda,
   findEventAuthorityPda,
   INSTRUCTIONS_SYSVAR_ADDRESS,
+  TOKEN_PROGRAMS,
 } from "@intent-engine/core/internal";
 import { JITO_TIP_ACCOUNTS } from "./jito.js";
 import type { Plan } from "./plan.js";
@@ -142,10 +143,7 @@ export function lookupTablesOf(plan: Plan, own: readonly Address[] = []): Addres
   return [...new Set([...own, ...plan.route.lookupTables, ...(plan.arbitrage?.lookupTables ?? [])])];
 }
 
-export const TOKEN_PROGRAMS = [
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-] as Address[];
+export { TOKEN_PROGRAMS };
 
 export async function solverTableAccounts(
   solver: Address,

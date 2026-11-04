@@ -30,6 +30,8 @@ import {
   escrowCommittee,
   loadConfig,
   loadUser,
+  MAX_EXPIRES_IN as CLIENT_MAX_EXPIRES_IN,
+  MIN_EXPIRES_IN as CLIENT_MIN_EXPIRES_IN,
   mintOf,
   neverSettles,
   PAY_TO_NOT_ATTESTED,
@@ -57,8 +59,8 @@ export const SPEC_URL_PLAIN = `${PLAIN_HTTP_ON_PUBLIC}; give an https url`;
 
 export const WRAPPED = ", as wrapped SOL they unwrap themselves";
 
-export const MAX_EXPIRES_IN = 365 * 24 * 60 * 60;
-export const MIN_EXPIRES_IN = 60;
+export const MAX_EXPIRES_IN = Number(CLIENT_MAX_EXPIRES_IN);
+export const MIN_EXPIRES_IN = Number(CLIENT_MIN_EXPIRES_IN);
 
 export const SPEC_URL_NEEDS_ATTESTED = "needs an attested order with spec_hash";
 

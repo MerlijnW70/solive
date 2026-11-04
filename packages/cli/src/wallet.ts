@@ -46,7 +46,10 @@ export const explorerLink = (address: string, url: string): string | undefined =
   const cluster = url === DEVNET_URL ? "devnet" : url === CLUSTERS["testnet"] ? "testnet" : undefined;
   return cluster === undefined ? undefined : `${EXPLORER}/address/${address}?cluster=${cluster}`;
 };
-export const CLI_START = "try offering 0.05 SOL for at least 5 TEST";
+export const TEST_SWAP = "0.05 SOL for at least 5 TEST";
+export const SWAP_ELSEWHERE = "SOL for a token you name by its mint address";
+export const startOn = (text: string, url: string): string => (url === DEVNET_URL ? text : text.replaceAll(TEST_SWAP, SWAP_ELSEWHERE));
+export const CLI_START = `try offering ${TEST_SWAP}`;
 const solOf = (lamports: bigint) => formatAmount(lamports, SOL_DECIMALS);
 export const CLI_SMALL_START = `follow the first paid job guide; a 0.05 SOL swap needs ${solOf(SWAP_START)} SOL`;
 export const airdropper = (url: string): string => Object.keys(CLUSTERS).find((name) => CLUSTERS[name] === url) ?? "the node";
@@ -62,6 +65,8 @@ export const SETUP_AGAIN = "; run setup again once SOL arrives";
 export const GH_WAY = "run intent-engine setup --faucet to file a faucet request with a signed-in GitHub CLI (gh) and wait for the SOL";
 export const pasteFirst = (address: string) => `paste ${address} at ${PUBLIC_FAUCET}, which sends at once when it accepts`;
 export const pasteAt = (address: string) => `${pasteFirst(address)}, then run setup again`;
+export const publicFaucetFor = (url: string): boolean => url === DEVNET_URL || url === CLUSTERS["testnet"];
+export const refillAt = (address: string, url: string): string => (publicFaucetFor(url) ? pasteAt(address) : `send SOL to ${address}, then run setup again`);
 export const APP_WAY = (address: string) => `send devnet SOL to ${address} from any wallet app switched to devnet; it arrives at once`;
 export const WHY_EMPTY = "the instant faucet is out of SOL";
 export const WHY_LIMITED = "the instant faucet's rate limit applies to this address or network";
@@ -78,13 +83,23 @@ export const whyShort = (dripped: InstantFaucet | null, declined: boolean, url: 
   }
   return reasons.length === 0 ? undefined : reasons.join("; ");
 };
-export const otherWays = (address: string, hint: string): string[] => [
-  APP_WAY(address),
-  pasteFirst(address),
-  `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}`,
-  ...(hint === GH_HINT ? [GH_WAY] : []),
-];
-export const airdropRefused = (address: string, url: string) => `your wallet holds no SOL yet and ${whyAirdrop(url)}; ${pasteAt(address)}`;
+export const appWay = (address: string, url: string): string => {
+  const name = airdropper(url);
+  if (url === DEVNET_URL) {
+    return APP_WAY(address);
+  }
+  return `send SOL to ${address} from any wallet app ${name === "the node" ? "connected to the same node" : `switched to ${name}`}; it arrives at once`;
+};
+export const otherWays = (address: string, hint: string, url: string): string[] =>
+  url === DEVNET_URL
+    ? [
+        APP_WAY(address),
+        pasteFirst(address),
+        `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}`,
+        ...(hint === GH_HINT ? [GH_WAY] : []),
+      ]
+    : [appWay(address, url), ...(publicFaucetFor(url) ? [pasteFirst(address)] : [])];
+export const airdropRefused = (address: string, url: string) => `your wallet holds no SOL yet and ${whyAirdrop(url)}; ${refillAt(address, url)}`;
 const getSol = (address: string, url: string) => (url === DEVNET_URL ? `get devnet SOL: ${GH_HINT}${fundingSteps(address)}` : `send SOL to ${address}`);
 export const unfundedPreview = (address: string, url: string) =>
   `nothing was sent: ${address} holds no SOL, so this preview could not be simulated; ${getSol(address, url)}; then run this again with --yes`;
@@ -92,7 +107,7 @@ export const unfundedRefused = (address: string, url: string) =>
   `nothing was sent: ${address} holds no SOL to pay the network fee; ${getSol(address, url)}; then run this again`;
 export const SEND_SOL = "send SOL to this address, then run setup again";
 export const heldRefused = (sol: string, address: string, url: string) =>
-  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and ${airdropper(url)} refused to add more; ${pasteAt(address)}`;
+  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and ${airdropper(url)} refused to add more; ${refillAt(address, url)}`;
 
 export type InstantRun = { fetch: FaucetFetch | undefined; env: Env };
 
@@ -281,7 +296,7 @@ export async function setup(
   }
   const sol = solOf(held);
   const smaller = got === undefined || got === AIRDROP ? "" : smallerAirdrop(got, url);
-  const begin = held >= SWAP_START ? start : smallStart;
+  const begin = startOn(held >= SWAP_START ? start : smallStart, url);
   const lead = dripped === null ? "" : "lamports" in dripped ? instantSent(solOf(BigInt(dripped.lamports))) : INSTANT_REFUSED;
   const short = url !== CLUSTERS["mainnet-beta"] && held < ENOUGH_TO_START;
   const status =
@@ -313,7 +328,7 @@ export async function setup(
     ...(shown === null ? {} : { faucet: shown }),
     ...(why === undefined ? {} : { why }),
     next,
-    ...(short ? { other_ways: otherWays(signer.address, hint) } : {}),
+    ...(short ? { other_ways: otherWays(signer.address, hint, url) } : {}),
   };
 }
 

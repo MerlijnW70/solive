@@ -8,7 +8,7 @@ This page lists 57 tools: 31 wallet tools and 26 others. `intent-engine mcp` ser
 
 Served only with `--wallet`.
 
-Gives the user a test wallet: creates one if this server has none, keeps its key on this computer, and asks devnet for free SOL below 0.5 SOL. Devnet may refuse; next says what the wallet holds and whether that is enough to start. Safe to call again. Saves this node (RPC) as the CLI's default if none is saved.
+Gives the user a test wallet: creates one if this server has none, keeps its key on this computer, and requests a free airdrop below 0.5 SOL. It may refuse; next says what the wallet holds and whether that is enough to start. Safe to call again. Saves this node (RPC) as the CLI's default if none is saved.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 

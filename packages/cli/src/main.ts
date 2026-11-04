@@ -62,7 +62,7 @@ function partialFailure(command: Command, result: object | null): boolean {
 }
 
 export const ONE_NODE =
-  "info: releases are checked against one RPC node, which is enough on devnet; to check each release on a second node too, run intent-engine setup --confirm-url <rpc> once, or pass --confirm-url <rpc>";
+  "info: releases are checked against one RPC node; to check each release on a second node too, run intent-engine setup --confirm-url <rpc> once, or pass --confirm-url <rpc>";
 
 export const readsOneNode = (command: Command): boolean =>
   (command.name === "judge" || command.name === "committee-release" || (command.name === "mcp" && command.wallet !== null)) && command.confirmUrl === undefined;

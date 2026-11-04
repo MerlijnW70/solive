@@ -6,8 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RANDOM_INPUTS = 24;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const TIMEOUT_OVERRIDE = Number(process.env["WORD_COUNT_TIMEOUT_MS"]);
-const TIMEOUT_MS = Number.isSafeInteger(TIMEOUT_OVERRIDE) && TIMEOUT_OVERRIDE > 0 ? TIMEOUT_OVERRIDE : DEFAULT_TIMEOUT_MS;
+const TIMEOUT_TEXT = process.env["WORD_COUNT_TIMEOUT_MS"] ?? "";
+if (TIMEOUT_TEXT !== "" && !(/^[0-9]+$/.test(TIMEOUT_TEXT) && Number.isSafeInteger(Number(TIMEOUT_TEXT)) && Number(TIMEOUT_TEXT) > 0)) {
+  console.error(`WORD_COUNT_TIMEOUT_MS is a whole number of milliseconds above 0, not "${TIMEOUT_TEXT}"`);
+  process.exit(2);
+}
+const TIMEOUT_MS = TIMEOUT_TEXT === "" ? DEFAULT_TIMEOUT_MS : Number(TIMEOUT_TEXT);
 const PRINTED_BYTES = 64 * 1024;
 const RESULT_BYTES = 1 << 20;
 const SPACES = [" ", " ", " ", "\t", "\n", "\r", "\v", "\f", " ", " ", " ", " ", " ", " ", " ", " ", "　", "﻿"];

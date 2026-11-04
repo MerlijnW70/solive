@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
 import { findConfigPda, getConfigDecoder, getConfigEncoder, kindBit } from "@intent-engine/core/internal";
 import { define, invoke, OutputMismatch, toJson } from "../src/agent/actions.js";
+import { forCluster, schemaForCluster } from "../src/agent/cluster-text.js";
 import { ANNOTATIONS, annotationsOf } from "../src/agent/mcp.js";
 import { VERSION } from "../src/version.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -55,10 +56,10 @@ describe("agent server against the deployed engine", () => {
     ]);
     for (const [i, tool] of tools.entries()) {
       const action = ACTIONS[i];
-      expect(tool.inputSchema).toEqual(action?.input.json);
-      expect(tool.outputSchema).toEqual(action?.output.json);
+      expect(tool.inputSchema).toEqual(schemaForCluster(action?.input.json, "http://agent"));
+      expect(tool.outputSchema).toEqual(schemaForCluster(action?.output.json, "http://agent"));
       expect(tool.title).toBe(action?.title);
-      expect(tool.description).toBe(action?.description);
+      expect(tool.description).toBe(action === undefined ? undefined : forCluster(action.description, "http://agent"));
       expect(tool.annotations).toEqual(action === undefined ? undefined : annotationsOf(action));
     }
     expect(tools.filter((t) => t.annotations?.idempotentHint === false && t.annotations.destructiveHint === true).map((t) => t.name)).toEqual([

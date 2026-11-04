@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder, getBase58Encoder } from "@solana/kit";
-import { type Config, NotAnEngineAccount, SdkError, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { type Config, NotAnEngineAccount, SdkError } from "@intent-engine/core";
 import {
   checkAccountVersion,
   decodeConfigAccount,
@@ -15,7 +15,7 @@ import {
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isMintCapData,
   type MintCap,
-  TOKEN_2022_PROGRAM_ADDRESS,
+  TOKEN_PROGRAMS,
 } from "@intent-engine/core/internal";
 import type { IntentAccount } from "./client-types.js";
 import type { AccountView, Transport } from "./transport.js";
@@ -127,7 +127,7 @@ const MINT_DECIMALS_OFFSET = 44;
 export const MINT_FREEZE_TAG_OFFSET = 46;
 export const MINT_FREEZE_AUTHORITY_OFFSET = 50;
 export const MINT_BASE_SIZE = 82;
-export const TOKEN_PROGRAMS: Address[] = [TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS];
+export { TOKEN_PROGRAMS };
 
 export const SCALING_EXTENSIONS = [10, 25];
 export const EXTENSIONS_OFFSET = 166;

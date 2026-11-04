@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, setup, SWAP_START } from "../../wallet.js";
+import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, setup, SWAP_START, TEST_SWAP } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
@@ -16,7 +16,7 @@ import { deviceOutput, PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedK
 export const WALLET_SMALL_START = `hire with ${tool("wallet_escrow")} or earn from ${tool("find_jobs")}; a 0.05 SOL swap needs ${formatAmount(SWAP_START, SOL_DECIMALS)} SOL`;
 
 export const WALLET_START = [
-  `trade with ${tool("wallet_swap")}, such as 0.05 SOL for at least 5 TEST`,
+  `trade with ${tool("wallet_swap")}, such as ${TEST_SWAP}`,
   `hire someone with ${tool("wallet_escrow")}, which pays once the attestor approves the work`,
   `earn by taking a paid job from ${tool("find_jobs")}`,
 ].join("; ");
@@ -43,7 +43,7 @@ export const walletSetup = define({
   name: tool("wallet_setup"),
   title: "Set up the wallet",
   description:
-    `Gives the user a test wallet: creates one if this server has none, keeps its key on this computer, and asks devnet for free SOL below ${formatAmount(FUND_BELOW, SOL_DECIMALS)} SOL. Devnet may refuse; next says what the wallet holds and whether that is enough to start. Safe to call again. Saves this node (RPC) as the CLI's default if none is saved.`,
+    `Gives the user a test wallet: creates one if this server has none, keeps its key on this computer, and requests a free airdrop below ${formatAmount(FUND_BELOW, SOL_DECIMALS)} SOL. It may refuse; next says what the wallet holds and whether that is enough to start. Safe to call again. Saves this node (RPC) as the CLI's default if none is saved.`,
   effect: "submit",
   destructive: false,
   input: object({}),
@@ -56,15 +56,15 @@ export const walletSetup = define({
     sol: text("SOL the wallet holds"),
     explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")),
     hint: optional(text("a reminder, on devnet only, of where devnet SOL shows")),
-    airdrop: optional(text("SOL devnet sent; less than asked when it refused a larger airdrop")),
+    airdrop: optional(text("SOL the node's airdrop sent; less than asked when it refused a larger airdrop")),
     faucet: optional(
       object({
-        lamports: optional(text("lamports the instant faucet sent, asked before devnet")),
+        lamports: optional(text("lamports the instant faucet sent, asked before the node's airdrop")),
         signature: optional(text("the transaction that carried them")),
         refused: optional(text("untrusted, with hidden characters reduced: why the instant faucet sent nothing")),
       }),
     ),
-    why: optional(text("why the wallet holds too little SOL: the instant faucet is out of SOL, its rate limit applies, or devnet refused the airdrop")),
+    why: optional(text("why the wallet holds too little SOL: the instant faucet is out of SOL, its rate limit applies, or the node refused the airdrop")),
     next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
     other_ways: optional(list(text(), 4, "ways to get SOL, fastest first, when the wallet holds too little to start")),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),

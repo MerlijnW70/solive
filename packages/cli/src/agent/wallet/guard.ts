@@ -19,7 +19,8 @@ import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "..
 import { encryptionKeyFile } from "../../delivery-shared.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { rpcFailed } from "../../rpc-failure.js";
-import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
+import { forCluster } from "../cluster-text.js";
+import { DEVNET_URL, TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { expandHome, faucetLink, type Files, ledgerBook, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
 import { type AgentContext, askedWith } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -68,8 +69,10 @@ export const WALLET_NOTICE = [
 export const PREVIEW_FIRST = "Previews only; call with send: true after the user says yes.";
 export const PREVIEW_APPROVAL = "Previews only; after the user says yes, call with send: true and its approval.";
 
-export const walletEmpty = (address: string) =>
-  `no SOL yet; call ${tool("wallet_setup")} for free devnet SOL, or fund ${address} at ${faucetLink(address)}`;
+export const walletEmpty = (address: string, url: string) =>
+  url === DEVNET_URL
+    ? `no SOL yet; call ${tool("wallet_setup")} for free devnet SOL, or fund ${address} at ${faucetLink(address)}`
+    : `no SOL yet; call ${tool("wallet_setup")} for free SOL, or send SOL to ${address}`;
 
 export const NO_WALLET = `this server has no wallet yet; call ${tool("wallet_setup")} first`;
 export const WALLET_OFF = "this server runs without a wallet; start it with mcp --wallet to let it sign";
@@ -303,7 +306,7 @@ export function mintNamed(text: string, url: string, path: string): Address {
     throw new InvalidInput([{ path, message: mint.message }]);
   }
   if (!isAddress(mint)) {
-    throw new InvalidInput([{ path, message: "name SOL, TEST or a token mint address" }]);
+    throw new InvalidInput([{ path, message: forCluster("name SOL, TEST or a token mint address", url) }]);
   }
   return mint;
 }

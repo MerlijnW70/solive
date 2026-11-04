@@ -2,7 +2,7 @@ import { type Address, lamports } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
 import { testSignature } from "@intent-engine/client/testing";
 import { CLUSTERS } from "../src/args.js";
-import { AIRDROP, airdropRefused, airdropper, CLI_SMALL_START, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough, smallerAirdrop, whyAirdrop } from "../src/wallet.js";
+import { AIRDROP, airdropRefused, airdropper, CLI_SMALL_START, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough, smallerAirdrop, startOn, whyAirdrop } from "../src/wallet.js";
 import { DEVNET_URL } from "../src/tokens.js";
 import { cli, h, transport, world } from "./harness.js";
 import { airdropped } from "./airdrop.js";
@@ -78,7 +78,7 @@ describe("setup names the cluster that refused the airdrop", () => {
   it.each(OFF_DEVNET)("a smaller airdrop on %s names who refused the larger one, never devnet", async (flag, url, name) => {
     sending(AIRDROP / 4n);
     const made = await setupOn(flag);
-    expect(made).toMatchObject({ sol: "0.25", airdrop: "0.25", next: smallerAirdrop(AIRDROP / 4n, url) + holdsEnough("0.25", CLI_START) });
+    expect(made).toMatchObject({ sol: "0.25", airdrop: "0.25", next: smallerAirdrop(AIRDROP / 4n, url) + holdsEnough("0.25", startOn(CLI_START, url)) });
     expect(made["next"]).toMatch(new RegExp(`^${name} refused 1 SOL and sent 0\\.25 SOL; `));
     expect(made["next"]).not.toMatch(/devnet/i);
   });

@@ -16,7 +16,7 @@ export const SEND_SOL_NOT_MAINNET = "send-sol works on devnet, testnet and local
 export const walletExists = (path: string) => `${path} already exists, so it was left as it is; choose another --out`;
 
 export const newWalletNext = (path: string) =>
-  `send it devnet SOL with intent-engine send-sol --to <address> --amount <SOL>, then pass --keypair ${path} to act as this wallet; your default wallet stays the one setup saved`;
+  `send it SOL with intent-engine send-sol --to <address> --amount <SOL>, then pass --keypair ${path} to act as this wallet; your default wallet stays the one setup saved`;
 
 export const sendToSelf = (address: Address) => `--to ${address} is the sending wallet itself; nothing was sent`;
 

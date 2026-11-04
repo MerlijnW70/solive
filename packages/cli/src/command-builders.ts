@@ -1,5 +1,6 @@
 import { AUTO_PRICE_CAP } from "./compute.js";
 import { tokenNamed } from "./tokens.js";
+import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./agent/create.js";
 import type { Values } from "./arg-options.js";
 import {
   https,
@@ -51,9 +52,7 @@ export function walletKeysApart(wallet: Address | undefined, keys: { agent?: Add
 export const RELAY_DEFAULT_TTL = 24 * 60 * 60;
 export const RELAY_DEFAULT_HOURLY_LAMPORTS = 100_000_000n;
 export const AGENT_DEFAULT_HOURLY_LAMPORTS = 50_000_000n;
-export const RELAY_MAX_TTL = 365 * 24 * 60 * 60;
 const RELAY_DEFAULT_PER_HOUR = 10;
-const RELAY_MIN_TTL = 60;
 
 export function relaySpec(values: Values): RelaySpec | undefined {
   const policy = [
@@ -72,10 +71,10 @@ export function relaySpec(values: Values): RelaySpec | undefined {
   if (values["relay-fee"] === undefined) {
     throw new UsageError(RELAY_NEEDS_FEES);
   }
-  const maxTtl = parseBounded(values["relay-max-ttl"] ?? String(RELAY_DEFAULT_TTL), "relay-max-ttl", RELAY_MAX_TTL);
+  const maxTtl = parseBounded(values["relay-max-ttl"] ?? String(RELAY_DEFAULT_TTL), "relay-max-ttl", MAX_EXPIRES_IN);
   const perHour = parseBounded(values["relay-per-hour"] ?? String(RELAY_DEFAULT_PER_HOUR), "relay-per-hour", 3_600);
-  if (maxTtl < RELAY_MIN_TTL || perHour < 1) {
-    throw new UsageError(`--relay-max-ttl must be at least ${RELAY_MIN_TTL} and --relay-per-hour at least 1`);
+  if (maxTtl < MIN_EXPIRES_IN || perHour < 1) {
+    throw new UsageError(`--relay-max-ttl must be at least ${MIN_EXPIRES_IN} and --relay-per-hour at least 1`);
   }
   return {
     keypair: values.relayer,

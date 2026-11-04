@@ -25,6 +25,11 @@ if [[ -n "$multisig" && ! "$multisig" =~ ^[1-9A-HJ-NP-Za-km-z]{32,44}$ ]]; then
   echo "refusing: --multisig takes a base58 address, not $multisig" >&2
   exit 2
 fi
+price="${DEPLOY_CU_PRICE:-100000}"
+if [[ ! "$price" =~ ^[0-9]+$ ]]; then
+  echo "refusing: DEPLOY_CU_PRICE is a whole number of micro-lamports, not \"$price\"" >&2
+  exit 2
+fi
 actual="$(solana genesis-hash --url "$url")"
 if [[ -n "$want" && "$actual" != "$want" ]]; then
   echo "refusing: $url serves genesis $actual, not the $1 cluster" >&2
@@ -97,7 +102,6 @@ if [[ "$actual" == "$mainnet" ]]; then
     exit 1
   fi
 fi
-price="${DEPLOY_CU_PRICE:-100000}"
 if [[ -n "$multisig" ]]; then
   written="$(solana program write-buffer verifiable/intent_engine.so --buffer-authority "$authority" --keypair "$authority" --url "$url" --with-compute-unit-price "$price")"
   buffer="$(printf '%s\n' "$written" | sed -n 's/^Buffer: *\([1-9A-HJ-NP-Za-km-z]\{32,44\}\).*/\1/p')"

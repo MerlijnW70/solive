@@ -3,10 +3,10 @@ import type { Values } from "./arg-options.js";
 import { confirmUrlOf, encryptionKeypairOf, feePayerOf, key, memoUrlOf, noSub, parseBounded, relayPayerOf, required, saltOf, sha256Of, u64, UsageError } from "./arg-values.js";
 import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, releaseOption, runOf } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
+import { MAX_FOLLOW_INTERVAL } from "./arg-solve.js";
 import { sandboxOf } from "./sandbox.js";
 
 export const JUDGE_WATCH_INTERVAL = 30;
-export const MAX_JUDGE_INTERVAL = 3_600;
 export const WATCH_TAKES_NO_ARTIFACT = "judge --watch fetches each delivery from its url and takes no --artifact";
 
 function watchOf(values: Values): number | null {
@@ -19,7 +19,7 @@ function watchOf(values: Values): number | null {
   if (values.artifact !== undefined) {
     throw new UsageError(WATCH_TAKES_NO_ARTIFACT);
   }
-  return parseBounded(values.interval ?? String(JUDGE_WATCH_INTERVAL), "interval", MAX_JUDGE_INTERVAL, 1);
+  return parseBounded(values.interval ?? String(JUDGE_WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1);
 }
 
 export const DELIVER_ONE_OF = "deliver takes exactly one of --artifact <file or directory> and --sha256 <64 hex>";

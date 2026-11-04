@@ -3,6 +3,7 @@ import { ascii, concat, key, sized, u16le } from "./bytes.js";
 import type { ClaimSlot } from "./claims.js";
 import { IntentCoreError, InvalidInput } from "./errors.js";
 import { I64_MAX, I64_MIN } from "./kinds.js";
+import { MAX_SPLIT_RECIPIENTS } from "./bounty.js";
 import { U64_MAX } from "./math.js";
 
 export const COMMITMENT_TAG = ascii("intent-engine-dc");
@@ -17,7 +18,7 @@ export const BLOB_FIXED_LEN = BLOB_HEAD_LEN + 32 + 32 + SALT_LEN + 16;
 export const BLOB_PER_RECIPIENT_LEN = FINGERPRINT_LEN + 32;
 export const MAX_SEALED_BLOB = 624;
 export const REFUTE_WINDOW_SECS = 30n * 86_400n;
-export const MAX_SPLIT_RECIPIENTS = 8;
+export { MAX_SPLIT_RECIPIENTS };
 export const SPLIT_ENTRY_LEN = 34;
 export const COMMITMENT_PREIMAGE_LEN = 16 + 32 + 32 + SALT_LEN + 32;
 export const FINGERPRINT_PREIMAGE_LEN = 16 + 32;

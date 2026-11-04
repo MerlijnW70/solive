@@ -1,5 +1,6 @@
 import type { Address, Instruction } from "@solana/kit";
 import { InvalidInput } from "./errors.js";
+import { U64_MAX } from "./math.js";
 
 export const COMPUTE_BUDGET_ADDRESS = "ComputeBudget111111111111111111111111111111" as Address;
 export const MAX_COMPUTE_UNITS = 1_400_000;
@@ -22,7 +23,7 @@ export function headroom(consumed: bigint): number {
   return Math.min(Number(padded), MAX_COMPUTE_UNITS);
 }
 
-export const MAX_MICRO_LAMPORTS = (1n << 64n) - 1n;
+export const MAX_MICRO_LAMPORTS = U64_MAX;
 
 export function computeUnitPrice(microLamports: bigint): Instruction {
   if (microLamports < 0n || microLamports > MAX_MICRO_LAMPORTS) {

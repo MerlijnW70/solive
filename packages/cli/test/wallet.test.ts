@@ -182,7 +182,7 @@ describe("setup and balance", () => {
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address, DEVNET_URL) });
     expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
     expect(heldRefused("0.02", address, DEVNET_URL).endsWith(pasteAt(address))).toBe(true);
-    expect(otherWays(address, GH_HINT)[2]).toContain(faucetLink(address));
+    expect(otherWays(address, GH_HINT, DEVNET_URL)[2]).toContain(faucetLink(address));
     airdropped(h.svm, address, lamports(LAMPORTS_PER_SOL / 4n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START, DEVNET_URL) });
     expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);

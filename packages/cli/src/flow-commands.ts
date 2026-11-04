@@ -19,7 +19,7 @@ import { getMandate, loadMandate, prepareAgentCreate, prepareMandate, prepareRev
 import { listIntents } from "./agent/read.js";
 import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./agent/signed.js";
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
-import { RELAY_MAX_TTL } from "./command-builders.js";
+import { MAX_EXPIRES_IN } from "./agent/create.js";
 import { unfundedPreview, unfundedRefused } from "./wallet.js";
 
 const SIGNED_FILE_VERSION = 1;
@@ -27,7 +27,7 @@ const SIGNED_FILE_VERSION = 1;
 function relayAnything(signer: TransactionSigner, mint: Address) {
   return relayOf(signer, {
     maxLamports: U64_MAX,
-    maxTtl: BigInt(RELAY_MAX_TTL),
+    maxTtl: BigInt(MAX_EXPIRES_IN),
     perHour: Number.MAX_SAFE_INTEGER,
     hourlyLamports: U64_MAX,
     fees: new Map([[mint, 0n]]),

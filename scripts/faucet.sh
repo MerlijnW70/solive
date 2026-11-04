@@ -3,6 +3,10 @@ set -euo pipefail
 keypair="${FAUCET_KEYPAIR:?}"
 url="${FAUCET_URL:-devnet}"
 now="${FAUCET_NOW:-$(date -u +%s)}"
+if [[ ! "$now" =~ ^[0-9]+$ ]]; then
+  echo "refusing: FAUCET_NOW is a whole number of seconds since 1970, not \"$now\"" >&2
+  exit 2
+fi
 amount_sol=0.5
 amount=500000000
 funded=1000000000

@@ -18,10 +18,10 @@ import {
   SimulationFailed,
   simulationProblem,
   TOKEN_PROBLEMS,
-  TOKEN_PROGRAMS,
   unreachableHint,
   untrusted,
 } from "../src/agent/problems.js";
+import { TOKEN_PROGRAMS } from "@intent-engine/client/internal";
 import { InvalidInput } from "../src/agent/schema.js";
 import { CUT_MARK } from "../src/untrusted-text.js";
 import { invoke } from "../src/agent/actions.js";

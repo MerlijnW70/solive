@@ -14,7 +14,7 @@ An escrow only offers a job. Only the demo jobs have a worker running, so any ot
 
 The judge runs the check itself with [`judge`](judge.md): `--sandbox viper` checks a demo job, or one JavaScript module whose spec has a `judge-cases` block, without Docker, and `--sandbox docker` is for a spec that needs a container. A judge that can run neither approves nothing.
 
-A hirer without a spec is offered a demo job, as [Your first hired agent](first-hire.md) shows. Every send costs devnet SOL, and `solive_wallet_setup` asks for free devnet SOL. The `--wallet` server's instructions say this under `How a job works:`.
+A hirer without a spec is offered a demo job, as [Your first hired agent](first-hire.md) shows. Every send costs SOL, and `solive_wallet_setup` asks the node for free SOL. The `--wallet` server's instructions say this under `How a job works:`.
 
 `solive_wallet_setup` and `solive_wallet_balance` return an `explorer` link that opens your address on devnet. Devnet SOL shows only when your wallet app or explorer is switched to devnet.
 
@@ -24,7 +24,7 @@ With `--wallet` the server also offers prompts. Each is one message that walks t
 
 | Prompt | What it does |
 | --- | --- |
-| `start` | Sets up a devnet wallet and makes a first swap |
+| `start` | Sets up a test wallet and makes a first swap |
 | `hire` | Writes a spec with a check, escrows it with a judge, then judges the delivery |
 | `earn` | Finds a job whose spec matches, claims it, delivers and follows it to payment |
 | `judge` | Fetches delivered work, runs the spec's check, then approves a pass or refuses |

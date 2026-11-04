@@ -1,4 +1,5 @@
 import { type Address, type Base64EncodedWireTransaction, getBase64Encoder, getTransactionDecoder, type Instruction } from "@solana/kit";
+import { TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { ASSOCIATED_TOKEN_PROGRAM } from "./jupiter.js";
 import { CONSERVATIVE_RENT, type Rent, rentExemptAt } from "./rent.js";
 
@@ -14,7 +15,7 @@ export const TOKEN_ACCOUNT_SPACE = 165;
 
 export const TOKEN_2022_ACCOUNT_SPACE = 170;
 
-export const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" as Address;
+export const TOKEN_2022_PROGRAM: Address = TOKEN_2022_PROGRAM_ADDRESS;
 
 const ATA_ADDRESS = 1;
 const ATA_MINT = 3;

@@ -88,7 +88,7 @@ describe("why a new wallet holds too little SOL", () => {
     const made = (await cli(["setup"], {})).json();
     const address = made["address"] as string;
     const ways = made["other_ways"] as string[];
-    expect(ways).toEqual(otherWays(address, GH_HINT));
+    expect(ways).toEqual(otherWays(address, GH_HINT, DEVNET_URL));
     expect(ways[0]).toBe(APP_WAY(address));
     expect(ways[0]).toContain(address);
     expect(ways[0]).toContain("wallet app switched to devnet");

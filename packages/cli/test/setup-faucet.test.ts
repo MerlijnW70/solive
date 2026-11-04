@@ -150,7 +150,7 @@ describe("setup when devnet refuses", () => {
     expect(made.launched).toEqual([]);
     expect(made.json()).toMatchObject({ sol: "0", next: airdropRefused(address, DEVNET_URL) });
     expect(made.json()["airdrop"]).toBeUndefined();
-    expect(made.json()["other_ways"]).toEqual(otherWays(address, GH_HINT));
+    expect(made.json()["other_ways"]).toEqual(otherWays(address, GH_HINT, DEVNET_URL));
     expect(made.json()["other_ways"]).toContain(GH_WAY);
     expect((made.json()["other_ways"] as string[])[2]).toContain("in a browser, as a public GitHub issue that needs a GitHub account");
     expect(made.json()["next"]).toContain(PUBLIC_FAUCET);
@@ -163,7 +163,7 @@ describe("setup when devnet refuses", () => {
     const made = await run(["setup", "--url", "localnet"]);
     expect(made.json()).toMatchObject({ next: airdropRefused(made.json()["address"] as string, CLUSTERS["localnet"] ?? "") });
     expect(made.json()["next"]).not.toContain("--faucet");
-    expect(made.json()["other_ways"]).toEqual(otherWays(made.json()["address"] as string, ""));
+    expect(made.json()["other_ways"]).toEqual(otherWays(made.json()["address"] as string, "", CLUSTERS["localnet"] ?? ""));
     expect(made.json()["other_ways"]).not.toContain(GH_WAY);
   });
 
@@ -249,7 +249,7 @@ describe("setup --faucet", () => {
     expect(h.sleeps).toEqual([]);
     expect(ran.notes).toBe("");
     expect(ran.json()).toMatchObject({ sol: "0", next: airdropRefused(address, DEVNET_URL) });
-    expect(ran.json()["other_ways"]).toEqual(otherWays(address, GH_MISSING));
+    expect(ran.json()["other_ways"]).toEqual(otherWays(address, GH_MISSING, DEVNET_URL));
     expect((ran.json()["other_ways"] as string[])[2]).toContain("open " + faucetLink(address) + " to file a faucet request in a browser");
     expect(ran.json()["faucet_request"]).toBeUndefined();
   });
