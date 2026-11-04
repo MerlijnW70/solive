@@ -5,7 +5,8 @@ import { type Address, getBase58Decoder, type Signature, SOLANA_ERROR__RPC__TRAN
 import { getTransferSolInstruction } from "@solana-program/system";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
-import { type ClientEventName, type ClientHooks, createClient, type HookFailure } from "../src/index.js";
+import { type ClientEventName, type ClientHooks, createClient, type HookFailure, type Transport } from "../src/index.js";
+import { BlockhashExpired } from "../src/send-errors.js";
 import { type RpcLike, rpcTransport } from "../src/internal.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 import { OBSERVE_SECTION } from "./doc-sections.js";
@@ -24,6 +25,7 @@ const CLAIMS = {
   pairs: "`request` and `response` fire for every RPC call with its `method`, an `id` the pair shares and the `attempt`; `response` adds the `ms` it took and, when it failed, the `error`.",
   retry: "`retry` fires each time the client retries a rate-limited or lagging call, with the `method`, the `attempt`, the `delay` and the `reason`.",
   send: "`send` fires when a transaction leaves the client, with its `signature`, `payer`, `instructions` count and `lastValidBlockHeight`; `confirm` fires when it confirms, fails or expires, with the `outcome`, the `slot` when known and the `ms` since `send`.",
+  copied: "On a transport `createClient` did not build, a copy or wrapper of one, `send` fires only after the send settles and `confirm` follows at once, `lastValidBlockHeight` is `null`, and a send whose error carries no signature, such as `BlockhashExpired`, fires neither.",
   fetch: "`fetch` fires for every spec url the client fetches, with the url, the `status` and the `ms`.",
   throws: "A hook that throws or rejects changes nothing the client does; `hooks.error` receives each such error.",
   urls: "A url in a hook or log line shows only its scheme, host and port, and no event holds a key, a secret, a salt signature or a decrypted url.",
@@ -100,6 +102,37 @@ describe("the Observe section of the client page", () => {
     const [sent, confirmed] = seen.filter(({ kind }) => kind === "send" || kind === "confirm");
     expect(sent).toMatchObject({ kind: "send", event: { signature, payer: expect.any(String), instructions: 2, lastValidBlockHeight: expect.any(BigInt) } });
     expect(confirmed).toMatchObject({ kind: "confirm", event: { signature, outcome: "confirmed", slot: expect.any(BigInt), ms: expect.any(Number) } });
+  });
+
+  it(CLAIMS.copied, async () => {
+    const world = await createTestWorld();
+    const [payer, to] = [await world.wallet(), await world.wallet()];
+    const ix = getTransferSolInstruction({ source: payer, destination: to.address, amount: 1_000_000n });
+    const { seen, hooks } = recorder();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const copy: Transport = {
+      ...world.transport,
+      send: async (instructions, signer) => {
+        const signature = await world.transport.send(instructions, signer);
+        await held;
+        return signature;
+      },
+    };
+    const pending = createClient({ url: NODE, transport: copy, hooks }).send([ix], payer);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(seen.filter(({ kind }) => kind === "send" || kind === "confirm")).toEqual([]);
+    release();
+    const signature = await pending;
+    const [sent, confirmed] = seen.filter(({ kind }) => kind === "send" || kind === "confirm");
+    expect(sent).toMatchObject({ kind: "send", event: { signature, lastValidBlockHeight: null } });
+    expect(confirmed).toMatchObject({ kind: "confirm", event: { signature, outcome: "confirmed" } });
+    const unsigned = recorder();
+    const expired: Transport = { ...world.transport, send: async () => Promise.reject(new BlockhashExpired("gone")) };
+    await expect(createClient({ url: NODE, transport: expired, hooks: unsigned.hooks }).send([ix], payer)).rejects.toBeInstanceOf(BlockhashExpired);
+    expect(unsigned.seen.filter(({ kind }) => kind === "send" || kind === "confirm")).toEqual([]);
   });
 
   it(CLAIMS.fetch, async () => {

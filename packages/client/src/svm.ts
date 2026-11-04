@@ -28,6 +28,7 @@ import { intentMatches, matchBytes } from "./intent-filters.js";
 import { joined, type Observer, QUIET } from "./observe.js";
 import { delivering, memberRequests, observable, transactionSend } from "./observe-transport.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, type Failure, failure } from "./send-errors.js";
+import { shown } from "./shown.js";
 import { askedSignature } from "./signatures.js";
 import { ALREADY_PROCESSED, BLOCKHASH_NOT_FOUND, errOf, fieldlessOf } from "./svm-errors.js";
 import {
@@ -279,11 +280,23 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
           svm.withSigverify(verifying);
         }
         const meta = result.meta();
+        const post = result instanceof FailedTransactionMetadata ? [] : result.postAccounts();
+        const watched = (address: Address): Uint8Array | null => {
+          if (result instanceof FailedTransactionMetadata) {
+            return null;
+          }
+          const after = post.find((account) => account.address === address);
+          if (after !== undefined) {
+            return new Uint8Array(after.data);
+          }
+          const held = svm.getAccount(address);
+          return held.exists ? new Uint8Array(held.data) : null;
+        };
         return {
-          err: result instanceof FailedTransactionMetadata ? String(result.err()) : null,
-          logs: meta.logs(),
+          err: result instanceof FailedTransactionMetadata ? shown(errOf(result)) : null,
+          logs: [...meta.logs()],
           unitsConsumed: meta.computeUnitsConsumed(),
-          accounts: watch.map(() => null),
+          accounts: watch.map(watched),
         };
       },
       genesisHash: async () => options.genesisHash ?? SVM_GENESIS_HASH,

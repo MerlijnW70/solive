@@ -242,6 +242,7 @@ class WrongReplyLength: class WrongReplyLength extends SdkError { readonly code 
 function cidOfSpecHash: function cidOfSpecHash(hex: string): string;
 function connect: function connect<S extends TransactionSigner>(options: ConnectOptions<S>): Promise<SimpleClient<S>>;
 function createClient: function createClient(options: ClientOptions): Client;
+const defaultSpecSources: const defaultSpecSources: () => readonly SpecSource[];
 function escrowTermsIn: function escrowTermsIn(transaction: EngineTransaction, intent: Address): EscrowTerms | null;
 function isSdkError: function isSdkError(error: unknown): error is AnySdkError;
 function isSdkError: function isSdkError<C extends SdkErrorCode>(error: unknown, code: C): error is SdkErrors[C];

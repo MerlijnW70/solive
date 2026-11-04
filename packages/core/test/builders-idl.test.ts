@@ -131,6 +131,45 @@ describe("IDL argument sizing", () => {
     expect(
       ix([{ name: "a", type: self }], [{ name: "S", type: { kind: "type", alias: { array: [self, 1] } } }]),
     ).toEqual(unsizable);
-    expect(ix([{ name: "a", type: { option: "u8" } }], undefined)).toEqual(unsizable);
+  });
+
+  describe("string and option arguments", () => {
+    const sized = (args: IdlLike["instructions"][number]["args"], body: number[]) => {
+      const local: IdlLike = {
+        address: INTENT_ENGINE_PROGRAM_ADDRESS,
+        instructions: [{ name: "probe", discriminator: [7], accounts: [], args }],
+      };
+      return validateIxAgainstIdl({ programAddress: INTENT_ENGINE_PROGRAM_ADDRESS, accounts: [], data: new Uint8Array([7, ...body]) } as Instruction, local);
+    };
+    const args = [
+      { name: "label", type: "string" as const },
+      { name: "cap", type: { option: "u64" as const } },
+      { name: "after", type: "u8" as const },
+    ];
+    const text = [2, 0, 0, 0, 104, 105];
+
+    it("sizes a string and an option that is absent or present", () => {
+      expect(sized(args, [...text, 0, 9])).toEqual([]);
+      expect(sized(args, [...text, 1, 1, 0, 0, 0, 0, 0, 0, 0, 9])).toEqual([]);
+      expect(sized([{ name: "label", type: "string" }], [0, 0, 0, 0])).toEqual([]);
+      expect(sized([{ name: "m", type: { option: { vec: "string" } } }], [1, 1, 0, 0, 0, 1, 0, 0, 0, 120])).toEqual([]);
+    });
+
+    it("refuses a truncated string or option", () => {
+      expect(sized(args, [...text, 1, 1, 0, 0, 0, 9])).toEqual(["probe: data is 13 bytes, expected 17"]);
+      expect(sized(args, [...text.slice(0, 5)])).toEqual(["probe: data is 6 bytes, expected 9"]);
+      expect(sized(args, [...text])).toEqual(["probe: data is 7 bytes, expected 9"]);
+      expect(sized(args, [...text, 0])).toEqual(["probe: data is 8 bytes, expected 9"]);
+      expect(sized(args, [255, 255, 255, 255])).toEqual(["probe: data is 5 bytes, expected 4294967302"]);
+    });
+
+    it("refuses an option tag other than 0 and 1, and a string that is not UTF-8", () => {
+      expect(sized(args, [...text, 2, 9])).toEqual(unsizable);
+      expect(sized(args, [2, 0, 0, 0, 255, 254, 0, 9])).toEqual(unsizable);
+    });
+
+    it("refuses surplus bytes after the last argument", () => {
+      expect(sized(args, [...text, 0, 9, 9])).toEqual(["probe: data is 10 bytes, expected 9"]);
+    });
   });
 });

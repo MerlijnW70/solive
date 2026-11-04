@@ -45,15 +45,25 @@ const PRIMITIVE: Record<string, number> = {
 
 const MAX_TYPE_DEPTH = 32;
 
+const utf8 = (bytes: Uint8Array): boolean => {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 function walk(type: IdlType, data: Bytes, at: number, idl: IdlLike, depth = 0): number | undefined {
   if (depth > MAX_TYPE_DEPTH) {
     return undefined;
   }
-  if (type === "bytes") {
+  if (type === "bytes" || type === "string") {
     if (at + 4 > data.length) {
       return at + 4;
     }
-    return at + 4 + new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(at, true);
+    const end = at + 4 + new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(at, true);
+    return type === "string" && end <= data.length && !utf8(Uint8Array.from(data.subarray(at + 4, end))) ? undefined : end;
   }
   if (typeof type === "string") {
     const size = PRIMITIVE[type];
@@ -65,6 +75,16 @@ function walk(type: IdlType, data: Bytes, at: number, idl: IdlLike, depth = 0): 
       end = walk(type.array[0], data, end, idl, depth + 1);
     }
     return end;
+  }
+  if ("option" in type) {
+    if (at + 1 > data.length) {
+      return at + 1;
+    }
+    const tag = data[at];
+    if (tag === 0) {
+      return at + 1;
+    }
+    return tag === 1 ? walk(type.option, data, at + 1, idl, depth + 1) : undefined;
   }
   if ("vec" in type) {
     if (at + 4 > data.length) {

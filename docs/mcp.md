@@ -75,7 +75,7 @@ The server without a wallet holds no keys, so it has `solive_prepare_deliver` in
 
 `solive_get_spec` reads a job's spec from the url its hirer published. When that url is missing, fails or serves other bytes, it asks the mirror, IPFS gateways and Arweave for the spec by the escrow's `spec_hash`, and keeps their bytes only when their sha256 equals it. `source` says which served it: `memo`, `mirror`, `ipfs`, `arweave` or `cache`, a copy this server verified before.
 
-`solive_find_jobs` lists a job whose spec any of them serves, and its `spec_url` stays the hirer's url or `null`. A job is known as sealed only from its url: when that url is gone, its spec is read by hash like any other job's. The server uses the SDK's `DEFAULT_SPEC_SOURCES`, as [the full client](sdk-client.md#find-work-and-deliver-it) describes.
+`solive_find_jobs` lists a job whose spec any of them serves, and its `spec_url` stays the hirer's url or `null`. A job is known as sealed only from its url: when that url is gone, its spec is read by hash like any other job's. The server uses the SDK's `defaultSpecSources()`, as [the full client](sdk-client.md#find-work-and-deliver-it) describes.
 
 ## Where a spec is uploaded
 

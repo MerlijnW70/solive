@@ -5,6 +5,7 @@ import {
   getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
+  type Signature,
   type Transaction,
 } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
@@ -78,11 +79,50 @@ export function memberRequests(transport: Transport, observer: Observer): Transp
   return { ...members, ...Object.fromEntries(wrapped) } as Transport;
 }
 
+const signatureOfFailure = (error: unknown): Signature | undefined => {
+  const signature = (error as { signature?: unknown } | null)?.signature;
+  return typeof signature === "string" ? (signature as Signature) : undefined;
+};
+
+function deliveries(members: Transport, observer: Observer): Transport {
+  return {
+    ...members,
+    send: async (instructions, payer) => {
+      const started = performance.now();
+      const report = (signature: Signature, outcome: ConfirmOutcome) => {
+        observer.send({ signature, payer: payer.address, instructions: instructions.length, lastValidBlockHeight: null });
+        observer.confirm({ signature, outcome, ms: elapsedSince(started) });
+      };
+      try {
+        const signature = await members.send(instructions, payer);
+        report(signature, "confirmed");
+        return signature;
+      } catch (error) {
+        const signature = signatureOfFailure(error);
+        if (signature !== undefined) {
+          report(signature, outcomeOf(error));
+        }
+        throw error;
+      }
+    },
+    sendWire: async (wire, latest) =>
+      (await delivering(observer, wireSend(wire, latest.lastValidBlockHeight), async () => ({ signature: await members.sendWire(wire, latest) }))).signature,
+    submitWire: async (wire) => {
+      observer.send(wireSend(wire, null));
+      return members.submitWire(wire);
+    },
+  };
+}
+
 export function observedTransport(transport: Transport, observer: Observer): Transport {
   if (observer.quiet) {
     return transport;
   }
-  return OBSERVABLE.get(transport)?.(observer) ?? memberRequests(transport, observer);
+  const registered = OBSERVABLE.get(transport);
+  if (registered !== undefined) {
+    return registered(observer);
+  }
+  return deliveries(memberRequests(transport, observer), observer);
 }
 
 export type Fetcher<I> = (url: string, init: I) => Promise<Response>;

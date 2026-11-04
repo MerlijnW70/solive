@@ -157,11 +157,14 @@ export async function createTestWorld(options: TestWorldOptions = {}): Promise<T
   clock.unixTimestamp = options.start ?? BigInt(Math.floor(Date.now() / 1000));
   svm.setClock(clock);
   const transport = svmTransport(svm, { genesisHash: getBase58Decoder().decode(domain), offline: true });
+  const fund = async (address: Address, amount: bigint): Promise<void> => {
+    await transport.airdrop(address, amount);
+  };
   const wallet = async (sol: string | number = TEST_WALLET_SOL): Promise<TestWallet> => {
     const made = await testWallet();
     const amount = parseAmount(String(sol), TEST_MINT_DECIMALS);
     if (amount > 0n) {
-      svm.airdrop(made.address, lamports(amount));
+      await fund(made.address, amount);
     }
     return made;
   };
@@ -210,7 +213,7 @@ export async function createTestWorld(options: TestWorldOptions = {}): Promise<T
     }
     await transport.send([create], admin);
     if (amount > 0n) {
-      svm.airdrop(account, lamports(amount));
+      await fund(account, amount);
       await transport.send([getSyncNativeInstruction({ account })], admin);
     }
     return account;
