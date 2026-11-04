@@ -61,7 +61,7 @@ describe("agent schemas", () => {
     ]);
     for (const bad of [5, "05", "-1", "1.5", "", "123456789012345678901", " 1"]) {
       expect(issues(() => amount().read(bad, "a")), String(bad)).toEqual([
-        { path: "a", message: "must be a whole number of raw token units written as a decimal string" },
+        { path: "a", message: "must be a whole number written as a decimal string" },
       ]);
     }
   });
@@ -192,10 +192,10 @@ describe("agent schemas", () => {
     expect([strict.version, strict.vendor]).toEqual([1, "intent-engine"]);
     expect(strict.validate({ a: "2" })).toEqual({ value: { a: 2n } });
     expect(strict.validate({ a: "x" })).toEqual({
-      issues: [{ message: "must be a whole number of raw token units written as a decimal string", path: ["a"] }],
+      issues: [{ message: "must be a whole number written as a decimal string", path: ["a"] }],
     });
     expect(checked(amount())["~standard"].validate(1)).toEqual({
-      issues: [{ message: "must be a whole number of raw token units written as a decimal string" }],
+      issues: [{ message: "must be a whole number written as a decimal string" }],
     });
     expect(strict.jsonSchema.input({})).toBe(s.json);
     expect(strict.jsonSchema.output({})).toBe(s.json);

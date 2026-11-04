@@ -2,7 +2,7 @@ import { type Address, lamports } from "@solana/kit";
 import type { Client } from "@modelcontextprotocol/client";
 import { expect } from "vitest";
 import { type Problem, refusalText } from "../src/agent/problems.js";
-import { REFUSAL_FIELDS, sourceOf } from "../src/agent/untrusted-fields.js";
+import { REFUSAL_FIELDS, sourceOf } from "./untrusted-map.js";
 import { findProfilePda, getProfileEncoder, getProfileSize, INTENT_ENGINE_PROGRAM_ADDRESS, PROFILE_VERSION } from "@intent-engine/core/internal";
 import { hasHidden } from "../src/untrusted-text.js";
 import { h, NOW } from "./harness.js";

@@ -332,7 +332,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Tells a job's judge the work is done: one on-chain announcement that commits to the work's sha256 with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. Previews only; call with send: true after the user says yes.
+Tells a job's judge the work is done: an on-chain announcement of the work's sha256, its url sealed to the judge. This wallet pays rent, fee and any announce fee; the escrow's tokens do not move. Host it where nobody can guess and announce right after hosting. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -424,6 +424,8 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `announcement` | address | no | the paid announcement holding the share, from the listing |
 | `index` | integer 0..7 | no | this wallet's place in the split, when one announcement holds more than one share for it |
 | `to` | address | no | a token account this wallet owns for the escrow's token; default its canonical account, if that can take the payout now |
+| `announcements` | integer 1..512 | no | paid announcements holding shares to read, this wallet's own first; default 64; raise it when complete is false |
+| `reads` | integer 1..128 | no | history reads per announcement to find its release; default 16; raise it when complete is false |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends the claim; leave out to preview |
 
@@ -582,8 +584,8 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | `order[kind=limit].make_amount` | whole number as a decimal string | yes | raw units of the input token offered; a fill always takes all of it at once |
 | `order[kind=limit].take_amount` | whole number as a decimal string | yes | least raw units of the output token wanted for the whole make_amount |
 | `order[kind=dutch].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
-| `order[kind=dutch].start_out` | whole number as a decimal string | yes | output wanted at start_time; the requirement falls linearly from here |
-| `order[kind=dutch].end_out` | whole number as a decimal string | yes | output wanted from end_time on |
+| `order[kind=dutch].start_out` | whole number as a decimal string | yes | raw units of the output token wanted at start_time; the requirement falls linearly from here |
+| `order[kind=dutch].end_out` | whole number as a decimal string | yes | raw units of the output token wanted from end_time on |
 | `order[kind=dutch].start_time` | unix seconds as a decimal string | yes | unix seconds when the price starts falling |
 | `order[kind=dutch].end_time` | unix seconds as a decimal string | yes | unix seconds when the price stops falling; at or before the expiry |
 | `order[kind=attested].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
@@ -665,7 +667,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_prepare_deliver
 
-Build the transaction in which a worker announces work to a proof escrow, such as one found with solive_find_jobs: one announcement that commits to the work's sha256 and seals the url to the judge. It moves no tokens; the worker pays its rent and fee. Returns an unsigned transaction that already simulated; the worker's wallet signs and sends it. A release pays the first announcement that opens to the work, so host it where nobody can guess, give its exact sha256 and send promptly.
+Build the transaction in which a worker announces work to a proof escrow, such as one found with solive_find_jobs: one announcement that commits to the work's sha256 and seals the url to the judge. The worker pays rent, fee and any announce fee; the escrow's tokens do not move. Returns an unsigned transaction that already simulated; the worker's wallet signs and sends it. A release pays the first announcement that opens to the work, so host it where nobody can guess, give its exact sha256 and send promptly.
 
 Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
@@ -766,8 +768,8 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | `order[kind=limit].make_amount` | whole number as a decimal string | yes | raw units of the input token offered; a fill always takes all of it at once |
 | `order[kind=limit].take_amount` | whole number as a decimal string | yes | least raw units of the output token wanted for the whole make_amount |
 | `order[kind=dutch].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
-| `order[kind=dutch].start_out` | whole number as a decimal string | yes | output wanted at start_time; the requirement falls linearly from here |
-| `order[kind=dutch].end_out` | whole number as a decimal string | yes | output wanted from end_time on |
+| `order[kind=dutch].start_out` | whole number as a decimal string | yes | raw units of the output token wanted at start_time; the requirement falls linearly from here |
+| `order[kind=dutch].end_out` | whole number as a decimal string | yes | raw units of the output token wanted from end_time on |
 | `order[kind=dutch].start_time` | unix seconds as a decimal string | yes | unix seconds when the price starts falling |
 | `order[kind=dutch].end_time` | unix seconds as a decimal string | yes | unix seconds when the price stops falling; at or before the expiry |
 | `order[kind=attested].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
@@ -803,8 +805,8 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `order[kind=limit].make_amount` | whole number as a decimal string | yes | raw units of the input token offered; a fill always takes all of it at once |
 | `order[kind=limit].take_amount` | whole number as a decimal string | yes | least raw units of the output token wanted for the whole make_amount |
 | `order[kind=dutch].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
-| `order[kind=dutch].start_out` | whole number as a decimal string | yes | output wanted at start_time; the requirement falls linearly from here |
-| `order[kind=dutch].end_out` | whole number as a decimal string | yes | output wanted from end_time on |
+| `order[kind=dutch].start_out` | whole number as a decimal string | yes | raw units of the output token wanted at start_time; the requirement falls linearly from here |
+| `order[kind=dutch].end_out` | whole number as a decimal string | yes | raw units of the output token wanted from end_time on |
 | `order[kind=dutch].start_time` | unix seconds as a decimal string | yes | unix seconds when the price starts falling |
 | `order[kind=dutch].end_time` | unix seconds as a decimal string | yes | unix seconds when the price stops falling; at or before the expiry |
 | `order[kind=attested].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
@@ -826,7 +828,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_submit_signed_intent
 
-Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message; solive_preview_signed_intent checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create; that url is not part of the owner's signature, so solive_find_jobs does not list it. Calling again after success returns the same intent without sending anything.
+Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message. It sends at once, with no preview; solive_preview_signed_intent checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create; that url is not part of the owner's signature, so solive_find_jobs does not list it. Calling again after success returns the same intent without sending anything.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -841,8 +843,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `order[kind=limit].make_amount` | whole number as a decimal string | yes | raw units of the input token offered; a fill always takes all of it at once |
 | `order[kind=limit].take_amount` | whole number as a decimal string | yes | least raw units of the output token wanted for the whole make_amount |
 | `order[kind=dutch].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
-| `order[kind=dutch].start_out` | whole number as a decimal string | yes | output wanted at start_time; the requirement falls linearly from here |
-| `order[kind=dutch].end_out` | whole number as a decimal string | yes | output wanted from end_time on |
+| `order[kind=dutch].start_out` | whole number as a decimal string | yes | raw units of the output token wanted at start_time; the requirement falls linearly from here |
+| `order[kind=dutch].end_out` | whole number as a decimal string | yes | raw units of the output token wanted from end_time on |
 | `order[kind=dutch].start_time` | unix seconds as a decimal string | yes | unix seconds when the price starts falling |
 | `order[kind=dutch].end_time` | unix seconds as a decimal string | yes | unix seconds when the price stops falling; at or before the expiry |
 | `order[kind=attested].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
@@ -880,7 +882,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | `max_intents` | integer 1..1000000 | yes | most intents the agent may create |
 | `max_ttl` | integer 60..31536000 | yes | longest an intent may stay open, in seconds |
 | `valid_for` | integer 60..31536000 | yes | seconds from now until the mandate ends |
-| `floor` | object | yes | the worst price in raw units: every intent must ask at least out raw output units for every in raw input units it draws, fee included; one whole token is 10^decimals raw units, and get_balances gives the decimals |
+| `floor` | object | yes | the worst price in raw units: every intent must ask at least out raw output units for every in raw input units it draws, fee included; one whole token is 10^decimals raw units |
 | `floor.out` | whole number as a decimal string | yes | raw output units |
 | `floor.in` | whole number as a decimal string | yes | raw input units |
 | `id` | whole number as a decimal string | no | leave out to use the next free id |
@@ -903,7 +905,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_prepare_revoke_mandate
 
-Build the transaction that revokes one mandate, returns its rent to the owner and lowers the engine's spending allowance by the unused budget. From then on no solver can fill any intent opened under it. Separate transactions in cancels each cancel one of up to 6 of those intents that are still open, refunding their escrow; send them after prepared, in any order. An intent whose refund would fail, because the owner's token account for it is missing or frozen, is listed in skipped instead, so the revocation never depends on a cancel. still_open counts the ones left, skipped included, which list_intents finds and prepare_cancel cancels. Intents the owner made outside this mandate stay open and are counted in other_open. To revoke every mandate and pending signature together, the owner advances their signing epoch instead.
+Build the transaction that revokes one mandate, returns its rent to the owner and lowers the engine's spending allowance by the unused budget. From then on no solver can fill any intent opened under it. Separate transactions in cancels each cancel one of up to 6 of those intents that are still open, refunding their escrow; send them after prepared, in any order. An intent whose refund would fail, because the owner's token account for it is missing or frozen, is listed in skipped instead, so the revocation never depends on a cancel. still_open counts the ones left, skipped included; each keeps its escrow until the owner cancels it. Intents the owner made outside this mandate stay open and are counted in other_open. To revoke every mandate and pending signature together, the owner advances their signing epoch instead.
 
 Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
@@ -930,8 +932,8 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | `order[kind=limit].make_amount` | whole number as a decimal string | yes | raw units of the input token offered; a fill always takes all of it at once |
 | `order[kind=limit].take_amount` | whole number as a decimal string | yes | least raw units of the output token wanted for the whole make_amount |
 | `order[kind=dutch].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
-| `order[kind=dutch].start_out` | whole number as a decimal string | yes | output wanted at start_time; the requirement falls linearly from here |
-| `order[kind=dutch].end_out` | whole number as a decimal string | yes | output wanted from end_time on |
+| `order[kind=dutch].start_out` | whole number as a decimal string | yes | raw units of the output token wanted at start_time; the requirement falls linearly from here |
+| `order[kind=dutch].end_out` | whole number as a decimal string | yes | raw units of the output token wanted from end_time on |
 | `order[kind=dutch].start_time` | unix seconds as a decimal string | yes | unix seconds when the price starts falling |
 | `order[kind=dutch].end_time` | unix seconds as a decimal string | yes | unix seconds when the price stops falling; at or before the expiry |
 | `order[kind=attested].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
@@ -946,7 +948,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 ## solive_agent_create
 
-Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.
+Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent and sends at once, with no preview; solive_prepare_agent_create shows the same terms without sending.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -960,8 +962,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `order[kind=limit].make_amount` | whole number as a decimal string | yes | raw units of the input token offered; a fill always takes all of it at once |
 | `order[kind=limit].take_amount` | whole number as a decimal string | yes | least raw units of the output token wanted for the whole make_amount |
 | `order[kind=dutch].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |
-| `order[kind=dutch].start_out` | whole number as a decimal string | yes | output wanted at start_time; the requirement falls linearly from here |
-| `order[kind=dutch].end_out` | whole number as a decimal string | yes | output wanted from end_time on |
+| `order[kind=dutch].start_out` | whole number as a decimal string | yes | raw units of the output token wanted at start_time; the requirement falls linearly from here |
+| `order[kind=dutch].end_out` | whole number as a decimal string | yes | raw units of the output token wanted from end_time on |
 | `order[kind=dutch].start_time` | unix seconds as a decimal string | yes | unix seconds when the price starts falling |
 | `order[kind=dutch].end_time` | unix seconds as a decimal string | yes | unix seconds when the price stops falling; at or before the expiry |
 | `order[kind=attested].amount_in` | whole number as a decimal string | yes | exact raw units of the input token to sell |

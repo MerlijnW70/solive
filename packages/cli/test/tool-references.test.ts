@@ -75,7 +75,7 @@ describe("tool references", () => {
     expect(servedValue({ next: `a; ${name("x")} b`, warnings: [`c; ${name("x")}`], summary: [`d; ${name("x")}`] }, names)).toEqual({
       next: "a",
       warnings: ["c"],
-      summary: [`d; ${name("x")}`],
+      summary: ["d"],
     });
   });
 });

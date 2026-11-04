@@ -18,6 +18,8 @@ import { servedActions } from "./agent/everyday.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
 import { ESTIMATE_SCAN, walletGuard } from "./agent/wallet.js";
+import { keyFileAddress, type WalletAccess } from "./agent/wallet/guard.js";
+import { walletKeysApart } from "./command-builders.js";
 import { relayOf } from "./agent/relay.js";
 import { type Command, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
@@ -147,6 +149,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
               },
             };
       if (command.wallet !== null) {
+        walletKeysApart(await keyFileAddress(wallet.wallet as WalletAccess).catch(() => undefined), { agent: agent?.signer.address, owners: command.agent?.owners, relayer: relay?.signer.address });
         transport.engineTransactions(ESTIMATE_SCAN).catch(() => undefined);
       }
       const served = servedActions({

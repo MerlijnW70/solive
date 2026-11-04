@@ -13,12 +13,13 @@ import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { servedActions } from "../src/agent/everyday.js";
-import { JOB_PROMPTS, MARKET_GUIDE } from "../src/agent/mcp.js";
+import { JOB_PROMPTS } from "../src/agent/mcp.js";
 import { DRAWS_CASES, JUDGED_FAIL, JUDGED_PASS, NO_CASES, walletJudgeWork } from "../src/agent/wallet/judge-work.js";
 import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { DOMAIN, h, runtime, world } from "./harness.js";
 import { approved } from "./approved.js";
+import { guideOf } from "./served-texts.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -165,11 +166,11 @@ describe("wallet_judge_work", () => {
     const listed = (await judge.listTools()).tools.map((one) => one.name);
     expect(listed).toContain(tool("wallet_judge_work"));
     const served = new Set(servedActions({ wallet: true, allTools: false, relay: false, agent: false }).map((action) => action.name));
-    const texts = [walletJudgeWork.description, JUDGED_PASS, JUDGED_FAIL, NO_CASES, DRAWS_CASES, MARKET_GUIDE, ...JOB_PROMPTS.map((prompt) => prompt.text)];
+    const texts = [walletJudgeWork.description, JUDGED_PASS, JUDGED_FAIL, NO_CASES, DRAWS_CASES, guideOf(), ...JOB_PROMPTS.map((prompt) => prompt.text)];
     for (const text of texts) {
       expect([...text.matchAll(NAMES)].map(([name]) => name).filter((name) => !served.has(name))).toEqual([]);
     }
-    for (const text of [MARKET_GUIDE, ...JOB_PROMPTS.filter((prompt) => prompt.name !== "earn").map((prompt) => prompt.text)]) {
+    for (const text of [guideOf(), ...JOB_PROMPTS.filter((prompt) => prompt.name !== "earn").map((prompt) => prompt.text)]) {
       expect(text).toContain(tool("wallet_judge_work"));
       expect(text).not.toContain("judge --sandbox viper");
     }

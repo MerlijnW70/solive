@@ -16,6 +16,9 @@ import { paramsOf } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
 import { account, amount, flag, integer, list, nullable, object, optional, text } from "./schema.js";
 import { NOT_ON_MIRROR } from "./spec-upload.js";
+import { fileWalletAddress } from "./mandate-agent.js";
+
+export const RELAYER_KEY_IS_WALLET = "this server's relayer key is also its wallet's key, so a relayed send would pay from the wallet without a preview; restart the server with a relayer key of its own";
 import {
   fieldsOf,
   published,
@@ -42,7 +45,7 @@ export const submitSignedIntent = define({
   name: tool("submit_signed_intent"),
   title: "Submit a signed intent",
   description:
-    `Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message; ${tool("preview_signed_intent")} checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create; that url is not part of the owner's signature, so ${tool("find_jobs")} does not list it. Calling again after success returns the same intent without sending anything.`,
+    `Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message. It sends at once, with no preview; ${tool("preview_signed_intent")} checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create; that url is not part of the owner's signature, so ${tool("find_jobs")} does not list it. Calling again after success returns the same intent without sending anything.`,
   effect: "submit",
   input: object({ ...signedTerms, signature: text("the owner's base58 Ed25519 signature of the message") }),
   output: object({
@@ -51,9 +54,13 @@ export const submitSignedIntent = define({
     spec_published: optional(flag("false: a relayed send never uploads the spec")),
     spec_not_published: optional(text("why the spec is not on the mirror")),
   }),
-  run: async ({ transport, relay, claims }, input, call) => {
+  run: async (ctx, input, call) => {
+    const { transport, relay, claims } = ctx;
     if (relay === undefined) {
       throw new AgentRefusal("RelayerNotConfigured", "this server has no relayer key; start it with --relayer to submit signed intents");
+    }
+    if (relay.signer.address === (await fileWalletAddress(ctx))) {
+      throw new AgentRefusal("KeyInUse", RELAYER_KEY_IS_WALLET);
     }
     const leave = enter(claims, `${input.owner}:${input.nonce}`);
     try {

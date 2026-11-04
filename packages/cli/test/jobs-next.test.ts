@@ -78,7 +78,7 @@ describe("solive_find_jobs next hint", () => {
 
 describe("delivery tool texts", () => {
   it("tell the worker to keep the url unguessable without private hosting and to announce right after hosting", () => {
-    expect(walletDeliver.description).toContain("Host the work at a url nobody can guess and announce right after hosting.");
+    expect(walletDeliver.description).toContain("Host it where nobody can guess and announce right after hosting.");
     expect(UNGUESSABLE_URL).toBe("without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting");
     expect(JSON.stringify(walletDeliver.input.json)).toContain(UNGUESSABLE_URL);
     expect(prepareDeliver.description).toContain("so host it where nobody can guess, give its exact sha256 and send promptly");

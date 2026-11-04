@@ -212,6 +212,13 @@ describe("the announce fee in deliver previews", () => {
     const saltSignature = Buffer.from(await signBytes(worker.keyPair.privateKey, saltMessage(intent, WORK))).toString("hex");
     const prepared = await ok(client, "prepare_deliver", { worker: worker.address, intent, sha256: WORK, url: WORK_URL, salt_signature: saltSignature });
     expect(prepared["summary"]).toContain(mcpPays("0.002", recipient, worker.address));
+    const described = new Map((await client.listTools()).tools.map((one) => [one.name, one.description ?? ""]));
+    for (const [name, payer] of [[tool("wallet_deliver"), "This wallet"], [tool("prepare_deliver"), "The worker"]] as const) {
+      const text = described.get(name) ?? "";
+      expect([name, /no tokens move|moves no tokens/.test(text), text.includes(`${payer} pays rent, fee and any announce fee; the escrow's tokens do not move.`)]).toEqual([name, false, true]);
+    }
+    const pays = (shown["summary"] as string[]).find((line) => line.startsWith("Pays:")) ?? "";
+    expect([pays.includes("announce fee of 0.002 SOL"), pays.endsWith("the escrow's tokens do not move")]).toEqual([true, true]);
 
     const preview = await cli(["deliver", "--url", "devnet", "--keypair", "worker.json", "--intent", intent, "--sha256", WORK, "--work-url", WORK_URL], { "worker.json": worker });
     expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);

@@ -54,12 +54,14 @@ export function account(description?: string): Schema<Address> {
 
 export const AMOUNT_PATTERN = "^(0|[1-9][0-9]{0,19})$";
 
+export const AMOUNT_FORMAT = "must be a whole number written as a decimal string";
+
 export function amount(description?: string): Schema<bigint> {
   return {
     json: described({ type: "string", pattern: AMOUNT_PATTERN }, description),
     read: (value, path) => {
       if (typeof value !== "string" || !new RegExp(AMOUNT_PATTERN).test(value)) {
-        return fail(path, "must be a whole number of raw token units written as a decimal string");
+        return fail(path, AMOUNT_FORMAT);
       }
       const parsed = BigInt(value);
       return parsed <= U64_MAX ? parsed : fail(path, `must be at most ${U64_MAX}`);

@@ -176,7 +176,7 @@ describe("agent server against the deployed engine", () => {
         code: "Failed",
         retryable: false,
         hint: SERVER_PROBLEMS.Failed.hint,
-        untrustedDetail: "lying produced output outside its schema: n: must be a whole number of raw token units written as a decimal string",
+        untrustedDetail: "lying produced output outside its schema: n: must be a whole number written as a decimal string",
       },
     });
     expect(new OutputMismatch("x", new InvalidInput([])).name).toBe("OutputMismatch");

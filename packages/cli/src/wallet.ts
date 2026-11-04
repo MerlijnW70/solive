@@ -146,6 +146,11 @@ export async function newKeyFile(): Promise<{ address: Address; text: string }> 
   return { address, text: JSON.stringify([...seed, ...getAddressEncoder().encode(address)]) };
 }
 
+export const serverKeyNotWallet = (path: string): string =>
+  `${path} holds this server's --agent or --relayer key, so it cannot become the wallet, which pays only after a preview; move that key elsewhere or set up the wallet with another key file`;
+
+export class ServerKeyNotWallet extends Error {}
+
 async function walletAt(files: Files, path: string): Promise<{ signer: { address: Address }; created: boolean }> {
   if (isLedgerPath(path)) {
     return { signer: await ledgerSigner(path, files.ledger ?? openUsb), created: false };
@@ -234,12 +239,16 @@ export async function setup(
   smallStart = start,
   faucet?: FaucetRun,
   instant?: InstantRun,
+  apart: readonly Address[] = [],
 ): Promise<object> {
   if (confirmUrl !== undefined && confirmTransport !== undefined) {
     await checkedSecond(transport, confirmTransport, confirmUrl);
   }
   const path = expandHome(keypair ?? defaultWallet(files.home), files.home);
   const { signer, created } = await walletAt(files, path);
+  if (apart.includes(signer.address)) {
+    throw new ServerKeyNotWallet(serverKeyNotWallet(path));
+  }
   const saved = keepSavedUrl ? (await withSettings(files, {}))[ENV_URL] : undefined;
   const confirm = confirmUrl ?? (await savedConfirm(files));
   const settings: Settings = { url: saved ?? url, keypair: path, ...(confirm === undefined ? {} : { [SAVED_CONFIRM_URL]: confirm }) };

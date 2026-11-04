@@ -1,5 +1,5 @@
-import { tool } from "./names.js";
-import type { Problem } from "./problems.js";
+import { tool } from "../src/agent/names.js";
+import type { Problem } from "../src/agent/problems.js";
 
 export type Controller = "payer" | "worker" | "profile owner" | "program" | "rpc node" | "faucet service";
 

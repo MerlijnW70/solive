@@ -19,8 +19,9 @@ import { loadMandate, mandateRef, MAX_MANDATE_INTENTS, REVOKE_CANCELS } from "./
 const WARN_STILL_OPEN =
   "some of the agent's intents stay open after this; they can no longer be filled, but their escrow stays locked until you cancel them";
 
-const skipReason = (account: Address, problem: string) =>
-  `the refund to your token account ${account} would fail: ${problem}; fix it, then cancel with ${tool("prepare_cancel")}`;
+const skipReason = (account: Address, problem: string) => `the refund to your token account ${account} would fail: ${problem}`;
+
+export const CANCEL_LATER = `fix it, then cancel with ${tool("prepare_cancel")}`;
 
 async function refundProblem(
   transport: Transport,
@@ -44,7 +45,7 @@ async function frozen(transport: Transport, account: Address): Promise<boolean> 
 export const prepareRevokeMandate = define({
   name: tool("prepare_revoke_mandate"),
   title: "Prepare a mandate revocation",
-  description: `Build the transaction that revokes one mandate, returns its rent to the owner and lowers the engine's spending allowance by the unused budget. From then on no solver can fill any intent opened under it. Separate transactions in cancels each cancel one of up to ${REVOKE_CANCELS} of those intents that are still open, refunding their escrow; send them after prepared, in any order. An intent whose refund would fail, because the owner's token account for it is missing or frozen, is listed in skipped instead, so the revocation never depends on a cancel. still_open counts the ones left, skipped included, which list_intents finds and prepare_cancel cancels. Intents the owner made outside this mandate stay open and are counted in other_open. To revoke every mandate and pending signature together, the owner advances their signing epoch instead.`,
+  description: `Build the transaction that revokes one mandate, returns its rent to the owner and lowers the engine's spending allowance by the unused budget. From then on no solver can fill any intent opened under it. Separate transactions in cancels each cancel one of up to ${REVOKE_CANCELS} of those intents that are still open, refunding their escrow; send them after prepared, in any order. An intent whose refund would fail, because the owner's token account for it is missing or frozen, is listed in skipped instead, so the revocation never depends on a cancel. still_open counts the ones left, skipped included; each keeps its escrow until the owner cancels it. Intents the owner made outside this mandate stay open and are counted in other_open. To revoke every mandate and pending signature together, the owner advances their signing epoch instead.`,
   effect: "prepare",
   input: object(mandateRef),
   output: object({
@@ -144,8 +145,8 @@ export const prepareRevokeMandate = define({
             : [
                 `Cancels the agent's ${chosen.length} open intent(s) and returns ${show(refunded)} of ${tokenOf(mandate.inputMint, TOKEN_NAMES[mandate.inputMint])} to you, one transaction each after the revocation`,
               ]),
-        ...skipped.map(({ intent, reason }) => `Does not cancel ${intent}: ${reason}`),
-        ...(left === 0 ? [] : [`Leaves ${left} more of its intents open but unfillable; cancel them with ${tool("prepare_cancel")}`]),
+        ...skipped.map(({ intent, reason }) => `Does not cancel ${intent}: ${reason}; ${CANCEL_LATER}`),
+        ...(left === 0 ? [] : [`Leaves ${left} more of its intents open but unfillable; ${tool("list_intents")} finds them and ${tool("prepare_cancel")} cancels them`]),
         locked
           ? `Leaves the engine's spending allowance on ${mandate.inputAccount} at ${show(allowance.before)}, since that account is frozen`
           : allowance.after === allowance.before

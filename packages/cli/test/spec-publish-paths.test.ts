@@ -5,13 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SPEC_MIRROR, DEVNET_GENESIS_HASH, MIRROR_OFF, MIRROR_OFF_DEVNET, PUBLISH_SEALED, SPEC_MIRROR_ENV } from "@intent-engine/client/internal";
 import { seal } from "@intent-engine/core/internal";
 import { NOT_ON_MIRROR, UPLOAD_OFF, UPLOAD_PUBLIC } from "../src/agent/spec-upload.js";
-import { WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { walletEscrow, walletEscrowPlan } from "../src/agent/wallet/escrow.js";
 import { SHAPES } from "../src/arg-usage.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { connect, execute, ok, served, swapOf } from "./agent-kit.js";
 import { ata, cli, ESCROW, funded, h, type World, world } from "./harness.js";
+import { proseOf } from "./served-texts.js";
 
 const SPEC = "deliver a module whose tests pass\n";
 const SPEC_BYTES = new TextEncoder().encode(SPEC);
@@ -157,7 +157,7 @@ describe("what the docs and help say about --spec-file", () => {
 
   it("tells the user in the wallet notice that specs leave this computer", () => {
     expect(WALLET_NOTICE).toContain("Your key stays on this computer; only signed transactions leave it, plus approved specs.");
-    expect(WALLET_INSTRUCTIONS).toContain("plus approved specs");
+    expect(proseOf()).toContain("plus approved specs");
   });
 });
 

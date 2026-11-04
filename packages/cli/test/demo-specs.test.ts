@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isMemoUrl, PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
-import { DEMO_BASE_URL, DEMO_SPECS, demoSpecUrl, JOB_PROMPTS, MARKET_GUIDE, MARKET_LINES } from "../src/agent/mcp.js";
+import { DEMO_BASE_URL, DEMO_SPECS, demoSpecUrl, JOB_PROMPTS, MARKET_LINES } from "../src/agent/mcp.js";
 import { judgeHost } from "../src/host-judge.js";
 import { casesOf, judgeViper, pinnedWasm } from "../src/viper.js";
+import { guideOf } from "./served-texts.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const DEMO_DIR = join(ROOT, "examples", "demo");
@@ -73,7 +74,7 @@ describe("the demo hire path in the guide and prompts", () => {
   });
 
   it("names wallet_judge_work for a demo job and Docker only for a spec that needs a container", () => {
-    for (const text of [MARKET_GUIDE, prompt("hire"), prompt("judge")]) {
+    for (const text of [guideOf(), prompt("hire"), prompt("judge")]) {
       expect(text).toMatch(/solive_wallet_judge_work for a demo job|demo job, or one JavaScript module whose spec has a judge-cases block, with solive_wallet_judge_work|demo job or one JavaScript module whose spec has a judge-cases block with solive_wallet_judge_work/);
       expect(text).toContain("judge --sandbox docker only when");
       expect(text).toContain("needs a container");

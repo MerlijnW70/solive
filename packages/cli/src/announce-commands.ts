@@ -138,6 +138,8 @@ async function reclaim(command: Extract<AnnounceCommand, { name: "reclaim" }>, r
   return { ...shown, closed: done.closed, kept: done.kept, reasons: done.reasons, sent: true, signatures: done.signatures };
 }
 
+export const HELD_UNSURE = "no held share found, but the read was incomplete, so one may still be held: reasons and unreadable say why";
+
 export const CLAIM_ONE = "pass --announcement, and --index when one announcement holds more than one share, to preview the claim";
 
 async function claimHeld(command: Extract<AnnounceCommand, { name: "claim-held" }>, runtime: Runtime, transport: Transport): Promise<object> {
@@ -157,7 +159,14 @@ async function claimHeld(command: Extract<AnnounceCommand, { name: "claim-held" 
         release: share.release,
       })),
     );
-    return { wallet: wallet.address, shares, complete: listed.complete, ...(listed.reasons.length === 0 ? {} : { reasons: listed.reasons }), next: shares.length === 0 ? NOTHING_HELD : CLAIM_ONE };
+    return {
+      wallet: wallet.address,
+      shares,
+      complete: listed.complete,
+      ...(listed.reasons.length === 0 ? {} : { reasons: listed.reasons }),
+      ...(listed.unreadable.length === 0 ? {} : { unreadable: listed.unreadable }),
+      next: shares.length > 0 ? CLAIM_ONE : listed.complete ? NOTHING_HELD : HELD_UNSURE,
+    };
   }
   const payer = await payerOf(runtime, command, wallet);
   const input = {

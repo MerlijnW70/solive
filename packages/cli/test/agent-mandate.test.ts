@@ -174,9 +174,9 @@ describe("mandates through the agent server", () => {
     expect(h.svm.getAccount(w.ownerInput).exists).toBe(false);
     const revoke = await ok(client, "prepare_revoke_mandate", { owner: w.owner.address, agent: agent.address });
     expect([revoke["cancelled"], revoke["cancels"], revoke["still_open"]]).toEqual([[], [], 2]);
-    const reason = `the refund to your token account ${w.ownerInput} would fail: it does not exist; fix it, then cancel with solive_prepare_cancel`;
+    const reason = `the refund to your token account ${w.ownerInput} would fail: it does not exist`;
     expect(revoke["skipped"]).toEqual(opened.map((intent) => ({ intent, reason })));
-    expect(revoke["summary"]).toContain(`Does not cancel ${opened[0]}: ${reason}`);
+    expect(revoke["summary"]).toContain(`Does not cancel ${opened[0]}: ${reason}; fix it, then cancel with solive_prepare_cancel`);
     expect(revoke["warnings"]).toHaveLength(1);
     await execute(revoke["prepared"], w.owner);
     const [address] = await findMandatePda({ owner: w.owner.address, agent: agent.address, id: 0n });

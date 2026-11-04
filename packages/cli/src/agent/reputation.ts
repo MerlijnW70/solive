@@ -1,3 +1,4 @@
+import type { Address } from "@solana/kit";
 import { createHash } from "node:crypto";
 import { isSdkError, type Trust, trustOf, type WorkRecord } from "@intent-engine/client";
 import { DELIVERY_PAGES, feedbackInstructions, heldReturned, heldWaiting, reputationOf, RESTART, SIGNATURE_PAGE, TRUST_PATHS, TRUST_WALLETS } from "@intent-engine/client/internal";
@@ -10,12 +11,32 @@ import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
 import { refutationItem } from "./wallet/standing.js";
+import { TOKEN_NAMES } from "../tokens.js";
 
 export const RECORDS_SHOWN = 50;
 
 export const MAX_REPUTATION_PAGES = 100_000;
 
 export const UNREADABLE_RECORDS = "refutations and announcements whose account has a layout this version cannot read; a release they touch is left out of the totals and complete is false";
+
+const MINTS_SHOWN = 32;
+
+const LARGEST = `SOL and TEST first, then the largest raw amounts, at most ${MINTS_SHOWN}`;
+
+const moreMints = (field: string): string => `mints left out of ${field}, which lists only ${MINTS_SHOWN}`;
+
+type PerMint = { mint: Address; amount: bigint };
+
+const known = (mint: Address): number => (TOKEN_NAMES[mint] === undefined ? 1 : 0);
+
+const knownThenLargest = (a: PerMint, b: PerMint): number =>
+  known(a.mint) !== known(b.mint) ? known(a.mint) - known(b.mint) : a.amount === b.amount ? (a.mint < b.mint ? -1 : a.mint > b.mint ? 1 : 0) : a.amount > b.amount ? -1 : 1;
+
+function perMint<K extends string>(field: K, mints: readonly PerMint[]): Record<K, PerMint[]> & Partial<Record<`${K}_more`, number>> {
+  const sorted = [...mints].sort(knownThenLargest);
+  const more = sorted.length - MINTS_SHOWN;
+  return { [field]: sorted.slice(0, MINTS_SHOWN), ...(more > 0 ? { [`${field}_more`]: more } : {}) } as Record<K, PerMint[]> & Partial<Record<`${K}_more`, number>>;
+}
 
 export const REPUTATION_PAGES = `pages of ${SIGNATURE_PAGE} signatures of the worker's own history to read for its announcements; default ${DELIVERY_PAGES}; raise it when complete is false`;
 
@@ -64,9 +85,12 @@ export const getReputation = define({
     payers: integer(0, Number.MAX_SAFE_INTEGER, "distinct owners who paid it at arm's length"),
     judges: integer(0, Number.MAX_SAFE_INTEGER, "distinct judges or committees that released to it at arm's length"),
     committee_judged: integer(0, Number.MAX_SAFE_INTEGER, "arm's-length releases judged by a committee"),
-    earned: list(object({ mint: account(), amount: amount("raw units") }), 32, "what the counted releases paid this wallet, per mint; a held share it never claimed and the escrow returned to its owner is not counted"),
-    held: list(object({ mint: account(), amount: amount("raw units") }), 32, "the part of earned that split releases paid this wallet but held in their escrows, as its token account could not take it, and it has not claimed yet; a held share the escrow's close returned to its owner is neither here nor in earned"),
-    backed: list(object({ mint: account(), amount: amount("raw units of protocol fees") }), 32),
+    earned: list(object({ mint: account(), amount: amount("raw units") }), MINTS_SHOWN, `what the counted releases paid this wallet, per mint, ${LARGEST}; a held share it never claimed and the escrow returned to its owner is not counted`),
+    earned_more: optional(integer(1, Number.MAX_SAFE_INTEGER, moreMints("earned"))),
+    held: list(object({ mint: account(), amount: amount("raw units") }), MINTS_SHOWN, `the part of earned that split releases paid this wallet but held in their escrows, as its token account could not take it, and it has not claimed yet, ${LARGEST}; a held share the escrow's close returned to its owner is neither here nor in earned`),
+    held_more: optional(integer(1, Number.MAX_SAFE_INTEGER, moreMints("held"))),
+    backed: list(object({ mint: account(), amount: amount("raw units of protocol fees") }), MINTS_SHOWN, LARGEST),
+    backed_more: optional(integer(1, Number.MAX_SAFE_INTEGER, moreMints("backed"))),
     backed_sol: text("SOL protocol fees and every create fee behind the totals, in whole SOL"),
     feedback: object({ count: integer(0, Number.MAX_SAFE_INTEGER), average: nullable(text("average owner score out of 100")) }),
     first: nullable(time()),
@@ -127,9 +151,9 @@ export const getReputation = define({
       payers: rep.payers,
       judges: rep.judges,
       committee_judged: rep.committeeJudged,
-      earned: rep.earned,
-      held: rep.held,
-      backed: rep.backed,
+      ...perMint("earned", rep.earned),
+      ...perMint("held", rep.held),
+      ...perMint("backed", rep.backed),
       backed_sol: rep.backedSol,
       feedback: { count: rep.feedback.count, average: rep.feedback.average === null ? null : rep.feedback.average.toFixed(1) },
       first: rep.first,

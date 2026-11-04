@@ -7,13 +7,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { specMemo } from "@intent-engine/core/internal";
 import { type SpecFetch } from "@intent-engine/client";
 import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
-import { agentServer, annotationsOf, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { agentServer, annotationsOf } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { FETCH_FAILED, getSpec, noSpecUrl } from "../src/agent/spec.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, creation, h, ownerSigned, transport, type World, world } from "./harness.js";
+import { proseOf } from "./served-texts.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
@@ -127,7 +128,7 @@ describe("solive_get_spec", () => {
     const findJobs = ACTIONS.find((a) => a.name === "solive_find_jobs");
     expect(findJobs?.description).toContain("Read it with solive_get_spec");
     expect(findJobs?.description).not.toContain("fetch it yourself");
-    expect(WALLET_INSTRUCTIONS).toContain("Take a job only if solive_get_spec says its spec matches");
+    expect(proseOf()).toContain("Take a job only if solive_get_spec says its spec matches");
   });
 
   it("is listed as a read tool by a server started without --wallet", async () => {

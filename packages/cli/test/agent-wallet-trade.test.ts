@@ -9,7 +9,7 @@ import { testSignature } from "@intent-engine/client/testing";
 import { BlockhashExpired } from "@intent-engine/client";
 import { AgentRefusal, SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { InvalidInput } from "../src/agent/schema.js";
-import { instructionsFor, START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { instructionsFor, START_PROMPT } from "../src/agent/mcp.js";
 import { DEFAULT_EXPIRES_IN, ESTIMATE_SCAN, LANDING_SECONDS, mayHaveLanded, NO_FALL, NOTHING_WRAPPED, partlySent, WARN_EARLY, NO_WALLET, PREVIEW_ONLY, WALLET_ACTIONS, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
@@ -21,6 +21,7 @@ import { orderPreviewNext } from "../src/agent/wallet/trade.js";
 import { call, connect, created, fresh, type Json, ok, tag } from "./agent-wallet-kit.js";
 import { keyed } from "./announce.js";
 import { approved } from "./approved.js";
+import { EVERY, proseOf } from "./served-texts.js";
 
 describe("the wallet server's trades", () => {
   let client: Client;
@@ -42,9 +43,9 @@ describe("the wallet server's trades", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([...WALLET_ACTIONS, ...ACTIONS].map((a) => a.name));
     expect(client.getInstructions()).toBe(instructionsFor([...WALLET_ACTIONS, ...ACTIONS]));
-    expect(client.getInstructions()?.startsWith(WALLET_INSTRUCTIONS)).toBe(true);
+    expect(client.getInstructions()?.startsWith(proseOf(EVERY))).toBe(true);
     for (const line of WALLET_NOTICE) {
-      expect(WALLET_INSTRUCTIONS).toContain(`- ${line}`);
+      expect(proseOf(EVERY)).toContain(`- ${line}`);
     }
     const { prompts } = await client.listPrompts();
     expect(prompts.map((p) => p.name)).toEqual(["start", "hire", "earn", "judge", "worker"]);

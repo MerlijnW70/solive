@@ -27,6 +27,27 @@ export const RELAY_NEEDS_FEES =
 
 export const AGENT_NEEDS_OWNERS = "--agent needs --agent-owners naming every owner whose mandates this agent key may use";
 
+export const AGENT_IS_WALLET = "--agent names the wallet's own key; give the agent a key of its own, so the wallet still pays only after a preview";
+
+export const RELAYER_IS_WALLET = "--relayer names the wallet's own key; give the relayer a key of its own, so the wallet still pays only after a preview";
+
+export const OWNER_IS_WALLET = "--agent-owners names the wallet's own address; an agent may not spend this wallet's tokens without a preview, so leave it out";
+
+export function walletKeysApart(wallet: Address | undefined, keys: { agent?: Address | undefined; owners?: readonly Address[] | undefined; relayer?: Address | undefined }): void {
+  if (wallet === undefined) {
+    return;
+  }
+  if (keys.agent === wallet) {
+    throw new UsageError(AGENT_IS_WALLET);
+  }
+  if (keys.relayer === wallet) {
+    throw new UsageError(RELAYER_IS_WALLET);
+  }
+  if (keys.owners?.includes(wallet) === true) {
+    throw new UsageError(OWNER_IS_WALLET);
+  }
+}
+
 export const RELAY_DEFAULT_TTL = 24 * 60 * 60;
 export const RELAY_DEFAULT_HOURLY_LAMPORTS = 100_000_000n;
 export const AGENT_DEFAULT_HOURLY_LAMPORTS = 50_000_000n;

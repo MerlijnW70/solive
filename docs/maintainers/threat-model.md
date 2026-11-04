@@ -137,7 +137,7 @@ Every `mitigated` or `partial` row names the tests, proofs, fuzz targets or CI j
 
 ## Text from other parties
 
-The MCP servers return text that other parties control: the payer's spec and spec url, the worker's work and work url, a profile's skills, endpoint and document url, program logs and the RPC node's error messages. `packages/cli/src/agent/untrusted-fields.ts` lists each output field that can carry such text, who controls it and the rule it follows. `packages/cli/test/untrusted-fields.test.ts` fails on any free-text output field that list does not name.
+The MCP servers return text that other parties control: the payer's spec and spec url, the worker's work and work url, a profile's skills, endpoint and document url, program logs and the RPC node's error messages. `packages/cli/test/untrusted-map.ts` lists each output field that can carry such text, who controls it and the rule it follows. `packages/cli/test/untrusted-fields.test.ts` fails on any free-text output field that list does not name.
 
 Each listed field follows one rule:
 

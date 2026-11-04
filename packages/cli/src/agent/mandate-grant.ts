@@ -43,7 +43,7 @@ export const prepareMandate = define({
         out: amount("raw output units"),
         in: amount("raw input units"),
       },
-      "the worst price in raw units: every intent must ask at least out raw output units for every in raw input units it draws, fee included; one whole token is 10^decimals raw units, and get_balances gives the decimals",
+      `the worst price in raw units: every intent must ask at least out raw output units for every in raw input units it draws, fee included; one whole token is 10^decimals raw units`,
     ),
     id: optional(amount("leave out to use the next free id")),
     partner: optional(partnerSchema),

@@ -122,11 +122,15 @@ export async function planOf(ctx: AgentContext, input: Announcing, saltHint = fa
   }
 }
 
+const TOKENS_STAY = "the escrow's tokens do not move";
+
+const ANNOUNCE_COSTS = (who: string): string => `${who} pays rent, fee and any announce fee; ${TOKENS_STAY}.`;
+
 function announcing(plan: AnnouncementPlan, sha256: string, url: string, from: string, fee: AnnounceFee): string[] {
   return [
     `Announces: the work with sha256 ${sha256} to the proof escrow ${plan.intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${from} and a salt only its key derives`,
     `Seals: the salt and the url ${url} to ${sealedToText(plan.sealedTo)}, so only they can open it`,
-    `Pays: the announcement's rent and the transaction fee${announceFeePaid(fee)}, from ${from}; the rent returns when the announcement closes${announceFeeKept(fee)}, and the escrow's tokens do not move`,
+    `Pays: the announcement's rent and the transaction fee${announceFeePaid(fee)}, from ${from}; the rent returns when the announcement closes${announceFeeKept(fee)}, and ${TOKENS_STAY}`,
     ...(plan.setup.length === 0 ? [] : [`Syncs first, in its own transaction: the key snapshot of committee ${plan.attestor}`]),
   ];
 }
@@ -146,7 +150,7 @@ const announcedOutput = {
 export const walletDeliver = define({
   name: tool("wallet_deliver"),
   title: "Announce delivered work to a judge",
-  description: `Tells a job's judge the work is done: one on-chain announcement that commits to the work's sha256 with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. ${PREVIEW_FIRST}`,
+  description: `Tells a job's judge the work is done: an on-chain announcement of the work's sha256, its url sealed to the judge. ${ANNOUNCE_COSTS("This wallet")} Host it where nobody can guess and announce right after hosting. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -337,7 +341,7 @@ export const checkDelivery = define({
 export const prepareDeliver = define({
   name: tool("prepare_deliver"),
   title: "Prepare a delivery announcement",
-  description: `Build the transaction in which a worker announces work to a proof escrow, such as one found with ${tool("find_jobs")}: one announcement that commits to the work's sha256 and seals the url to the judge. It moves no tokens; the worker pays its rent and fee. Returns an unsigned transaction that already simulated; the worker's wallet signs and sends it. A release pays the first announcement that opens to the work, so host it where nobody can guess, give its exact sha256 and send promptly.`,
+  description: `Build the transaction in which a worker announces work to a proof escrow, such as one found with ${tool("find_jobs")}: one announcement that commits to the work's sha256 and seals the url to the judge. ${ANNOUNCE_COSTS("The worker")} Returns an unsigned transaction that already simulated; the worker's wallet signs and sends it. A release pays the first announcement that opens to the work, so host it where nobody can guess, give its exact sha256 and send promptly.`,
   effect: "prepare",
   input: object({
     worker: account("the wallet that announces, signs, pays and is paid if a release pays this announcement"),

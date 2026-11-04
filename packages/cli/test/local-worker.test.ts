@@ -8,7 +8,7 @@ import { IntentStatus } from "@intent-engine/core";
 import { getAnnouncementSize, getDeliveryBookSize, isMemoUrl, LOCAL_WORK_URL, seal } from "@intent-engine/core/internal";
 import { artifactDiffers } from "../src/agent/wallet/judge-work.js";
 import { JOB_LIVE } from "../src/agent/wallet/escrow.js";
-import { JOB_PROMPTS, MARKET_GUIDE } from "../src/agent/mcp.js";
+import { JOB_PROMPTS } from "../src/agent/mcp.js";
 import { tool } from "../src/agent/names.js";
 import { WORK_LOCAL } from "../src/agent/wallet/work.js";
 import { jobHeld, jobNoSpec, jobNotOpen, jobSealed, separateWorker, WORKER_NEXT, WORKER_SAME_KEY, WORKER_SENDS } from "../src/agent/wallet/worker.js";
@@ -44,6 +44,7 @@ import {
   workerFiles,
   workFile,
 } from "./local-worker-kit.js";
+import { guideOf } from "./served-texts.js";
 
 describe("a local worker for any job", () => {
   let hirer: Client;
@@ -290,7 +291,7 @@ describe("a local worker for any job", () => {
       }
       expect(prompt).not.toMatch(/\b(Agent tool|Task tool|Claude|Codex|Cursor|sessions_spawn)\b/);
       expect(JOB_PROMPTS.find((one) => one.name === "hire")?.text).toContain(tool("wallet_worker"));
-      expect(MARKET_GUIDE).toContain(tool("wallet_worker"));
+      expect(guideOf()).toContain(tool("wallet_worker"));
       expect(JOB_LIVE).toContain(tool("wallet_worker"));
     });
 

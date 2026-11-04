@@ -6,7 +6,7 @@ import { type RpcLike, rpcTransport } from "@intent-engine/client/internal";
 import { testSignature } from "@intent-engine/client/testing";
 import { tool } from "../src/agent/names.js";
 import type { Problem } from "../src/agent/problems.js";
-import { sourceOf } from "../src/agent/untrusted-fields.js";
+import { sourceOf } from "./untrusted-map.js";
 import { connect, fresh } from "./agent-wallet-kit.js";
 import { approved } from "./approved.js";
 import { h, NOW, transport } from "./harness.js";

@@ -1,10 +1,11 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { balances, defaultMints, explorerLink, FUND_BELOW, setup, SWAP_START } from "../../wallet.js";
+import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, setup, SWAP_START } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { tool } from "../names.js";
+import { AgentRefusal } from "../problems.js";
 import { listIntents, SOL_DECIMALS } from "../read.js";
 import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
 import { prepareCancel } from "../settle.js";
@@ -71,7 +72,11 @@ export const walletSetup = define({
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
-    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env })), notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };
+    const apart = [ctx.agent?.signer.address, ctx.relay?.signer.address].filter((key): key is Address => key !== undefined);
+    const made = await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
+      throw error instanceof ServerKeyNotWallet ? new AgentRefusal("KeyInUse", error.message) : error;
+    });
+    return { ...made, notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };
   },
 });
 

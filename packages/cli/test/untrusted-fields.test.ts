@@ -4,7 +4,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { tool } from "../src/agent/names.js";
 import { HINT_LIMIT, type Problem, refusalText, untrusted } from "../src/agent/problems.js";
-import { type Carried, CARRIED, COMMON_CARRIED, COMMON_OWN, OWN, REFUSAL_FIELDS, sourceOf } from "../src/agent/untrusted-fields.js";
+import { type Carried, CARRIED, COMMON_CARRIED, COMMON_OWN, OWN, REFUSAL_FIELDS, sourceOf } from "./untrusted-map.js";
 import { CUT_MARK, escaped, escapedJson, hasHidden, isHidden, SANITIZED_LIMIT, sanitized } from "../src/untrusted-text.js";
 
 type Json = Record<string, unknown>;

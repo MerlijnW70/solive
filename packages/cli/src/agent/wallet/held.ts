@@ -1,8 +1,8 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { type HeldShare, isSdkError } from "@intent-engine/client";
+import { type HeldShare, type HeldShares, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { mintOf } from "@intent-engine/client/internal";
+import { HELD_ANNOUNCEMENTS, HELD_READS, heldPastLimit, heldReadsSpent, mintOf } from "@intent-engine/client/internal";
 import { NOTHING_HELD } from "../../delivery-shared.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
@@ -15,6 +15,39 @@ import { preparedView } from "../shapes.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, sent, signerOf, termsApproval } from "./guard.js";
 
 export const MAX_HELD_LISTED = 16;
+
+const MAX_HELD_REASONS = 6;
+
+const HELD_ANNOUNCEMENTS_MAX = 512;
+
+const HELD_READS_MAX = 128;
+
+export const heldIncomplete = (raise: readonly string[]): string =>
+  raise.length > 0
+    ? `no held share found, but the read stopped at its bounds: raise ${raise.join(" and ")} to read more; summary says why`
+    : "no held share found, but some releases or announcement accounts could not be read, and wider bounds would not change that: summary says which";
+
+const heldMore = (count: number): string => `${count} more announcements could not be read in full, so their held shares are not listed`;
+
+const heldUnreadable = (count: number): string => `${count} announcement accounts could not be decoded, so their held shares are not listed`;
+
+const isPastLimit = (reason: string, limit: number): boolean => /^\d+ /.test(reason) && reason === heldPastLimit(Number.parseInt(reason, 10), limit);
+
+const SPENT = /^the history of (\S+) needs more than /;
+
+const isReadsSpent = (reason: string, reads: number): boolean => reason === heldReadsSpent((SPENT.exec(reason)?.[1] ?? "") as Address, reads);
+
+const widenable = (reasons: readonly string[], limit: number, reads: number): string[] => [
+  ...(reasons.some((reason) => isPastLimit(reason, limit)) ? ["announcements"] : []),
+  ...(reasons.some((reason) => isReadsSpent(reason, reads)) ? ["reads"] : []),
+];
+
+function heldReasons(listed: Pick<HeldShares, "reasons" | "unreadable">, limit: number): string[] {
+  const first = [...listed.reasons.filter((reason) => isPastLimit(reason, limit)), ...(listed.unreadable.length === 0 ? [] : [heldUnreadable(listed.unreadable.length)])];
+  const rest = listed.reasons.filter((reason) => !isPastLimit(reason, limit));
+  const room = MAX_HELD_REASONS - first.length;
+  return [...first, ...(rest.length <= room ? rest : [...rest.slice(0, room - 1), heldMore(rest.length - room + 1)])];
+}
 
 export const CLAIM_HELD_CHANGED = "this claim differs from its preview: the share, its amount or the receiving account changed, or no approval was given; preview it again and show the user";
 
@@ -71,12 +104,14 @@ export const walletClaimHeld = define({
     announcement: optional(account("the paid announcement holding the share, from the listing")),
     index: optional(integer(0, 7, "this wallet's place in the split, when one announcement holds more than one share for it")),
     to: optional(account("a token account this wallet owns for the escrow's token; default its canonical account, if that can take the payout now")),
+    announcements: optional(integer(1, HELD_ANNOUNCEMENTS_MAX, `paid announcements holding shares to read, this wallet's own first; default ${HELD_ANNOUNCEMENTS}; raise it when complete is false`)),
+    reads: optional(integer(1, HELD_READS_MAX, `history reads per announcement to find its release; default ${HELD_READS}; raise it when complete is false`)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs and sends the claim; leave out to preview")),
   }),
   output: object({
     shares: list(heldItem, MAX_HELD_LISTED, "the shares held for this wallet"),
-    complete: flag("false when some paid announcement holding a share could not be read in full"),
+    complete: flag("false when the read was incomplete, so shares may be missing; summary says why"),
     claiming: optional(heldItem),
     to: optional(account("the token account the claim pays into")),
     approval: optional(text("pass it back with send: true; a send that would differ from this preview is refused")),
@@ -89,14 +124,17 @@ export const walletClaimHeld = define({
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
     const client = createClient({ url: ctx.url ?? "", transport: ctx.transport });
-    const listed = await heldRefused(() => client.heldShares(signer.address));
+    const limit = input.announcements ?? HELD_ANNOUNCEMENTS;
+    const reads = input.reads ?? HELD_READS;
+    const listed = await heldRefused(() => client.heldShares(signer.address, { announcements: limit, reads }));
     const shares = await Promise.all(listed.shares.slice(0, MAX_HELD_LISTED).map((share) => shown(ctx, share)));
     if (input.announcement === undefined) {
       if (input.send === true) {
         throw new InvalidInput([{ path: "announcement", message: "give the announcement whose share to claim" }]);
       }
-      const next = shares.length === 0 ? NOTHING_HELD : shares.length === 1 ? `pass announcement ${shares[0]?.announcement ?? ""} to preview the claim` : pickHeld(shares.length);
-      return { shares, complete: listed.complete, summary: listed.reasons.slice(0, 6), sent: false, next };
+      const none = listed.complete ? NOTHING_HELD : heldIncomplete(widenable(listed.reasons, limit, reads));
+      const next = shares.length === 0 ? none : shares.length === 1 ? `pass announcement ${shares[0]?.announcement ?? ""} to preview the claim` : pickHeld(shares.length);
+      return { shares, complete: listed.complete, summary: heldReasons(listed, limit), sent: false, next };
     }
     const announcement = input.announcement;
     const planned = await heldRefused(() =>

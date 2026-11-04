@@ -8,14 +8,12 @@ import {
   INDEX_HEAD,
   instructionsFor,
   JOB_PROMPTS,
-  MARKET_GUIDE,
   MARKET_HEAD,
   MARKET_LINES,
   marketFor,
   promptServed,
   toolIndex,
   TOOL_GROUPS,
-  WALLET_INSTRUCTIONS,
 } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS, WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -23,6 +21,7 @@ import { tool } from "../src/agent/names.js";
 import { ALL_TOOLS_NEED_WALLET, parse } from "../src/args.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { cli, h, world } from "./harness.js";
+import { guideOf, proseOf } from "./served-texts.js";
 
 const EVERY = [...WALLET_ACTIONS, ...ACTIONS].map((a) => a.name);
 
@@ -147,7 +146,7 @@ describe("the tools a server serves", () => {
     expect(tools).toEqual(EVERY);
     expect(tools.length).toBeGreaterThan(20);
     expect(instructions).toBe(instructionsFor([...WALLET_ACTIONS, ...ACTIONS]));
-    expect(instructions?.startsWith(`${WALLET_INSTRUCTIONS}\n${MARKET_GUIDE}\n${INDEX_HEAD}\n`)).toBe(true);
+    expect(instructions?.startsWith(`${proseOf([...WALLET_ACTIONS, ...ACTIONS])}\n${guideOf([...WALLET_ACTIONS, ...ACTIONS])}\n${INDEX_HEAD}\n`)).toBe(true);
   });
 
   it("explains how a job works between the notice and the tool index, naming only served tools", async () => {
@@ -158,7 +157,7 @@ describe("the tools a server serves", () => {
       expect(lines.slice(head + 1, head + 1 + MARKET_LINES.length)).toEqual(MARKET_LINES);
       expect(head).toBeGreaterThan(lines.indexOf(`- ${WALLET_NOTICE.at(-1) ?? ""}`));
       expect(lines.indexOf(INDEX_HEAD)).toBe(head + 1 + MARKET_LINES.length);
-      const named = [...MARKET_GUIDE.matchAll(/\bsolive_\w+/g)].map(([name]) => name);
+      const named = [...(instructions ?? "").matchAll(/\bsolive_\w+/g)].map(([name]) => name);
       expect(named.filter((name) => !tools.includes(name))).toEqual([]);
     }
     expect(marketFor([])).toEqual([MARKET_HEAD, ...MARKET_LINES.filter((line) => !/\bsolive_/.test(line))]);

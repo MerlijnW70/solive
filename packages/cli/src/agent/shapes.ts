@@ -33,8 +33,8 @@ export const orderSchema = variants(
     }),
     dutch: object({
       amount_in: amount("exact raw units of the input token to sell"),
-      start_out: amount("output wanted at start_time; the requirement falls linearly from here"),
-      end_out: amount("output wanted from end_time on"),
+      start_out: amount("raw units of the output token wanted at start_time; the requirement falls linearly from here"),
+      end_out: amount("raw units of the output token wanted from end_time on"),
       start_time: time("unix seconds when the price starts falling"),
       end_time: time("unix seconds when the price stops falling; at or before the expiry"),
     }),

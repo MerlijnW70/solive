@@ -2,7 +2,7 @@ import { type Address, createNoopSigner, type TransactionSigner } from "@solana/
 import { formatAmount } from "@intent-engine/core";
 import { buildCreateIntentByAgent, describeTerms, encodeParams, escrowAmount, validate, tokenOf } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
-import { chainTime, loadConfig, loadUser, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
+import { chainTime, isLedgerPath, loadConfig, loadUser, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, rentRate, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./create.js";
@@ -17,6 +17,25 @@ import { orderSchema, paramsOf, preparedSchema, preparedView } from "./shapes.js
 import { TOKEN_NAMES, tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
 import { admitUnderMandate, agentNonce, explained, loadMandate } from "./mandate-state.js";
+import { keyFileAddress, savedKeypair, signerOf } from "./wallet/guard.js";
+
+export const OWNER_IS_THIS_WALLET = "this agent never acts for this server's wallet, whose payments wait for a preview; the owner must be another wallet";
+
+export const AGENT_KEY_IS_WALLET = "this server's agent key is also its wallet's key, so an agent send would pay from the wallet without a preview; restart the server with an agent key of its own";
+
+export const fileWalletAddress = async (ctx: AgentContext): Promise<Address | undefined> =>
+  ctx.wallet === undefined ? undefined : keyFileAddress(ctx.wallet).catch(() => undefined);
+
+async function walletAddress(ctx: AgentContext): Promise<Address | undefined> {
+  if (ctx.wallet === undefined) {
+    return undefined;
+  }
+  const path = await savedKeypair(ctx.wallet);
+  if (path === undefined) {
+    return undefined;
+  }
+  return isLedgerPath(path) ? (await signerOf(ctx)).address : keyFileAddress(ctx.wallet).catch(() => undefined);
+}
 
 const agentTerms = {
   owner: account("the wallet whose mandate the agent uses"),
@@ -141,7 +160,7 @@ export const agentCreate = define({
   name: tool("agent_create"),
   title: "Create an intent under a mandate",
   description:
-    "Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.",
+    `Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent and sends at once, with no preview; ${tool("prepare_agent_create")} shows the same terms without sending.`,
   effect: "submit",
   repeats: true,
   input: object(agentTerms),
@@ -153,6 +172,13 @@ export const agentCreate = define({
     }
     if (!key.owners.has(input.owner)) {
       throw new AgentRefusal("OwnerNotServed", `this agent only acts for the owners it was started with; ${input.owner} is not one of them`);
+    }
+    const own = await walletAddress(ctx);
+    if (key.signer.address === own) {
+      throw new AgentRefusal("KeyInUse", AGENT_KEY_IS_WALLET);
+    }
+    if (input.owner === own) {
+      throw new AgentRefusal("OwnerNotServed", OWNER_IS_THIS_WALLET);
     }
     const built = await agentIntent(ctx.transport, key.signer, input, ctx.claims, call);
     const prepared = await prepare(ctx.transport, built.instructions, key.signer.address).catch(explained(built.mandate));
