@@ -104,6 +104,7 @@ export const OPTIONS = {
   limit: { type: "string" },
   bounty: { type: "string" },
   "create-fee": { type: "string" },
+  fee: { type: "string" },
   "kind-fees": { type: "string" },
   "partner-cut": { type: "string" },
   partner: { type: "string" },
@@ -301,6 +302,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "set-mint-cap": ["url", "priority-fee", "keypair", "authority", "yes", "mint", "max-per-order", "window-cap", "window-secs", "total-limit"],
   "set-caps-required": ["url", "priority-fee", "keypair", "authority", "yes"],
   "set-committee-floor": ["url", "priority-fee", "keypair", "authority", "yes", "mint", "floor"],
+  "set-announce-fee": ["url", "priority-fee", "keypair", "authority", "yes", "fee"],
   solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "inventory", "inventory-owner", "jito", "tip", "bundle-size", "min-profit", "target-profit", "patience", "sol-value", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "concurrency", "watch", "interval", "quote-ttl", "stats", "confirm-url"],
   "solver-table": ["url", "solver", "mints"],
   solver: ["url", "priority-fee", "keypair", "yes", "owner", "delegate", "mint", "mints", "amount", "units"],
@@ -470,6 +472,7 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
   claims: {
     show: ["url", "owner", "nonce"],
     open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake", "workers"],
+    list: ["url", "priority-fee", "keypair", "yes", "nonce", "workers"],
     take: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
     drop: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
     settle: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],

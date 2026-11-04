@@ -14,6 +14,8 @@ import * as client from "@intent-engine/client";
 import { SDK_ERRORS, SdkError } from "@intent-engine/client";
 import { LEDGER_FORMS } from "@intent-engine/client/internal";
 import { LEDGER_COMMANDS } from "../src/ledger-keys.js";
+import { EXIT_ALERTED, EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE } from "../src/main.js";
+import { EXIT_RETRY, SIGNAL_EXIT } from "../src/judge-errors.js";
 
 type Json = Record<string, unknown>;
 
@@ -102,6 +104,16 @@ const table = (header: string[], body: string[][]) => [
 
 const RUNS_ALONE = new Set(["judge"]);
 
+const EXIT_ROWS: string[][] = [
+  [String(EXIT_OK), "The command finished."],
+  [String(EXIT_FAILED), "The command failed or was refused; `judge` also exits this way when the verdict is not a pass, and `sandbox doctor` when the sandbox is not ready."],
+  [String(EXIT_USAGE), "The arguments were wrong; nothing was sent."],
+  [String(EXIT_PARTIAL), "The command did part of its work: `crank` when any action failed, `migrate --all` when any account failed to migrate, `mandate revoke` when the revoke landed but a cancel of one of the mandate escrows failed or was not confirmed. The JSON on stdout names what failed; run the command again for the rest."],
+  [String(EXIT_ALERTED), "`monitor --once` raised at least one alert."],
+  [String(EXIT_RETRY), "`judge` hit an infrastructure error, which is not a verdict on the work; nothing was signed or paid."],
+  [`${SIGNAL_EXIT.SIGINT} and ${SIGNAL_EXIT.SIGTERM}`, "`judge` was stopped by SIGINT or SIGTERM; nothing was paid and no verdict was written."],
+];
+
 function cliPage(): string {
   const verbs = Object.keys(ACCEPTS);
   const body = verbs.flatMap((verb) => {
@@ -132,6 +144,10 @@ function cliPage(): string {
     `When neither \`--keypair\` nor \`${ENV_KEYPAIR}\` is given, the wallet \`setup\` saved is the default, which is why \`--keypair\` is in brackets below; only \`signed submit\` always needs its relayer's \`--keypair\`.`,
     "",
     `\`--keypair\` also takes a Ledger, as ${LEDGER_FORMS.map((f) => `\`${f}\``).join(", ")}, for ${LEDGER_COMMANDS.map((c) => `\`${c}\``).join(", ")}; every other command refuses one and needs a key file.`,
+    "",
+    "## Exit codes",
+    "",
+    ...table(["Code", "Meaning"], EXIT_ROWS),
     "",
     ...body,
     ...plain,
@@ -381,6 +397,18 @@ describe("generated reference docs", () => {
     expect(parse(["help"], {})).toEqual({ name: "help", verb: undefined });
     expect(parse(["help", "create"], {})).toEqual({ name: "help", verb: "create" });
     expect(parse(["create", "--help"], {})).toEqual({ name: "help", verb: "create" });
+  });
+
+  it("reference/cli.md lists every exit code the CLI returns, with the commands that exit 3", () => {
+    const page = cliPage();
+    expect(page).toContain("## Exit codes");
+    for (const code of [EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_PARTIAL, EXIT_ALERTED, EXIT_RETRY]) {
+      expect(page, String(code)).toContain(`| ${code} |`);
+    }
+    const partial = page.split("\n").find((line) => line.startsWith(`| ${EXIT_PARTIAL} |`)) ?? "";
+    for (const command of ["`crank`", "`migrate --all`", "`mandate revoke`"]) {
+      expect(partial, command).toContain(command);
+    }
   });
 
   it("numbers engine errors exactly as the program's IDL does", () => {

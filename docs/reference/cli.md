@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | new-wallet | send-sol | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | sandbox doctor | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | new-wallet | send-sol | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | set-announce-fee | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | sandbox doctor | committee create|show|vote|release | claims show | claims open | claims list | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output`, `--help` and `--debug`. `--debug` writes a line to stderr for each RPC call, retry, transaction sent and confirmed, and spec or work fetch, so the JSON on stdout stays parseable; urls in it show only scheme, host and port.
@@ -12,7 +12,19 @@ Every command accepts `--output`, `--help` and `--debug`. `--debug` writes a lin
 
 When neither `--keypair` nor `INTENT_ENGINE_KEYPAIR` is given, the wallet `setup` saved is the default, which is why `--keypair` is in brackets below; only `signed submit` always needs its relayer's `--keypair`.
 
-`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `close-legacy`, `migrate`, `approve`, `revoke-approval`, `deliver`, `refute`, `reclaim`, `claim-held`, `close-book`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims open`, `claims take`, `claims drop`, `claims standby`, `claims leave`, `claims advance`, `claims settle`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
+`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `close-legacy`, `migrate`, `approve`, `revoke-approval`, `deliver`, `refute`, `reclaim`, `claim-held`, `close-book`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims open`, `claims list`, `claims take`, `claims drop`, `claims standby`, `claims leave`, `claims advance`, `claims settle`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | The command finished. |
+| 1 | The command failed or was refused; `judge` also exits this way when the verdict is not a pass, and `sandbox doctor` when the sandbox is not ready. |
+| 2 | The arguments were wrong; nothing was sent. |
+| 3 | The command did part of its work: `crank` when any action failed, `migrate --all` when any account failed to migrate, `mandate revoke` when the revoke landed but a cancel of one of the mandate escrows failed or was not confirmed. The JSON on stdout names what failed; run the command again for the rest. |
+| 4 | `monitor --once` raised at least one alert. |
+| 75 | `judge` hit an infrastructure error, which is not a verdict on the work; nothing was signed or paid. |
+| 130 and 143 | `judge` was stopped by SIGINT or SIGTERM; nothing was paid and no verdict was written. |
 
 ## setup
 
@@ -270,6 +282,14 @@ set-committee-floor ([--keypair <file>] [--yes] | --authority <address>) --mint 
 
 Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--floor`, `--output`, `--help`, `--debug`
 
+## set-announce-fee
+
+```text
+set-announce-fee ([--keypair <file>] [--yes] | --authority <address>) --fee <lamports>
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--fee`, `--output`, `--help`, `--debug`
+
 ## solve
 
 ```text
@@ -497,12 +517,14 @@ Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`
 ## claims
 
 ```text
-claims show --owner <address> --nonce <n> | open [--keypair <owner file>] --nonce <n> --max-secs <seconds> --stake <SOL> [--workers <a,b,...>] [--yes] | take [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | drop [--keypair <worker file>] --owner <address> --nonce <n> [--yes] | settle [--keypair <payer file>] --owner <address> --nonce <n> [--yes] | standby [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | leave [--keypair <file>] --owner <address> --nonce <n> [--seq <n>] [--yes] | advance [--keypair <payer file>] --owner <address> --nonce <n> [--yes]
+claims show --owner <address> --nonce <n> | open [--keypair <owner file>] --nonce <n> --max-secs <seconds> --stake <SOL> [--workers <a,b,...>] [--yes] | list [--keypair <owner file>] --nonce <n> --workers <a,b,...> [--yes] | take [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | drop [--keypair <worker file>] --owner <address> --nonce <n> [--yes] | settle [--keypair <payer file>] --owner <address> --nonce <n> [--yes] | standby [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | leave [--keypair <file>] --owner <address> --nonce <n> [--seq <n>] [--yes] | advance [--keypair <payer file>] --owner <address> --nonce <n> [--yes]
 ```
 
 Options for `show`: `--url`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
 Options for `open`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--max-secs`, `--stake`, `--workers`, `--output`, `--help`, `--debug`
+
+Options for `list`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--workers`, `--output`, `--help`, `--debug`
 
 Options for `take`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`, `--debug`
 

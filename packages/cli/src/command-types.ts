@@ -78,6 +78,7 @@ export type Command =
   | (Administered & { name: "set-mint-cap"; mint: Address; maxPerOrder: bigint; windowCap: bigint; windowSecs: number; totalLimit?: bigint })
   | (Administered & { name: "set-caps-required"; required: boolean })
   | (Administered & { name: "set-committee-floor"; mint: Address; floor: bigint })
+  | (Administered & { name: "set-announce-fee"; fee: number })
   | (Remote & { name: "show-mint-cap"; mint: Address })
   | (Keyed & {
       name: "solve";
@@ -166,6 +167,7 @@ export type Command =
   | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; confirmUrl?: string | undefined })
   | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
   | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint; workers: Address[] | undefined })
+  | (Keyed & { name: "claims-list"; yes: boolean; nonce: bigint; workers: Address[] })
   | (Keyed & { name: "claims-take"; yes: boolean; owner: Address; nonce: bigint; secs: number })
   | (Keyed & { name: "claims-drop"; yes: boolean; owner: Address; nonce: bigint })
   | (Keyed & { name: "claims-settle"; yes: boolean; owner: Address; nonce: bigint })

@@ -18,7 +18,6 @@ import { FAUCET_INTERVAL_MINUTES, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetWa
 import { VERSION } from "../src/version.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
-import { unpricedFloor } from "@intent-engine/solver";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -64,9 +63,9 @@ function preset(at: Address, mintAuthority: Address | null): void {
 const nativeMint = () => preset(NATIVE_MINT, null);
 
 async function filling(keys: Record<string, KeyPairSigner>): Promise<Record<string, unknown> | undefined> {
-  const [warned, ...scans] = (await cli(fillerSolve(), keys)).each();
-  expect(warned).toEqual({ at: expect.any(String), warnings: [unpricedFloor(TEST_TOKEN)] });
-  return scans[0];
+  const lines = (await cli(fillerSolve(), keys)).each();
+  expect(lines.filter((line) => "warnings" in line)).toEqual([]);
+  return lines[0];
 }
 
 function fillerSolve(): string[] {
@@ -155,6 +154,8 @@ describe("the quickstart", () => {
       `${NATIVE_MINT}:${TEST_TOKEN}=200/1`,
       "--min-profit",
       `${TEST_TOKEN}=1`,
+      "--sol-value",
+      `${TEST_TOKEN}=200/1`,
       "--watch",
       "--interval",
       "5",

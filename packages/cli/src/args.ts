@@ -346,6 +346,7 @@ function parseCommand(argv: readonly string[], env: Env): Command {
     case "set-mint-cap":
     case "set-caps-required":
     case "set-committee-floor":
+    case "set-announce-fee":
       return adminOf(verb, sub, remote, values);
     case "events":
       noSub(sub);

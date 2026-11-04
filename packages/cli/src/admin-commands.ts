@@ -19,6 +19,7 @@ import {
   buildLowerPause,
   buildRaisePause,
   buildUpdateEconomics,
+  buildSetAnnounceFee,
   buildSetCapsRequired,
   buildSetCommitteeFloor,
   buildSetMintCap,
@@ -136,7 +137,8 @@ type AdminCommand = Extract<
       | "set-economics"
       | "set-mint-cap"
       | "set-caps-required"
-      | "set-committee-floor";
+      | "set-committee-floor"
+      | "set-announce-fee";
   }
 >;
 
@@ -369,6 +371,22 @@ export async function adminCommand(command: AdminCommand, runtime: Runtime, tran
           command.floor === 0n
             ? "Any attestor may then judge proof escrows of this token"
             : `Proof escrows of ${command.floor} raw units or more of this token then need a committee of at least ${FLOOR_THRESHOLD} judges as attestor`,
+        ],
+      );
+    }
+    case "set-announce-fee": {
+      const { config } = await loadConfig(transport);
+      return administer(
+        transport,
+        command.url,
+        runtime,
+        command.by,
+        async (admin) => [await buildSetAnnounceFee({ admin, fee: command.fee })],
+        () => [
+          `Announce fee: ${config.announceFee} -> ${command.fee} lamports per delivery announcement`,
+          command.fee === 0
+            ? "Announcing a delivery then costs the worker no fee"
+            : `Each announcement then pays ${command.fee} lamports to the fee recipient ${config.feeRecipient}`,
         ],
       );
     }

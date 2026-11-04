@@ -121,6 +121,8 @@ Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was 
 
 `claims take` and `claims standby` refuse a wallet the spec is not sealed to. The program enforces this through the escrow's claim list. `solive_wallet_escrow` and `solive_wallet_escrow_plan` set it to the workers the sealed spec invites, leaving out the owner and the attestor. `claims open --workers <a,b,...>` sets it from the command line. The program then refuses a claim or stand-by from any other wallet, whatever transaction it sends.
 
+`claims list --nonce <n> --workers <a,b,...>` adds a list to claims opened without one, while no worker holds or waits for the job.
+
 The escrow tools send only the list their preview showed. If the spec is sealed again to other wallets before the send, the send refuses; preview it again.
 
 `claims show` and `solive_get_claims` show the list. A list never changes once set. Without a list, any wallet can hold a claim until it lapses, and while it holds nobody else can be paid.

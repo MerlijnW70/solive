@@ -25,7 +25,7 @@ import { type ClaimsView, type Client, isSdkError, type Transport } from "@inten
 import { createClient } from "@intent-engine/client/node";
 import { escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
-import { finishList, listAccount, listRefusal, listShown, openListed } from "./claim-lists.js";
+import { finishList, listAccount, listExists, listLate, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused, ownOrder } from "./flows.js";
 import { claimNotInvited, sealedInvites } from "./invites.js";
@@ -39,6 +39,7 @@ type ClaimCommand = Extract<
     name:
       | "claims-show"
       | "claims-open"
+      | "claims-list"
       | "claims-take"
       | "claims-drop"
       | "claims-settle"
@@ -65,6 +66,8 @@ export const coolingDown = (intent: Address, worker: Address, until: bigint) =>
 
 export const lineWaiting = (intent: Address, waiting: number) =>
   `${waiting} ${waiting === 1 ? "worker stands" : "workers stand"} by for escrow ${intent}, so it is handed over in line order; join the line with claims standby; nothing was sent`;
+
+export const notOpen = (intent: Address): string => `escrow ${intent} is not open, so its claims take no list; nothing was sent`;
 
 export const NO_PROFILE = "has published no profile";
 
@@ -140,6 +143,23 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
     const instruction = await buildOpenClaims({ owner: signer, intent, maxSecs: command.maxSecs, stake: command.stake });
     const summary = [opens, `Pays rent: ${signer.address}, for the claims board ${board}`];
     return previewed(transport, [instruction], signer, { intent, board, summary }, command.yes);
+  }
+  if (command.name === "claims-list") {
+    const { address: intent } = await ownOrder(transport, signer.address, command.nonce);
+    const { view } = await claimsOf(client, signer.address, command.nonce);
+    if ((await escrowOpen(client, signer.address, command.nonce, await client.chainTime())) === null) {
+      throw new FlowRefused(notOpen(intent));
+    }
+    if (view.list !== null) {
+      throw new FlowRefused(listExists(intent));
+    }
+    if (view.state === "held" && view.worker !== null) {
+      throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
+    }
+    if (view.line.waiting > 0) {
+      throw new FlowRefused(lineWaiting(intent, view.line.waiting));
+    }
+    return listLate(command.workers, signer, transport, intent, command.yes);
   }
   if (command.name === "claims-leave") {
     return leaveLine(command, signer, transport, client);

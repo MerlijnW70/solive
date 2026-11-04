@@ -35,7 +35,7 @@ trap stop EXIT INT TERM
 delay=1
 while true; do
   started=$SECONDS
-  "${cli[@]}" solve --url "$url" --keypair "$keypair" --issue "$wrapped_sol:$test_token=200/1" --min-profit "$test_token=1" --watch --interval "$interval" &
+  "${cli[@]}" solve --url "$url" --keypair "$keypair" --issue "$wrapped_sol:$test_token=200/1" --min-profit "$test_token=1" --sol-value "$test_token=200/1" --watch --interval "$interval" &
   solving=$!
   wait "$solving"
   if (( SECONDS - started > 300 )); then

@@ -2,7 +2,7 @@ import type { Values } from "./arg-options.js";
 import { key, noSub, parseBounded, parseFeeBps, parseKindFees, parseKinds, parsePause, required, u64, UsageError } from "./arg-values.js";
 import { authorityOf, configChange } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
-import { BPS_DENOMINATOR, MIN_CAP_WINDOW_SECS } from "@intent-engine/core/internal";
+import { BPS_DENOMINATOR, MAX_CREATE_FEE, MIN_CAP_WINDOW_SECS } from "@intent-engine/core/internal";
 
 const MAX_PARTNER_CUT_BPS = Number(BPS_DENOMINATOR);
 
@@ -16,7 +16,8 @@ export type AdminVerb =
   | "accept-admin"
   | "set-mint-cap"
   | "set-caps-required"
-  | "set-committee-floor";
+  | "set-committee-floor"
+  | "set-announce-fee";
 
 export function adminOf(verb: AdminVerb, sub: string | undefined, remote: Remote, values: Values): Command {
   switch (verb) {
@@ -95,5 +96,8 @@ export function adminOf(verb: AdminVerb, sub: string | undefined, remote: Remote
     case "set-committee-floor":
       noSub(sub);
       return { name: "set-committee-floor", ...remote, by: authorityOf(values), mint: key(values, "mint"), floor: u64(values, "floor") };
+    case "set-announce-fee":
+      noSub(sub);
+      return { name: "set-announce-fee", ...remote, by: authorityOf(values), fee: parseBounded(required(values, "fee"), "fee", MAX_CREATE_FEE) };
   }
 }

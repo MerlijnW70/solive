@@ -1,6 +1,6 @@
 import { isSdkError } from "@intent-engine/client";
 import type { Address, Instruction, TransactionPartialSigner } from "@solana/kit";
-import { buildClaimsWithList, buildExtendClaimants, checkListed, claimantChunks, claimListAddress } from "@intent-engine/core/internal";
+import { buildClaimsWithList, buildExtendClaimants, buildListClaimants, checkListed, claimantChunks, claimListAddress } from "@intent-engine/core/internal";
 import type { ClaimListView, Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { FlowRefused } from "./flows.js";
@@ -13,6 +13,9 @@ export const listIncomplete = (intent: Address, list: ClaimListView): string =>
 
 export const listDiffers = (intent: Address, list: ClaimListView): string =>
   `escrow ${intent} already takes claims, and its unfinished claim list starts with ${list.workers.join(", ")} of ${list.size} wallets; pass --workers with those ${list.size} wallets in the same order to finish it; nothing was sent`;
+
+export const listExists = (intent: Address): string =>
+  `escrow ${intent} already has a claim list; finish an unfinished one with claims open --workers; nothing was sent`;
 
 export const limitsLine = (workers: readonly Address[]): string =>
   `Limits: claims to ${workers.length === 1 ? "the 1 listed wallet" : `the ${workers.length} listed wallets`} ${workers.join(", ")}; the program refuses any other`;
@@ -74,4 +77,14 @@ export async function finishList(workers: readonly Address[], signer: Transactio
   const sends = await Promise.all(claimantChunks(rest).map(async (part) => [await buildExtendClaimants({ owner: signer, intent, workers: part })]));
   const summary = [`Finishes: the claim list ${list.address} of escrow ${intent}, adding ${rest.length} of its ${list.size} wallets`, limitsLine(workers), ...partsLine(sends.length)];
   return inParts(transport, sends, signer, { intent, claim_list: list.address, summary }, yes);
+}
+
+export async function listLate(workers: readonly Address[], signer: TransactionPartialSigner, transport: Transport, intent: Address, yes: boolean): Promise<object> {
+  const claimList = await claimListAddress(intent);
+  const [first = [], ...rest] = claimantChunks(workers);
+  const head = await buildListClaimants({ owner: signer, intent, size: workers.length, workers: first });
+  const tail = await Promise.all(rest.map((part) => buildExtendClaimants({ owner: signer, intent, workers: part })));
+  const sends = [[head], ...tail.map((instruction) => [instruction])];
+  const summary = [`Lists: ${workers.length} ${workers.length === 1 ? "wallet" : "wallets"} on the claims of escrow ${intent}, added after they opened`, limitsLine(workers), ...partsLine(sends.length), `Pays rent: ${signer.address}, for the claim list ${claimList}`];
+  return inParts(transport, sends, signer, { intent, claim_list: claimList, summary }, yes);
 }

@@ -27,6 +27,7 @@ export const LEDGER_COMMANDS = [
   "advance-nonce",
   "advance-epoch",
   "claims open",
+  "claims list",
   "claims take",
   "claims drop",
   "claims standby",

@@ -275,6 +275,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return reputationCommand(command, runtime, transport);
     case "claims-show":
     case "claims-open":
+    case "claims-list":
     case "claims-take":
     case "claims-drop":
     case "claims-settle":
@@ -320,6 +321,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "set-mint-cap":
     case "set-caps-required":
     case "set-committee-floor":
+    case "set-announce-fee":
       return adminCommand(command, runtime, transport);
     case "show-mint-cap":
       return showMintCap(transport, command.mint);

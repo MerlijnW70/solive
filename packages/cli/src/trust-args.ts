@@ -111,7 +111,7 @@ export function feedbackOf(sub: string | undefined, remote: Remote, values: Valu
   };
 }
 
-export const CLAIMS_SUBS = "claims needs show, open, take, drop, settle, standby, leave or advance";
+export const CLAIMS_SUBS = "claims needs show, open, list, take, drop, settle, standby, leave or advance";
 export const PROFILE_SUBS = "profile needs show, set, close or encryption-key new";
 export const ENCRYPTION_KEY_SUB = "profile encryption-key needs new";
 export const ENCRYPTION_KEY_TEXT = `--encryption-key is ${ENCRYPTION_KEY_RULE}, or ${NO_ENCRYPTION_KEY} to remove it`;
@@ -166,6 +166,15 @@ function claimsOf(sub: string | undefined, remote: Remote, values: Values): Comm
         maxSecs: parseBounded(required(values, "max-secs"), "max-secs", MAX_CLAIM_SECS, 1),
         stake: stakeOf(values),
         workers: workersOf(values),
+      };
+    case "list":
+      return {
+        name: "claims-list",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        nonce,
+        workers: workersOf({ ...values, workers: required(values, "workers") }) ?? [],
       };
     case "standby":
       return {
@@ -261,7 +270,7 @@ export function trustOf(verb: string, sub: string | undefined, remote: Remote, v
     case "feedback":
       return feedbackOf(sub, remote, values);
     case "claims":
-      if (sub === undefined || !["show", "open", "take", "drop", "settle", "standby", "leave", "advance"].includes(sub)) {
+      if (sub === undefined || !["show", "open", "list", "take", "drop", "settle", "standby", "leave", "advance"].includes(sub)) {
         throw new UsageError(CLAIMS_SUBS);
       }
       return claimsOf(sub, remote, values);
