@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { copyOf, judgeRoot, MOUNT_BASE, MOUNT_DIR, MOUNT_FALLBACK, MOUNT_SLOTS, mountBase, readArtifact, removeCopy, slotLock } from "../src/artifact.js";
+import { copyOf, judgeRoot, MOUNT_BASE, MOUNT_DIR, MOUNT_FALLBACK, MOUNT_SLOTS, mountBase, readArtifact, removeCopy, SLOT_WAIT_MS, slotLock } from "../src/artifact.js";
 import { DESKTOP_BIND_MOUNTS, DESKTOP_COPIES, hostMounts, MOUNTS_NEAR, mountsNear, mountsOf } from "../src/sandbox-doctor.js";
 import { OUTSIDE_MODE, planted } from "./slot-plant.js";
 
@@ -68,6 +68,18 @@ const alive = (pid: number): boolean => {
 
 const groupOf = (pid: number): number => Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.split(" ")[2]);
 
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  const pid = child.pid ?? 0;
+  if (pid <= 1 || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    return;
+  }
+}
+
 async function started(child: ChildProcess): Promise<ChildProcess> {
   children.push(child);
   await new Promise<void>((done, failed) => {
@@ -117,10 +129,8 @@ describe.skipIf(process.platform !== "linux")("judge mount slots", () => {
 
   afterEach(async () => {
     for (const child of children.splice(0)) {
-      if (child.pid !== undefined) {
-        spawnSync("kill", ["-KILL", `-${child.pid}`]);
-        child.kill("SIGKILL");
-      }
+      signalGroup(child, "SIGKILL");
+      child.kill("SIGKILL");
     }
     for (const name of PLACES) {
       const value = saved[name];
@@ -177,7 +187,8 @@ describe.skipIf(process.platform !== "linux")("judge mount slots", () => {
     const groups = [groupOf(holder), groupOf(pid)];
     const free = () => spawnSync("flock", ["-n", slotLock(base, 0), "true"]).status === 0;
     const ended = new Promise((done) => judge.child.once("exit", done));
-    process.kill(-pid, "SIGINT");
+    expect(groupOf(pid)).toBe(pid);
+    signalGroup(judge.child, "SIGINT");
     await until(() => judge.lines.includes("interrupted"));
     expect(judge.lines).toEqual([join(base, "slot-0"), "interrupted"]);
     expect([alive(holder), free()]).toEqual([true, false]);
@@ -186,6 +197,24 @@ describe.skipIf(process.platform !== "linux")("judge mount slots", () => {
     await until(() => !alive(holder));
     expect([alive(holder), free()]).toEqual([false, true]);
     expect(groups[0]).not.toBe(groups[1]);
+  });
+
+  it("stops waiting for a lock holder that does not end, kills it and frees the slot within the bound", { timeout: 30_000 }, async () => {
+    const base = (await mountBase()) ?? "";
+    const root = await judgeRoot("judge-artifact-", true);
+    const holder = holderOf(process.pid) ?? 0;
+    expect(holder).toBeGreaterThan(1);
+    expect(groupOf(holder)).toBe(holder);
+    process.kill(-holder, "SIGSTOP");
+    const started = Date.now();
+    expect(await removeCopy(root)).toBeUndefined();
+    const took = Date.now() - started;
+    expect(took).toBeGreaterThanOrEqual(SLOT_WAIT_MS - 100);
+    expect(took).toBeLessThan(SLOT_WAIT_MS + 3_000);
+    await until(() => !alive(holder));
+    expect(alive(holder)).toBe(false);
+    await until(() => spawnSync("flock", ["-n", slotLock(base, 0), "true"]).status === 0);
+    expect(spawnSync("flock", ["-n", slotLock(base, 0), "true"]).status).toBe(0);
   });
 
   it("falls back to a fresh directory, and says so, when every slot is held", { timeout: 30_000 }, async () => {

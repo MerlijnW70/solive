@@ -110,6 +110,7 @@ export const MOUNT_SLOTS = 64;
 export const MOUNT_BASE = "judge-mounts-";
 
 export const SLOT_HELD = "held";
+export const SLOT_WAIT_MS = 5_000;
 export const MOUNT_FALLBACK =
   "warning: no private mount slot could be taken, so this check mounts a fresh directory; Docker Desktop keeps one host mount for every fresh directory until it restarts";
 
@@ -133,6 +134,16 @@ async function opened(path: string): Promise<void> {
   }
 }
 
+function stopped(child: ChildProcess): void {
+  try {
+    if (child.pid !== undefined && child.pid > 1) {
+      process.kill(-child.pid, "SIGKILL");
+    }
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+
 function locked(path: string): Promise<ChildProcess | null | undefined> {
   return new Promise((done) => {
     const child = spawn("flock", ["-n", path, "sh", "-c", `echo ${SLOT_HELD}; exec cat > /dev/null`], {
@@ -140,18 +151,26 @@ function locked(path: string): Promise<ChildProcess | null | undefined> {
       detached: true,
       env: { PATH: [process.env["PATH"], "/usr/bin", "/bin"].filter((part) => part !== undefined && part !== "").join(":") },
     });
-    child.once("error", () => done(null));
-    child.once("exit", () => done(undefined));
+    const timer = setTimeout(() => {
+      stopped(child);
+      done(undefined);
+    }, SLOT_WAIT_MS);
+    const settle = (value: ChildProcess | null | undefined) => {
+      clearTimeout(timer);
+      done(value);
+    };
+    child.once("error", () => settle(null));
+    child.once("exit", () => settle(undefined));
     child.stdout.setEncoding("utf8");
     child.stdout.once("data", (line: string) => {
       if (line.trim() !== SLOT_HELD) {
-        child.kill("SIGKILL");
+        stopped(child);
         return;
       }
       (child.stdin as Socket).unref();
       (child.stdout as Socket).unref();
       child.unref();
-      done(child);
+      settle(child);
     });
   });
 }
@@ -162,7 +181,14 @@ function unlocked(child: ChildProcess | undefined): Promise<void> {
       done();
       return;
     }
-    child.once("exit", () => done());
+    const timer = setTimeout(() => {
+      stopped(child);
+      done();
+    }, SLOT_WAIT_MS);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      done();
+    });
     child.stdin?.end();
   });
 }

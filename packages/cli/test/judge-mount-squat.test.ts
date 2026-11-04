@@ -51,12 +51,12 @@ const loop = () => {
 };
 loop();`;
 
-const NOBODY = process.platform === "linux" && spawnSync("sudo", ["-n", "-u", "nobody", "true"], { stdio: "ignore" }).status === 0;
+const NOBODY = process.platform === "linux" && spawnSync("sudo", ["-n", "-u", "nobody", process.execPath, "-e", "0"], { cwd: "/", stdio: "ignore", timeout: 10_000 }).status === 0;
 
 describe("judge mount slots against another local user", () => {
   it("a second user who pre-creates every slot base name it can reach, then watches /proc for lock names and squats each one, leaves every run a slot", { timeout: 60_000 }, async (context) => {
     if (!NOBODY) {
-      context.skip("needs Linux and sudo -n -u nobody to run the squatter as a second user");
+      context.skip("needs Linux and sudo -n -u nobody able to run this Node binary, to run the squatter as a second user");
     }
     const saved = Object.fromEntries(PLACES.map((name) => [name, process.env[name]]));
     const scratch = await mkdtemp(join(tmpdir(), "mount-squat-"));
@@ -90,12 +90,14 @@ describe("judge mount slots against another local user", () => {
         over = true;
       });
       const slots: string[] = [];
-      while (!over) {
+      const deadline = Date.now() + SQUAT_MS * 2;
+      while (!over && Date.now() < deadline) {
         const root = await judgeRoot("judge-artifact-", true);
         slots.push(basename(root));
         await new Promise((wake) => setTimeout(wake, HOLD_MS));
         await removeCopy(root);
       }
+      expect(over, "the squatter ended in time").toBe(true);
       await ended;
       const { seen, refused } = JSON.parse(report) as { seen: string[]; refused: string[] };
       const lock = slotLock((await mountBase()) ?? "", 0);

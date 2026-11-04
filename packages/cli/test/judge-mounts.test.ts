@@ -28,7 +28,7 @@ const INTERRUPTED = 130;
 const POLL_MS = 200;
 
 const SERIAL = `\0${GUARD}`;
-const SERIAL_WAIT_MS = 600_000;
+const SERIAL_WAIT_MS = 120_000;
 
 const sources = async (): Promise<string[]> =>
   (await readFile("/proc/self/mountinfo", "utf8"))
@@ -114,7 +114,7 @@ async function interrupting<T>(run: () => Promise<T>): Promise<T> {
 }
 
 describe("the judge sandbox mounts", () => {
-  it("a batch of sandbox runs that pass, fail, crash, time out or are interrupted leaves the host no more mounts than before", { timeout: 1_500_000 }, async (context) => {
+  it("a batch of sandbox runs that pass, fail, crash, time out or are interrupted leaves the host no more mounts than before", { timeout: 600_000 }, async (context) => {
     if (SKIP !== undefined) {
       context.skip(SKIP);
     }
