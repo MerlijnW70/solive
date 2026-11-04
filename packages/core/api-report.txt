@@ -1,4 +1,5 @@
 class AccountVersionError: class AccountVersionError extends SdkError { readonly code = "account-version-error"; readonly name = "AccountVersionError"; readonly account: string; readonly version: number | null; readonly current: number; constructor(account: string, version: number | null, current: number, size: number, oldest?: number); }
+type AgentPayout: type AgentPayout = { agent: Address; account: Address; fee: bigint; };
 type AnnState: type AnnState = "announced" | "paid";
 type AnySdkError: type AnySdkError = SdkErrors[SdkErrorCode];
 type AttestedResultFields: type AttestedResultFields = Omit<AttestedResultParams, "kind">;
@@ -20,6 +21,7 @@ type EngineEventName: type EngineEventName = (typeof IntentEngineEvent)[IntentEn
 type EventPosition: type EventPosition = { instruction: number; inner: number; };
 type FeeConfig: type FeeConfig = { feeBps: number; kindFeeMask: number; kindFeeBps: readonly number[]; };
 type FeeShares: type FeeShares = { protocol: bigint; partner: bigint; net: bigint; };
+type FillPayouts: type FillPayouts = { agentPaid: AgentPayout | null; withheld: WithheldPayout[]; };
 const INTENT_ENGINE_PROGRAM_ADDRESS: const INTENT_ENGINE_PROGRAM_ADDRESS: Address<"GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU">;
 type InputRule: type InputRule = "range" | "length" | "format" | "conflict" | "duplicate" | "order" | "missing" | "unsupported";
 type Intent: type Intent = { discriminator: ReadonlyUint8Array; owner: Address; inputMint: Address; outputMint: Address; receiver: Address; nonce: bigint; escrowed: bigint; createdAt: bigint; expiresAt: bigint; kind: number; status: number; bump: number; vaultBump: number; version: number; held: number; flags: number; params: ReadonlyUint8Array; rentPayer: Address; filled: bigint; revision: number; partnerBps: number; partnerCutBps: number; inFlight: bigint; partner: Address; bounty: number; mandate: Address; feeBps: number; gap: ReadonlyUint8Array; mandateSerial: bigint; agentFee: bigint; claims: number; gap2: ReadonlyUint8Array; capped: bigint; };
@@ -46,6 +48,7 @@ class NotInvited: class NotInvited extends SdkError { readonly code = "not-invit
 const PRODUCT_SLUG: const PRODUCT_SLUG = "solive";
 type PositionedEvent: type PositionedEvent = EngineEvent & EventPosition;
 type ProfileView: type ProfileView = { wallet: Address; skills: string[]; endpoint: string; docUrl: string | null; docSha256: string | null; encryptionKey: string | null; updatedAt: bigint; };
+type RelayerPayout: type RelayerPayout = { relayer: Address; account: Address; fee: bigint; };
 class SdkError: abstract class SdkError extends Error { abstract readonly code: SdkErrorCode; readonly [BRAND] = true; }
 type SdkErrorCode: type SdkErrorCode = keyof SdkErrors;
 interface SdkErrors: interface SdkErrors { "invalid-input": InvalidInput; "intent-core-error": IntentCoreError; "encryption-key-error": EncryptionKeyError; "sealed-error": SealedError; "not-invited": NotInvited; "account-version-error": AccountVersionError; "not-an-engine-account": NotAnEngineAccount; "no-signature": NoSignature; }
@@ -57,6 +60,7 @@ type SwapExactInParams: type SwapExactInParams = { kind: Kind.SwapExactIn; amoun
 external TOKEN_PROGRAM_ADDRESS: @solana-program/token#TOKEN_PROGRAM_ADDRESS
 type Terms: type Terms = { kind: Kind; kindName: KindName; params: IntentParams; sells: bigint; receivesAtLeast: bigint | null; };
 type UnreadableAccount: type UnreadableAccount = { address: Address; reason: string; };
+type WithheldPayout: type WithheldPayout = { role: WithheldRole | "unknown"; payee: Address; account: Address; amount: bigint; };
 type WithheldRole: type WithheldRole = (typeof WITHHELD_ROLES)[keyof typeof WITHHELD_ROLES];
 function attestedResult: function attestedResult(fields: AttestedResultFields): AttestedResultParams;
 function configSummary: function configSummary(config: SummarizedConfig): ConfigSummary;
@@ -64,6 +68,7 @@ function decodeEvent: function decodeEvent(data: Uint8Array): EngineEvent | null
 function dutchAuction: function dutchAuction(fields: DutchAuctionFields): DutchAuctionParams;
 function eventNamed: function eventNamed<E extends EngineEvent, N extends E["name"]>(events: readonly E[], name: N): Extract<E, { name: N; }> | undefined;
 function feeBpsFor: function feeBpsFor(config: FeeConfig, kind: number): number;
+function fillPayoutsOf: function fillPayoutsOf(events: readonly EngineEvent[], intent: Address): FillPayouts;
 function findAssociatedTokenAddress: function findAssociatedTokenAddress(seeds: { owner: Address; mint: Address; tokenProgram: Address; }): Promise<Address>;
 function formatAmount: function formatAmount(raw: bigint, decimals?: number): string;
 function isSdkError: function isSdkError(error: unknown): error is AnySdkError;
@@ -72,6 +77,7 @@ function kindName: function kindName(kind: number): KindName | undefined;
 function limitOrder: function limitOrder(fields: LimitOrderFields): LimitOrderParams;
 function maxFeeBpsFor: function maxFeeBpsFor(kind: number): number;
 function parseAmount: function parseAmount(text: string, decimals: number): bigint;
+function relayerPaidOf: function relayerPaidOf(events: readonly EngineEvent[], intent: Address): RelayerPayout | null;
 function splitFees: function splitFees(amount: bigint, feeBps: number, partnerBps: number, cutBps: number): FeeShares;
 function statusName: function statusName(status: number): IntentStatusName | undefined;
 function swapExactIn: function swapExactIn(fields: SwapExactInFields): SwapExactInParams;

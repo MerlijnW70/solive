@@ -30,6 +30,7 @@ import {
 } from "./guard.js";
 import { offerFields, offerOutput, offered } from "./offer.js";
 import { recentFills, bestOf, medianOf, openingAsk, type Fill } from "./fills.js";
+import { payoutItems, payoutView } from "./payout-view.js";
 
 export const SWAP_FALLS_OVER = 120;
 export const PAY_TO = "the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none";
@@ -321,6 +322,7 @@ export const walletEstimate = define({
         received: text("whole tokens the owner received"),
         at: optional(time("when the fill landed")),
         signature: text(),
+        ...payoutItems,
       }),
       ESTIMATE_FILLS,
       "newest first",
@@ -342,6 +344,7 @@ export const walletEstimate = define({
       received: formatAmount(f.delivered, outputToken.decimals),
       ...(f.blockTime === null ? {} : { at: f.blockTime }),
       signature: f.signature,
+      ...payoutView(f.payouts, inputToken.decimals),
     }));
     const [latest] = matching;
     if (latest === undefined) {

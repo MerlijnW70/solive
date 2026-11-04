@@ -1,5 +1,5 @@
 import { type EngineTransaction, escrowTermsIn } from "@intent-engine/client";
-import { decodeEvent, type EngineEvent, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { type AgentPayout, decodeEvent, type EngineEvent, fillPayoutsOf, Kind, NATIVE_MINT, type RelayerPayout, relayerPaidOf, type WithheldPayout } from "@intent-engine/core";
 import { attestedShares, type Share, splitShares } from "./payees.js";
 import type { FeedKind, Job } from "./shapes.js";
 
@@ -16,6 +16,8 @@ export type Activity = {
   signers?: number;
   specHash?: string | null;
   refund?: "cancelled" | "expired";
+  agentPaid?: AgentPayout | null;
+  withheld?: WithheldPayout[];
 };
 
 export const hexOf = (bytes: ArrayLike<number>): string => Buffer.from(Uint8Array.from(bytes)).toString("hex");
@@ -75,7 +77,8 @@ export function activitiesOf(tx: EngineTransaction, jobs: Readonly<Record<string
     found.push({ kind: "release", intent, who: "", raw: null, mint: null, owner: null });
     return fresh;
   };
-  for (const event of eventsOf(tx)) {
+  const events = eventsOf(tx);
+  for (const event of events) {
     switch (event.name) {
       case "IntentCreated": {
         const { intent, owner, kind, inputMint, escrowed } = event.fields;
@@ -134,7 +137,15 @@ export function activitiesOf(tx: EngineTransaction, jobs: Readonly<Record<string
         found.push({ kind: "refund", intent: event.fields.intent, who: event.fields.refundTo, raw: event.fields.refunded, mint: known(event.fields.intent), owner: event.fields.owner, refund: "expired" });
         break;
       case "IntentFilled":
-        found.push({ kind: "swap", intent: event.fields.intent, who: event.fields.solver, raw: event.fields.amountIn, mint: known(event.fields.intent), owner: event.fields.owner });
+        found.push({
+          kind: "swap",
+          intent: event.fields.intent,
+          who: event.fields.solver,
+          raw: event.fields.amountIn,
+          mint: known(event.fields.intent),
+          owner: event.fields.owner,
+          ...fillPayoutsOf(events, event.fields.intent),
+        });
         break;
       default:
         break;
@@ -149,8 +160,13 @@ export function activitiesOf(tx: EngineTransaction, jobs: Readonly<Record<string
   });
 }
 
-export function createdJobs(tx: EngineTransaction): { intent: string; owner: string; mint: string; kind: number }[] {
-  return eventsOf(tx).flatMap((event) =>
-    event.name === "IntentCreated" ? [{ intent: event.fields.intent, owner: event.fields.owner, mint: event.fields.inputMint, kind: event.fields.kind }] : [],
+export type CreatedJob = { intent: string; owner: string; mint: string; kind: number; relayerPaid: RelayerPayout | null };
+
+export function createdJobs(tx: EngineTransaction): CreatedJob[] {
+  const events = eventsOf(tx);
+  return events.flatMap((event) =>
+    event.name === "IntentCreated"
+      ? [{ intent: event.fields.intent, owner: event.fields.owner, mint: event.fields.inputMint, kind: event.fields.kind, relayerPaid: relayerPaidOf(events, event.fields.intent) }]
+      : [],
   );
 }

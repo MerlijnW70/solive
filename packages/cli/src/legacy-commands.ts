@@ -9,6 +9,7 @@ import {
   INTENT_DISCRIMINATOR,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isCurrentAccount,
+  isDeliveryRecord,
   isUnreadableAccount,
   legacyStakeTo,
   lineIntent,
@@ -68,6 +69,11 @@ export async function closeLegacy(command: CloseLegacy, runtime: Runtime, transp
   }
   if (migratesInPlace(view.data)) {
     throw new Error(`${account} is a ${stored?.layout.name ?? "engine"} account, which is upgraded in place and never closed`);
+  }
+  if (isDeliveryRecord(view.data)) {
+    const name = stored?.layout.name ?? "delivery";
+    const closes = name === "refutation" ? "no instruction closes a refutation" : `a ${name} closes with its own instruction once its escrow is over`;
+    throw new Error(`${account} is a ${name} account, which is a delivery record, and close-legacy never closes those; ${closes}`);
   }
   const line = lineIntent(view.data);
   if (line !== null && (await escrowOpen(transport, line, await chainTime(transport)))) {

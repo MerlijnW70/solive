@@ -1,5 +1,5 @@
 import type { Address, Signature } from "@solana/kit";
-import { IntentStatus, type WithheldRole } from "@intent-engine/core";
+import { IntentStatus, type WithheldPayout } from "@intent-engine/core";
 import { withheldRole } from "@intent-engine/core/internal";
 import { loadAnnouncement } from "./announcement-reads.js";
 import { type HeldClaim, heldBit, heldClaimsIn, heldIn, type HeldInRelease } from "./held-shares.js";
@@ -24,7 +24,7 @@ export type HeldPayout = {
   close: Signature | null;
 };
 
-export type WithheldFee = { role: WithheldRole | "unknown"; payee: Address; account: Address; amount: bigint };
+export type WithheldFee = WithheldPayout;
 
 export type HeldReturn = { owner: Address; refundTo: Address; swept: bigint; signature: Signature };
 

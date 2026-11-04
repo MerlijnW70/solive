@@ -20,6 +20,7 @@ export {
   type SdkErrorCode,
   type SdkErrors,
 } from "./errors.js";
+export { type AgentPayout, fillPayoutsOf, type FillPayouts, type RelayerPayout, relayerPaidOf, type WithheldPayout } from "./fill-payouts.js";
 export { decodeEvent, type EngineEvent, type EngineEventName, EVENT_IX_TAG, eventNamed, type WithheldRole } from "./events.js";
 export { type EventPosition, type JsonInstruction, type JsonTransaction, type PositionedEvent, transactionEvents } from "./transaction-events.js";
 export { type FeeShares, splitFees } from "./fee.js";

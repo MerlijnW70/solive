@@ -49,7 +49,7 @@ const filled = (intent: Address, amountIn: bigint, delivered: bigint) =>
 
 const tx = (label: string, emitted: Uint8Array[]): EngineTransaction => ({ signature: testSignature(label), slot: 1n, blockTime: null, failed: false, emitted });
 
-const fill = (intent: string, amountIn: bigint, delivered: bigint): Fill => ({ intent: intent as Address, amountIn, delivered, signature: intent, blockTime: null });
+const fill = (intent: string, amountIn: bigint, delivered: bigint): Fill => ({ intent: intent as Address, amountIn, delivered, signature: intent, blockTime: null, payouts: { agentPaid: null, relayerPaid: null, withheld: [], complete: true } });
 
 function permutations<T>(items: readonly T[]): T[][] {
   if (items.length <= 1) {

@@ -2,6 +2,7 @@ import type { EngineTransaction, IntentAccount } from "@intent-engine/client";
 import { Kind, termsOf } from "@intent-engine/core";
 import { type Activity, activitiesOf, createdJobs, hexOf } from "./activity.js";
 import { specName } from "./catalog.js";
+import { payoutsOf } from "./payouts.js";
 import { FEED_EVENTS, KEPT_JOBS, KEPT_PAID, PAID_WINDOW_SECS } from "./limits.js";
 import type { FeedEvent, Job, Paid, State, Step } from "./shapes.js";
 import { amountText, detailOf, tokenOf } from "./words.js";
@@ -58,6 +59,9 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
       const job = jobAt(state, created.intent, slot);
       job.owner = created.owner;
       job.mint = created.mint;
+      if (created.relayerPaid !== null) {
+        job.relayer = { relayer: created.relayerPaid.relayer, account: created.relayerPaid.account, raw: created.relayerPaid.fee.toString() };
+      }
     }
     for (const activity of activitiesOf(tx, state.jobs)) {
       const job = jobAt(state, activity.intent, slot);
@@ -76,6 +80,7 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
       const name = specName(hash);
       const marked = isHouse(activity, job, house);
       const parts = activity.kind === "release" && activity.shares !== undefined && activity.shares.length > 1 ? activity.shares.map((share) => ({ payee: share.payee, amount: places === null ? null : amountText(share.raw, places) })) : null;
+      const payouts = payoutsOf(activity, job, places);
       const event: FeedEvent = {
         kind: activity.kind,
         at,
@@ -91,6 +96,7 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
         detail: detailOf(activity, amount, token, name, parts),
         ...(activity.kind === "release" ? { payee: activity.payee ?? activity.who, attestor: activity.attestor ?? activity.who } : {}),
         ...(parts === null ? {} : { shares: parts }),
+        ...(payouts === undefined ? {} : { payouts }),
         ...(seq === undefined ? {} : { seq }),
       };
       if (!state.events.some((known) => known.signature === event.signature && known.kind === event.kind && known.intent === event.intent && known.who === event.who)) {

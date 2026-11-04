@@ -5,12 +5,16 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { testSignature } from "@intent-engine/client/testing";
 import {
   type ConfigArgs,
+  decodeEvent,
   EVENT_IX_TAG,
   findConfigPda,
   findProgramDataAddress,
   getConfigDecoder,
   getConfigEncoder,
+  getAgentPaidEventEncoder,
+  getFeeWithheldEventEncoder,
   getIntentCreatedEventEncoder,
+  getRelayerPaidEventEncoder,
   getIntentFilledEventEncoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
 } from "@intent-engine/core/internal";
@@ -117,6 +121,14 @@ function filled(intent: Address, amountIn: bigint): Uint8Array {
   );
 }
 
+async function intentOf(tx: EngineTransaction): Promise<Address> {
+  const made = decodeEvent(tx.emitted[0] ?? new Uint8Array());
+  if (made === null || made.name !== "IntentCreated") {
+    throw new Error("the transaction creates no intent");
+  }
+  return made.fields.intent;
+}
+
 async function fillTx(label: string, inputMint: Address, amountIn: bigint, slot: bigint): Promise<EngineTransaction> {
   const intent = (await generateKeyPairSigner()).address;
   return { signature: testSignature(label), slot, blockTime: RECENT, failed: false, emitted: [created(intent, inputMint), filled(intent, amountIn)] };
@@ -200,6 +212,39 @@ describe("monitor", () => {
     const quiet = await once("--max-fill", `${watched}=5001`, "--max-fills", "4");
     expect(quiet.alerts).toEqual([]);
     expect(quiet.code).toBe(EXIT_OK);
+  });
+
+  it("the monitor names the agent and relayer fees of a fill above its limit, and says when the creation was not seen", async () => {
+    await baseline();
+    const mint = (await generateKeyPairSigner()).address;
+    const who = (await generateKeyPairSigner()).address;
+    const account = (await generateKeyPairSigner()).address;
+    const full = await fillTx("full", mint, 5_001n, 50n);
+    const intent = await intentOf(full);
+    const paid = [
+      getAgentPaidEventEncoder().encode({ intent, agent: who, account, fee: 7n }),
+      getRelayerPaidEventEncoder().encode({ intent, relayer: who, account, fee: 3n }),
+      getFeeWithheldEventEncoder().encode({ intent, payee: who, account, fee: 2n, role: 1 }),
+    ].map(event);
+    const partial = await fillTx("partial", mint, 5_002n, 51n);
+    const partialIntent = await intentOf(partial);
+    h.engineLog = [
+      { ...full, emitted: [...full.emitted, ...paid] },
+      { ...partial, emitted: partial.emitted.filter((_, i) => i > 0) },
+    ];
+    const { code, alerts } = await once("--max-fill", `${mint}=5000`);
+    expect(code).toBe(EXIT_ALERTED);
+    const where = (signature: string, slot: number, at: Address) => ({ kind: "fill-amount", field: mint, expected: "5000", slot, intent: at, signature: testSignature(signature) });
+    expect(alerts).toEqual([
+      {
+        ...where("full", 50, intent),
+        observed: "5001",
+        agentPaid: { agent: who, account, fee: "7" },
+        relayerPaid: { relayer: who, account, fee: "3" },
+        withheld: [{ role: "partner", payee: who, account, fee: "2" }],
+      },
+      { ...where("partial", 51, partialIntent), field: "inputMint", expected: "a readable input mint", observed: "missing", amountIn: "5002", payoutsIncomplete: true },
+    ]);
   });
 
   it("the monitor with --once reads fills as far back as --since", async () => {

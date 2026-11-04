@@ -8,6 +8,7 @@ import { account, amount, choice, integer, object, optional, text } from "../sch
 import { STATUS } from "../../accounts.js";
 import { WAIT_DEFAULT, WAIT_MAX, type Clock, access, signerOf, nameOf } from "./guard.js";
 import { type Pair, historyIn } from "./fills.js";
+import { mergedPayouts, payoutItems, payoutView } from "./payout-view.js";
 import { HISTORY_PAGES, releaseLookup, releasedMint, createdMint } from "./releases.js";
 
 export const WAIT_STATUS = ["open", "filling", "filled", "cancelled", "expired", "closed"] as const;
@@ -67,6 +68,7 @@ export const walletWait = define({
     paid_out: optional(text("whole tokens the release of this wallet's escrow paid to its payee or split recipients, out of what the escrow held")),
     token: optional(text("the token received or paid out")),
     signature: optional(text("the fill's or release's transaction")),
+    ...payoutItems,
     next: optional(text()),
   }),
   run: async (ctx: AgentContext, input) => {
@@ -120,6 +122,7 @@ export const walletWait = define({
     }
     pair ??= history.created.get(intent) ?? null;
     const decimals = pair === null ? undefined : (await mintOf(ctx.transport, pair.outputMint)).decimals;
+    const inputDecimals = pair === null ? undefined : (await mintOf(ctx.transport, pair.inputMint)).decimals;
     return {
       intent,
       status: "filled",
@@ -127,6 +130,7 @@ export const walletWait = define({
       received: formatAmount(fills.reduce((sum, f) => sum + f.delivered, 0n), decimals),
       ...(pair === null ? {} : { token: nameOf(pair.outputMint) }),
       signature: fills[0]?.signature,
+      ...payoutView(mergedPayouts(fills.map((f) => f.payouts)), inputDecimals),
     };
   },
 });

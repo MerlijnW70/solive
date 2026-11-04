@@ -59,7 +59,7 @@ export class ClaimHeldBy extends SdkError {
   }
 }
 
-export type NotFillableReason = "not-open" | "attested";
+export type NotFillableReason = "not-open" | "attested" | "solver-output" | "fill-paused" | "kind-disabled" | "mandate-revoked" | "mandate-outdated" | "expired" | "intent-outdated" | "amount-mismatch";
 
 export class NotFillable extends SdkError {
   readonly code = "not-fillable";

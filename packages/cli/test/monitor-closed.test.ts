@@ -70,7 +70,7 @@ describe("the monitor on fills whose intent is already closed", () => {
     const capped = await once("100");
     expect(capped.code).toBe(EXIT_ALERTED);
     expect(capped.alerts).toEqual([
-      { kind: "fill-amount", field: w.inputMint, expected: "100", observed: "600", slot: Number(big.fill.slot), intent: big.intent, signature: big.fill.signature },
+      { kind: "fill-amount", field: w.inputMint, expected: "100", observed: "600", slot: Number(big.fill.slot), intent: big.intent, signature: big.fill.signature, payoutsIncomplete: true },
     ]);
   });
 
@@ -90,6 +90,7 @@ describe("the monitor on fills whose intent is already closed", () => {
         intent: small.intent,
         signature: bare.signature,
         amountIn: "100",
+        payoutsIncomplete: true,
       },
     ]);
     const other = (await funded()).address;

@@ -46,7 +46,7 @@ describe("fills the monitor reads from engine transactions", () => {
   it("pays a two-step fill the amount its begin step drew", async () => {
     const intent = await address();
     expect(fillsIn([tx("two-step", [begun(intent, 42n), ended(intent)])]).fills).toEqual([
-      { signature: testSignature("two-step"), slot: 3n, intent, amountIn: 42n },
+      { signature: testSignature("two-step"), slot: 3n, intent, amountIn: 42n, payouts: { agentPaid: null, relayerPaid: null, withheld: [], complete: false } },
     ]);
   });
 
@@ -66,7 +66,7 @@ describe("fills the monitor reads from engine transactions", () => {
         return addresses.map((a) => accounts[a] ?? null);
       },
     } as unknown as Transport;
-    const fill = (intent: Address): SeenFill => ({ signature: intent, slot: 1n, intent, amountIn: 1n });
+    const fill = (intent: Address): SeenFill => ({ signature: intent, slot: 1n, intent, amountIn: 1n, payouts: { agentPaid: null, relayerPaid: null, withheld: [], complete: true } });
     const mints = await inputMintsOf(transport, [fill(seen), fill(engineOwned), fill(foreign), fill(missing), fill(engineOwned), fill(newer)], new Map([[seen, other]]));
     expect(asked).toEqual([[engineOwned, foreign, missing, newer]]);
     expect([...mints.entries()]).toEqual([

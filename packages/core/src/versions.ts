@@ -178,6 +178,10 @@ export function migratesInPlace(data: ReadonlyUint8Array): boolean {
   return [CONFIG_DISCRIMINATOR, USER_STATE_DISCRIMINATOR].some((tag) => tag.every((b, i) => data[i] === b));
 }
 
+export function isDeliveryRecord(data: ReadonlyUint8Array): boolean {
+  return [DELIVERY_BOOK_DISCRIMINATOR, ANNOUNCEMENT_DISCRIMINATOR, REFUTATION_DISCRIMINATOR].some((tag) => tag.every((b, i) => data[i] === b));
+}
+
 type CloseLegacyInput = { account: Address; payee: Address; config?: Address; vault?: Address; intent?: Address; stakeTo?: Address; feeTo?: Address };
 
 export async function buildCloseLegacy(input: CloseLegacyInput) {

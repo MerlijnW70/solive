@@ -76,7 +76,7 @@ describe("served values", () => {
 });
 
 describe("the market floor", () => {
-  const fill = { intent: "11111111111111111111111111111111" as Address, amountIn: 1_000n, delivered: 1n, signature: "s", blockTime: null };
+  const fill = { intent: "11111111111111111111111111111111" as Address, amountIn: 1_000n, delivered: 1n, signature: "s", blockTime: null, payouts: { agentPaid: null, relayerPaid: null, withheld: [], complete: true } };
 
   it("refuses a floor that rounds to zero and takes one of exactly one", () => {
     let refused: unknown;

@@ -69,7 +69,7 @@ const RECEIPT = ["standing_note", "paid", "stake_returned", "delivered_salt", "h
 export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_setup")]: ["keypair", "url", "settings", "sol", "explorer", "hint", "airdrop", "faucet.lamports", "faucet.signature", "why", "other_ways[]", "notice[]", "update.version", "update.command", "update.after"],
   [tool("wallet_balance")]: ["sol", "explorer", "tokens[].name", "tokens[].balance", "update.version", "update.command", "update.after"],
-  [tool("wallet_estimate")]: ["fills[].sold", "fills[].received", "receive_at_best", "receive_at_median", "receive_at_latest"],
+  [tool("wallet_estimate")]: ["fills[].sold", "fills[].received", "fills[].agent_paid.amount", "fills[].relayer_paid.amount", "fills[].withheld[].role", "fills[].withheld[].amount", "receive_at_best", "receive_at_median", "receive_at_latest"],
   [tool("wallet_swap")]: ["min_receive", "start_receive"],
   [tool("wallet_recurring")]: ["start_receive", "min_receive"],
   [tool("wallet_escrow_plan")]: ["pieces[].name", "pieces[].amount", "pieces[].spec_hash", "pieces[].spec_url", "pieces[].spec_mirror_url", "pieces[].spec_not_published", "total"],
@@ -85,7 +85,7 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_refute")]: ["sha256"],
   [tool("wallet_reclaim")]: ["reasons[].reason"],
   [tool("wallet_claim_held")]: ["shares[].amount", "shares[].token", "claiming.amount", "claiming.token"],
-  [tool("wallet_wait")]: ["received", "paid_out", "token"],
+  [tool("wallet_wait")]: ["received", "paid_out", "token", "agent_paid.amount", "relayer_paid.amount", "withheld[].role", "withheld[].amount"],
   [tool("wallet_receipt")]: RECEIPT,
   [tool("wallet_intents")]: ["intents[].summary[]"],
   [tool("wallet_history")]: [
@@ -96,6 +96,10 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
     "activity[].receive_token",
     "activity[].returned",
     "activity[].returned_in",
+    "activity[].agent_paid.amount",
+    "activity[].relayer_paid.amount",
+    "activity[].withheld[].role",
+    "activity[].withheld[].amount",
     "work[].amount",
     "work[].token",
     "work[].held",

@@ -1,7 +1,8 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, decodeIntentAccount } from "@intent-engine/core/internal";
+import { decodeEvent, decodeIntentAccount, fillPayoutsOf, relayerPaidOf } from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { ESTIMATE_SCAN, ESTIMATE_FILLS } from "./guard.js";
+import type { Payouts } from "./payout-view.js";
 
 export const SWAP_HEADROOM_BPS = 200n;
 export const SWAP_BLIND_BPS = 2_500n;
@@ -40,7 +41,7 @@ export function openingAsk(fills: Fill[], amount: bigint, floor: bigint): bigint
   return capped;
 }
 
-export type Fill = { intent: Address; amountIn: bigint; delivered: bigint; signature: string; blockTime: bigint | null };
+export type Fill = { intent: Address; amountIn: bigint; delivered: bigint; signature: string; blockTime: bigint | null; payouts: Payouts };
 
 export type Pair = { inputMint: Address; outputMint: Address };
 
@@ -52,6 +53,7 @@ export function historyIn(transactions: readonly EngineTransaction[]) {
   const created = new Map<Address, Pair>();
   const fills: Fill[] = [];
   const ended = new Map<Address, "cancelled" | "expired">();
+  const relayers = new Map<Address, Payouts["relayerPaid"]>();
   let unread = 0;
   for (const tx of transactions) {
     if (tx.unread === true) {
@@ -61,26 +63,29 @@ export function historyIn(transactions: readonly EngineTransaction[]) {
       continue;
     }
     const begun = new Map<Address, bigint>();
-    for (const event of tx.emitted.map(decodeEvent)) {
-      if (event === null) {
-        continue;
-      }
+    const events = tx.emitted.map(decodeEvent).filter((event) => event !== null);
+    for (const event of events) {
       const fields = event.fields as Record<string, unknown>;
       const intent = fields["intent"] as Address;
       if (event.name === "IntentCreated") {
         created.set(intent, { inputMint: fields["inputMint"] as Address, outputMint: fields["outputMint"] as Address });
+        relayers.set(intent, relayerPaidOf(events, intent));
       }
       if (event.name === "FillBegun") {
         begun.set(intent, fields["amountIn"] as bigint);
       }
       const amountIn = event.name === "IntentFilled" ? (fields["amountIn"] as bigint) : event.name === "FillEnded" ? begun.get(intent) : undefined;
       if (amountIn !== undefined) {
-        fills.push({ intent, amountIn, delivered: fields["delivered"] as bigint, signature: tx.signature, blockTime: tx.blockTime });
+        const payouts = { ...fillPayoutsOf(events, intent), relayerPaid: null, complete: false };
+        fills.push({ intent, amountIn, delivered: fields["delivered"] as bigint, signature: tx.signature, blockTime: tx.blockTime, payouts });
       }
       if (event.name === "IntentCancelled" || event.name === "IntentExpired") {
         ended.set(intent, event.name === "IntentCancelled" ? "cancelled" : "expired");
       }
     }
+  }
+  for (const fill of fills) {
+    fill.payouts = { ...fill.payouts, relayerPaid: relayers.get(fill.intent) ?? null, complete: created.has(fill.intent) };
   }
   return { created, fills, ended, unread };
 }

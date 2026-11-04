@@ -20,7 +20,16 @@ export type FeedEvent = {
   payee?: string;
   attestor?: string;
   shares?: EventShare[];
+  payouts?: EventPayouts;
   seq?: number;
+};
+
+export type PaidParty = { wallet: string; account: string; amount: string | null };
+
+export type EventPayouts = {
+  agent_paid?: PaidParty;
+  relayer_paid?: PaidParty;
+  withheld?: (PaidParty & { role: string })[];
 };
 
 export type EventShare = { payee: string; amount: string | null };
@@ -75,6 +84,7 @@ export type Job = {
   escrow?: Step;
   delivery?: Step;
   delivery_slot?: number;
+  relayer?: { relayer: string; account: string; raw: string };
   unpriced?: Unpriced;
 };
 

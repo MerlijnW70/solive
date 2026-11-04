@@ -2,6 +2,7 @@ import { type Address, generateKeyPairSigner, getAddressDecoder } from "@solana/
 import { describe, expect, it } from "vitest";
 import { IntentStatus, InvalidInput, Kind, NATIVE_MINT, swapExactIn, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { encodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentEncoder, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, INTENT_VERSION } from "@intent-engine/core/internal";
+import { CLOCK_SYSVAR } from "../src/accounts.js";
 import { intentPlans } from "../src/client-intents.js";
 import { clientReads } from "../src/client-reads.js";
 import { type ClientContext, HISTORY_LIMIT_MAX, MAX_EXPIRES_IN } from "../src/client-types.js";
@@ -142,18 +143,21 @@ describe("a plan to fill an escrow", () => {
 
   const blank = new Uint8Array(getIntentSize());
   blank.set(getIntentDiscriminatorBytes());
-  const BASE = { ...getIntentDecoder().decode(blank), owner: OWNER, version: INTENT_VERSION, status: IntentStatus.Open, kind: Kind.SwapExactIn, nonce: 1n };
+  const BASE = { ...getIntentDecoder().decode(blank), owner: OWNER, version: INTENT_VERSION, status: IntentStatus.Open, kind: Kind.SwapExactIn, nonce: 1n, escrowed: 1_000_000n, expiresAt: 4_000_000_000n };
   const params = encodeParams({ kind: Kind.SwapExactIn, amountIn: 1_000_000n, minOut: 1n });
+  const clock = new Uint8Array(40);
+  new DataView(clock.buffer).setBigInt64(32, 1_000n, true);
 
   const ownersOf = async (held: Partial<typeof BASE>) => {
     const data = Uint8Array.from(getIntentEncoder().encode({ ...BASE, inputMint: SOLVER_MINT_IN, outputMint: SOLVER_MINT_OUT, params, ...held }));
     const transport = {
-      getAccount: async (address: Address) => (address === INTENT ? { owner: INTENT_ENGINE_PROGRAM_ADDRESS, data, lamports: 1n } : null),
+      getAccount: async (address: Address) =>
+        address === INTENT ? { owner: INTENT_ENGINE_PROGRAM_ADDRESS, data, lamports: 1n } : address === CLOCK_SYSVAR ? { owner: INTENT_ENGINE_PROGRAM_ADDRESS, data: clock, lamports: 1n } : null,
     } as unknown as Transport;
     const context = {
       transport,
       mint: async () => ({ decimals: 6, tokenProgram: TOKEN_PROGRAM_ADDRESS }),
-      config: async () => ({ feeRecipient: TREASURY }),
+      config: async () => ({ feeRecipient: TREASURY, paused: 0, fillDisabledKinds: 0n }),
     } as unknown as ClientContext;
     const solver = await generateKeyPairSigner();
     const plan = await intentPlans(context).fill({ solver, intent: INTENT, amountIn: 1_000_000n, amountOut: 1n, route: [] });

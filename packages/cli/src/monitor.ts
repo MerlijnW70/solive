@@ -12,7 +12,7 @@ import { type AccountView, type Transport } from "@intent-engine/client";
 import { CLOCK_SYSVAR, loadMintCap } from "@intent-engine/client/internal";
 import { UsageError } from "./arg-values.js";
 import type { MonitorSpec } from "./command-types.js";
-import { fillsIn, inputMintsOf } from "./monitor-fills.js";
+import { fillsIn, inputMintsOf, payoutFields } from "./monitor-fills.js";
 import { healthFindings } from "./monitor-health.js";
 import { capChanges, type Floors, floorChanges, floorsOf, isFloors, isMintCaps, type MintCaps, mintCapsOf } from "./monitor-limits.js";
 import { printableLines, redactUrl, render } from "./render.js";
@@ -353,7 +353,7 @@ async function fillAlerts(transport: Transport, spec: MonitorSpec, state: Monito
     for (const fill of fills) {
       const mint = mints.get(fill.intent);
       const cap = mint === undefined ? undefined : spec.maxFill.get(mint);
-      const where = { slot: Number(fill.slot), intent: fill.intent, signature: fill.signature };
+      const where = { slot: Number(fill.slot), intent: fill.intent, signature: fill.signature, ...payoutFields(fill.payouts) };
       if (mint === undefined) {
         alerts.push({ kind: "fill-amount", field: "inputMint", expected: "a readable input mint", observed: MISSING, ...where, amountIn: fill.amountIn.toString() });
       } else if (cap !== undefined && fill.amountIn > cap) {

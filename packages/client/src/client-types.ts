@@ -1,5 +1,5 @@
 import type { Address, Instruction, MessagePartialSigner, RpcTransport, Signature, TransactionSigner } from "@solana/kit";
-import type { AttestedResultParams, CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
+import type { AgentPayout as EngineAgentPayout, AttestedResultParams, RelayerPayout as EngineRelayerPayout, CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
 import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
@@ -22,6 +22,7 @@ import type { Lookup } from "./address-ranges.js";
 import type { SpecSource } from "./spec-sources.js";
 import type { ClientHooks, DebugLog } from "./observe.js";
 import type { SendStatus } from "./send-errors.js";
+import type { WithheldFee } from "./release-holds.js";
 import type { EngineTransaction, IntentQuery, Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
@@ -141,9 +142,9 @@ export type FillInput = {
   route?: readonly Instruction[];
 };
 
-export type AgentPayout = { agent: Address; account: Address; fee: bigint };
+export type AgentPayout = EngineAgentPayout;
 
-export type RelayerPayout = { relayer: Address; account: Address; fee: bigint };
+export type RelayerPayout = EngineRelayerPayout;
 
 export type Fill = {
   steps: 1 | 2;
@@ -157,6 +158,8 @@ export type Fill = {
   blockTime: bigint | null;
   agentPaid: AgentPayout | null;
   relayerPaid: RelayerPayout | null;
+  withheld: WithheldFee[];
+  payoutsComplete: boolean;
 };
 
 export type TokenBalance = { mint: Address; name: string | undefined; account: Address; amount: bigint; decimals: number };

@@ -127,7 +127,32 @@ describe("filling from the client", () => {
     const { w, client, solver, svm, tokens, order, minted, failure } = await setup();
     const limit = await client.createIntent({ ...order, params: { kind: Kind.LimitOrder, makeAmount: ESCROW, takeAmount: 50n } });
     const part = client.fill({ solver, intent: { owner: w.owner.address, nonce: limit.nonce }, amountIn: ESCROW / 2n, route: await minted(solver, 25n) });
-    expect(client.explain(await failure(part))?.name).toBe("AmountInMismatch");
+    expect(await failure(part)).toMatchObject({ reason: "amount-mismatch" });
+    const raw = await buildFlashFill({
+      solver,
+      owner: w.owner.address,
+      nonce: limit.nonce,
+      inputMint: w.inputMint,
+      outputMint: w.outputMint,
+      inputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+      outputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+      receiver: await ata(w.owner.address, w.outputMint),
+      solverInput: await ata(solver.address, w.inputMint),
+      solverOutput: await ata(solver.address, w.outputMint),
+      feeRecipient: w.feeRecipient.address,
+      amountIn: ESCROW / 2n,
+      amountOut: 25n,
+      maxFeeBps: FEE_BPS,
+      prefix: await Promise.all(
+        [
+          [solver.address, w.inputMint],
+          [solver.address, w.outputMint],
+          [w.feeRecipient.address, w.inputMint],
+        ].map(([owner, mint]) => getCreateAssociatedTokenIdempotentInstructionAsync({ payer: solver, owner: owner as Address, mint: mint as Address })),
+      ),
+      route: await minted(solver, 25n),
+    });
+    expect(client.explain(await failure(client.send(raw, solver)))?.name).toBe("AmountInMismatch");
     await client.fill({ solver, intent: { owner: w.owner.address, nonce: limit.nonce }, route: await minted(solver, 50n) });
     expect((await client.intent({ owner: w.owner.address, nonce: limit.nonce }))?.intent.status).toBe(IntentStatus.Filled);
     expect(await client.fillOf(limit.intent)).toMatchObject({ steps: 1, delivered: 50n, required: 50n, fee: splitFee(ESCROW, FEE_BPS).fee });

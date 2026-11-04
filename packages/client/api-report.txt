@@ -3,7 +3,7 @@ type AccountView: type AccountView = { owner: Address; data: Uint8Array; lamport
 type ActivityEvent: type ActivityEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; };
 type ActivityOptions: type ActivityOptions = { until?: string; before?: string; limit?: number; };
 type ActivityPage: type ActivityPage = { events: ActivityEvent[]; newest: string | null; next: string | null; complete: boolean; unread: Signature[]; };
-type AgentPayout: type AgentPayout = { agent: Address; account: Address; fee: bigint; };
+type AgentPayout: type AgentPayout = EngineAgentPayout;
 type AnnounceInput: type AnnounceInput = SecretInput & { payer?: TransactionSigner; intent: IntentRef; sha256: string; url: string; };
 type Announced: type Announced = { announcement: Address; seq: bigint; commitment: string; salt: string; attestor: Address; signature: Signature | null; synced: Signature | null; };
 type Announcement: type Announcement = { worker: Address; sha256: string | null; url: string | null; opened: boolean; announcement: Address; seq: bigint; };
@@ -74,7 +74,7 @@ type FeedbackInput: type FeedbackInput = { owner: TransactionSigner; intent: Int
 type FetchEvent: type FetchEvent = { url: string; status: number | null; ms: number; };
 class FetchFailed: class FetchFailed extends SdkError { readonly code = "fetch-failed"; readonly name = "FetchFailed"; readonly url: string; readonly reason: FetchFailure; readonly detail: string; constructor(url: string, reason: FetchFailure, detail: string, options?: ErrorOptions); }
 type FetchFailure: type FetchFailure = "redirect" | "status" | "network" | "no-address" | "aborted";
-type Fill: type Fill = { steps: 1 | 2; solver: Address; delivered: bigint; required: bigint; fee: bigint; net: bigint; signature: Signature; slot: bigint; blockTime: bigint | null; agentPaid: AgentPayout | null; relayerPaid: RelayerPayout | null; };
+type Fill: type Fill = { steps: 1 | 2; solver: Address; delivered: bigint; required: bigint; fee: bigint; net: bigint; signature: Signature; slot: bigint; blockTime: bigint | null; agentPaid: AgentPayout | null; relayerPaid: RelayerPayout | null; withheld: WithheldFee[]; payoutsComplete: boolean; };
 type FillInput: type FillInput = { solver: TransactionSigner; intent: IntentRef; amountIn?: bigint; amountOut?: bigint; route?: readonly Instruction[]; };
 type FinalizedBlock: type FinalizedBlock = { slot: bigint; blockhash: string; };
 type FirstOpening: type FirstOpening = { intent: Address; announcement: Address; seq: bigint; worker: Address; salt: string; url: string | null; sha256: string; commitment: string; skipped: SkippedAnnouncement[]; };
@@ -131,7 +131,7 @@ class NotAnEngineAccount: class NotAnEngineAccount extends SdkError { readonly c
 class NotDeliverable: class NotDeliverable extends SdkError { readonly code = "not-deliverable"; readonly name = "NotDeliverable"; readonly intent: Address; readonly reason: NotDeliverableReason; constructor(intent: Address, reason: NotDeliverableReason, text: string); }
 type NotDeliverableReason: type NotDeliverableReason = "no-shared-secret" | "claim-held" | "not-a-proof-escrow" | "not-open" | "announced-unseen";
 class NotFillable: class NotFillable extends SdkError { readonly code = "not-fillable"; readonly name = "NotFillable"; readonly intent: Address; readonly reason: NotFillableReason; constructor(intent: Address, reason: NotFillableReason, text: string); }
-type NotFillableReason: type NotFillableReason = "not-open" | "attested";
+type NotFillableReason: type NotFillableReason = "not-open" | "attested" | "solver-output" | "fill-paused" | "kind-disabled" | "mandate-revoked" | "mandate-outdated" | "expired" | "intent-outdated" | "amount-mismatch";
 class NotRefutable: class NotRefutable extends SdkError { readonly code = "not-refutable"; readonly name = "NotRefutable"; readonly earlier: Address; constructor(earlier: Address, reason: string); }
 class NotSettleable: class NotSettleable extends SdkError { readonly code = "not-settleable"; readonly name = "NotSettleable"; readonly intent: Address; readonly reason: NotSettleableReason; constructor(intent: Address, reason: NotSettleableReason, text: string); }
 type NotSettleableReason: type NotSettleableReason = "wrong-judge" | "committee-judged" | "not-a-committee" | "split-excludes-announcer" | "not-a-proof-escrow" | "not-attested" | "not-open" | "unknown-announcement" | "other-escrow" | "already-paid" | "salt-mismatch" | "no-release" | "not-owner" | "feedback-given" | "not-an-intent" | "not-first-announcer";
@@ -166,7 +166,7 @@ type RefutationStanding: type RefutationStanding = "substantiated" | "unsubstant
 type RefuteInput: type RefuteInput = SecretInput & { earlier: Address; paid: Address; sha256: string; url: string; payer?: TransactionSigner; claim?: { recipients: Address[]; weights: number[]; }; };
 type RefutePlan: type RefutePlan = Plan & { refutation: Address; };
 type Refuted: type Refuted = { refutation: Address; signature: Signature; };
-type RelayerPayout: type RelayerPayout = { relayer: Address; account: Address; fee: bigint; };
+type RelayerPayout: type RelayerPayout = EngineRelayerPayout;
 type ReleaseInput: type ReleaseInput = PreviewOption & { escrow: Address; to?: Address; deliveredSha256: string; result?: number | bigint; keypair?: DeliveryOpeners; };
 type ReleaseOpening: type ReleaseOpening = { sha256: string; salt: string; };
 type ReleaseReceipt: type ReleaseReceipt = { escrow: Address; released: boolean; signature: Signature | null; payee: Address | null; payees: Address[]; deliveredSha256: string | null; valid: boolean; refutedBy: Address | null; held: HeldPayout[]; withheld: WithheldFee[]; complete: boolean; unreadable: UnreadableAccount[]; summary: string; };
@@ -234,7 +234,7 @@ class VoteRejected: class VoteRejected extends SdkError { readonly code = "vote-
 type WalletBalance: type WalletBalance = { sol: string; tokens: HeldToken[]; summary: string; };
 type WatchCallback: type WatchCallback = (changed: (IntentAccount & { slot?: bigint; })[], closed: (IntentAccount & { slot?: bigint; })[]) => void;
 type WatchOptions: type WatchOptions = { owner?: Address; onError?: (error: unknown) => void; };
-type WithheldFee: type WithheldFee = { role: WithheldRole | "unknown"; payee: Address; account: Address; amount: bigint; };
+type WithheldFee: type WithheldFee = WithheldPayout;
 type WorkOutcome: type WorkOutcome = "paid" | "paid-other" | "refunded" | "open" | "unknown";
 type WorkRecord: type WorkRecord = { intent: Address; sha256: string; commitment: string; announcement: Address; seq: bigint; role: WorkRole; announced: Signature; slot: bigint; blockTime: bigint | null; outcome: WorkOutcome; refutedBy?: Address; refutations: RefutationRecord[]; owner?: Address; attestor?: Address; committee?: Address[]; mint?: Address; earned?: bigint; backed?: bigint; createBacked?: bigint; release?: Signature; selfDealt: boolean; fundedByWorker?: FundedBy; feedback?: number; held?: HeldPayout[]; unreadable?: UnreadableAccount[]; };
 type WorkRole: type WorkRole = "announcer" | "co-author";

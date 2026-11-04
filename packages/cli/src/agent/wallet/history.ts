@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount, Kind, kindName, tokenName } from "@intent-engine/core";
-import { findIntentPda } from "@intent-engine/core/internal";
+import { fillPayoutsOf, findIntentPda, relayerPaidOf } from "@intent-engine/core/internal";
 import { type HistoryEvent, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { mintOf, ownHistory, paidWalletsOf, transactionAt } from "@intent-engine/client/internal";
@@ -9,6 +9,7 @@ import { tool } from "../names.js";
 import { account, amount, choice, flag, integer, list, nullable, object, optional, text, time } from "../schema.js";
 import { signerOf } from "./guard.js";
 import { claimItem, claimsOf, type Kept, OWN_TRANSACTIONS, returnedOf, workItem, workOf } from "./history-work.js";
+import { mergedPayouts, payoutItems, payoutView } from "./payout-view.js";
 import { PAID_FROM_INPUT, PAID_FROM_MAX, profitItem, profitOf } from "./history-profit.js";
 
 export const HISTORY_DEFAULT = 10;
@@ -74,6 +75,7 @@ export const walletHistory = define({
         returned_in: optional(text("with returned: the close transaction that refunded them")),
         signature: nullable(text("the transaction that ended it")),
         at: nullable(time("unix seconds of the last event, when the cluster reports it")),
+        ...payoutItems,
       }),
       HISTORY_MAX,
       "the intents this wallet created, newest first",
@@ -113,6 +115,23 @@ export const walletHistory = define({
       const ended = fields(ending);
       const delivered = outcome === "filled" ? (ended["delivered"] as bigint | undefined) : undefined;
       const attested = ending?.name === "IntentAttested" ? ending : undefined;
+      const fillSignatures = new Set(events.filter((e) => e.name === "IntentFilled" || e.name === "FillEnded").map((e) => e.signature));
+      const payouts =
+        outcome === "filled"
+          ? payoutView(
+              mergedPayouts(
+                [...fillSignatures].map((signature) => ({
+                  ...fillPayoutsOf(
+                    events.filter((e) => e.signature === signature),
+                    intent,
+                  ),
+                  relayerPaid: relayerPaidOf(events, intent),
+                  complete: true,
+                })),
+              ),
+              (await mintOf(ctx.transport, inputMint)).decimals,
+            )
+          : {};
       const returned = ending?.name === "IntentSplit" ? await returnedOf(ctx.transport, intent) : { amount: 0n, close: null };
       return {
         nonce: nonce ?? (created["nonce"] as bigint),
@@ -128,6 +147,7 @@ export const walletHistory = define({
         ...(returned.amount === 0n ? {} : { returned: await tokens(inputMint, returned.amount), ...(returned.close === null ? {} : { returned_in: returned.close }) }),
         signature: ending?.signature ?? null,
         at: (ending ?? events[0])?.blockTime ?? null,
+        ...payouts,
       };
     };
     type Activity = NonNullable<Awaited<ReturnType<typeof activityOf>>>;

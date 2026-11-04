@@ -111,6 +111,12 @@ A `LimitOrder` sells `makeAmount` for at least `takeAmount`. A `DutchAuction` se
 
 `fillOf` reads how an intent was filled, also after its account closed, or returns `null` before a fill. It returns the `steps`, the `solver`, what it `delivered`, the minimum `required`, the protocol `fee` and the solver's `net`, with the `signature`, `slot` and `blockTime`. An auction's minimum keeps falling, so it can end below what the filler delivered.
 
+The receipt also names every other payout of the fill: `agentPaid` is the fee paid to a mandate agent and `relayerPaid` the fee paid to a relayer, each with its wallet, token account and `fee`, or `null`.
+
+`withheld` lists each fee the program kept with the owner because its account could not take it, with its `role`, such as `agent`. The relayer is paid when the intent is created, so `payoutsComplete` is `false` when the scan did not reach the creating transaction; then a `null` `relayerPaid` does not mean there was none.
+
+`fill` refuses an intent whose mandate was revoked or replaced, or whose owner advanced the epoch past it, with `NotFillable` and reason `mandate-revoked`, as the program would, and sends nothing.
+
 Each order below sells 0.01 SOL, and the devnet filler fills both. The code waits for each fill, so run it while the filler is online. This prints each order's kind, the least it receives now and its token, then the steps of its fill, what it delivered and the minimum at the fill; for the limit order these are 2, 1.5 and 1.5.
 
 ```ts

@@ -86,7 +86,7 @@ The worker is a wallet. `IntentAttested.payee` is a token account, so the feed n
 
 M7 found `DeliveryReleased` and `IntentAttested` together in both release transactions it read: the verdict and the payout are one transaction. Committee votes are signatures the release carries, not transactions of their own.
 
-A judge rejects work by not releasing it, so a failed verdict leaves nothing on chain. The page can show releases and refunds, never an on-chain "rejected", and the contract should not promise a separate verdict event. `AgentPaid` is a mandate agent's fee, not a worker's pay, and `IntentClosed` is rent cleanup; both stay out of the stream.
+A judge rejects work by not releasing it, so a failed verdict leaves nothing on chain. The page can show releases and refunds, never an on-chain "rejected", and the contract should not promise a separate verdict event. `IntentClosed` is rent cleanup and stays out of the stream. `AgentPaid`, `RelayerPaid` and `FeeWithheld` are fees, not a worker's pay: they stay out of the stream as events of their own and show as `payouts` on the swap they belong to.
 
 ### RPC calls per view
 
