@@ -6,7 +6,7 @@ import { DEVNET_TEST_MINT as TEST, NATIVE_MINT as WSOL, TOKEN_PROGRAM_ADDRESS } 
 import { connect, type Transport } from "../src/index.js";
 import { INTENT_HISTORY_PAGES } from "../src/release-reads.js";
 import { testSignature } from "../src/testing.js";
-import { funded, world, type World } from "./svm.js";
+import { funded, onDevnet, world, type World } from "./svm.js";
 import { keyed, sha, workUrl } from "./work.js";
 
 const WORK = sha("the paged receipt work");
@@ -30,7 +30,7 @@ async function escrowed() {
   preset(w, TEST);
   const owner = await funded(w.chain);
   const judge = await keyed(w);
-  const at = (signer: KeyPairSigner, transport: Transport = w.chain.transport) => connect({ cluster: "devnet", signer, transport });
+  const at = (signer: KeyPairSigner, transport: Transport = w.chain.transport) => connect({ cluster: "devnet", signer, transport: onDevnet(transport) });
   const made = await (await at(owner)).payForWork({ amount: "0.01", judge: judge.signer.address, specHash: SPEC });
   const escrow = made.intent as Address;
   const pad = async (count: number) => {

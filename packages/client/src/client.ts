@@ -1,5 +1,5 @@
 import { type Address, createDefaultRpcTransport, createSolanaRpc, createSolanaRpcFromTransport, type Instruction, type TransactionSigner } from "@solana/kit";
-import { isSdkError } from "@intent-engine/core";
+import { InvalidInput, isSdkError } from "@intent-engine/core";
 import { readIntentAccounts } from "@intent-engine/core/internal";
 import { chainTime, loadConfig, loadUser, mintOf } from "./accounts.js";
 import { budgeted, simulated } from "./budget.js";
@@ -100,10 +100,19 @@ export {
   VoteRejected,
 } from "./client-errors.js";
 
+function checkedWatchTimes(pollMs: unknown, resyncSeconds: unknown): void {
+  for (const [name, value] of [["pollMs", pollMs], ["resyncSeconds", resyncSeconds]] as const) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new InvalidInput(name, "range", `${name} must be a positive finite number, not ${String(value)}`);
+    }
+  }
+}
+
 export function createClient(options: ClientOptions): Client {
   const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
   const { timeoutMs, retry = true, signal, maxReplyBytes } = options;
   checkedLimits(timeoutMs, retry, signal, maxReplyBytes, options.rpcTransport);
+  checkedWatchTimes(pollMs, resyncSeconds);
   const observer = observerOf(options.hooks, options.debug);
   const limited = timeoutMs !== undefined || signal !== undefined;
   const node = options.rpcTransport ?? (maxReplyBytes !== undefined ? cappedTransport(url, maxReplyBytes) : limited ? createDefaultRpcTransport({ url }) : undefined);

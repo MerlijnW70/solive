@@ -1,6 +1,6 @@
 import { type Address, isAddress } from "@solana/kit";
 import { InvalidInput } from "@intent-engine/core";
-import { decodeIntentAccount, findIntentPda, getIntentDiscriminatorBytes } from "@intent-engine/core/internal";
+import { decodeIntentAccount, findIntentPda, getIntentDiscriminatorBytes, U64_MAX } from "@intent-engine/core/internal";
 import { engineAccount, loadIntent } from "./accounts.js";
 import type { IntentAccount } from "./client-types.js";
 import type { Transport } from "./transport.js";
@@ -16,7 +16,7 @@ function checkedRef(ref: IntentRef, field: string): IntentRef {
     }
     return ref;
   }
-  if (ref === null || typeof ref !== "object" || !isAddress(ref.owner) || typeof ref.nonce !== "bigint" || ref.nonce < 0n) {
+  if (ref === null || typeof ref !== "object" || !isAddress(ref.owner) || typeof ref.nonce !== "bigint" || ref.nonce < 0n || ref.nonce > U64_MAX) {
     throw new InvalidInput(field, "format", INTENT_REF_RULE);
   }
   return ref;

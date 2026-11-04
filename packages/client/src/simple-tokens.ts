@@ -2,6 +2,8 @@ import { type Address, isAddress } from "@solana/kit";
 import type { ClusterChoice } from "./simple-types.js";
 import { DEVNET_TEST_MINT, formatAmount, InvalidInput, NATIVE_MINT, parseAmount, SdkError, tokenName } from "@intent-engine/core";
 import { U64_MAX } from "@intent-engine/core/internal";
+import { hexBytes } from "./encoding.js";
+import { specHashText } from "./spec-hash.js";
 
 export type Cluster = "devnet" | "testnet" | "mainnet" | "localnet";
 
@@ -10,6 +12,14 @@ export const CLUSTER_URLS: Readonly<Record<Cluster, string>> = {
   testnet: "https://api.testnet.solana.com",
   mainnet: "https://api.mainnet-beta.solana.com",
   localnet: "http://127.0.0.1:8899",
+};
+
+export const CLUSTER_NAMES: Readonly<Record<string, Cluster>> = {
+  localnet: "localnet",
+  devnet: "devnet",
+  testnet: "testnet",
+  "mainnet-beta": "mainnet",
+  mainnet: "mainnet",
 };
 
 export const MAINNET_REFUSED = "this url serves mainnet; pass allowMainnet: true to connect to it";
@@ -32,19 +42,23 @@ export function clusterUrl(options: ClusterChoice): string {
   if (options.url !== undefined) {
     return options.url;
   }
-  if (options.cluster === undefined || !(options.cluster in CLUSTER_URLS)) {
-    throw new InvalidInput("cluster", "unsupported", `pass url, or cluster as one of ${Object.keys(CLUSTER_URLS).join(", ")}`);
-  }
-  return CLUSTER_URLS[options.cluster];
+  return urlOfClusterName(options.cluster);
 }
 
-export function mintOfToken(token: string, url: string): Address {
+export function urlOfClusterName(name: unknown): string {
+  if (typeof name !== "string" || !Object.hasOwn(CLUSTER_NAMES, name)) {
+    throw new InvalidInput("cluster", "unsupported", `pass url, or cluster as one of ${Object.keys(CLUSTER_NAMES).join(", ")}`);
+  }
+  return CLUSTER_URLS[CLUSTER_NAMES[name] as Cluster];
+}
+
+export function mintOfToken(token: string, url: string, devnet: boolean): Address {
   const name = token.trim();
   if (name.toUpperCase() === "SOL") {
     return NATIVE_MINT;
   }
   if (name.toUpperCase() === "TEST") {
-    if (url !== CLUSTER_URLS.devnet) {
+    if (!devnet) {
       throw new InvalidInput("token", "unsupported", `TEST names the devnet test token; on ${url} pass the token's mint address`);
     }
     return DEVNET_TEST_MINT;
@@ -102,11 +116,7 @@ export function specHashBytes(specHash: string | Uint8Array): Uint8Array {
     }
     return Uint8Array.from(specHash);
   }
-  const hex = specHash.trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(hex)) {
-    throw new InvalidInput("specHash", "format", "specHash must be a sha256 as 64 hex digits");
-  }
-  return Uint8Array.from(hex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+  return hexBytes(specHashText(specHash, "specHash"));
 }
 
 export const hexOf = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");

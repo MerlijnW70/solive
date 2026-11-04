@@ -113,8 +113,8 @@ describe("history", () => {
     await fill(w, await funded(w.chain), created.nonce, 400n, 45n);
     const page = await client.history(created.intent, { limit: 1 });
     expect(names(page.events)).toEqual(["IntentClosed", "IntentFilled"]);
-    expect(page.next).toBe(page.events[0]?.signature);
-    await expect(client.history(created.intent, { limit: 1, before: page.next ?? "" })).rejects.toBeInstanceOf(TransportLacks);
+    expect(page.next).toBeNull();
+    await expect(client.history(created.intent, { limit: 1, before: page.events[0]?.signature ?? "" })).rejects.toBeInstanceOf(TransportLacks);
     expect(await client.history(created.intent, { limit: 3 })).toMatchObject({ next: null });
   });
 

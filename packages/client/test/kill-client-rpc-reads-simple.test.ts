@@ -9,7 +9,7 @@ import { wrapIfShort } from "../src/setup.js";
 import { amountShown, secondsOf, specHashBytes } from "../src/simple-tokens.js";
 import { shown } from "../src/shown.js";
 import { testSignature } from "../src/testing.js";
-import { funded, world, type World } from "./svm.js";
+import { funded, onDevnet, world, type World } from "./svm.js";
 import { keyed, sha, workUrl } from "./work.js";
 
 const WORK = sha("the kill simple work");
@@ -32,7 +32,7 @@ async function devnet() {
   const w = await world();
   preset(w, WSOL);
   preset(w, TEST);
-  const at = (signer: KeyPairSigner, transport: Transport = w.chain.transport) => connect({ cluster: "devnet", signer, transport });
+  const at = (signer: KeyPairSigner, transport: Transport = w.chain.transport) => connect({ cluster: "devnet", signer, transport: onDevnet(transport) });
   return { w, at };
 }
 
@@ -198,7 +198,7 @@ describe("the options given to connect", () => {
     const signer = await funded(w.chain);
     const seen: Instruction[][] = [];
     const recording: Transport = { ...w.chain.transport, send: (instructions, payer) => (seen.push([...instructions]), w.chain.transport.send(instructions, payer)) };
-    const solive = await connect({ cluster: "devnet", signer, transport: recording, priority: 7n });
+    const solive = await connect({ cluster: "devnet", signer, transport: onDevnet(recording), priority: 7n });
     await solive.swap({ sell: "SOL", amount: "0.05", buy: "TEST", minReceive: "5" });
     const price = seen.flat().find(({ programAddress, data }) => programAddress === COMPUTE_BUDGET_ADDRESS && data?.[0] === 3);
     expect(new DataView((price?.data as Uint8Array).buffer, (price?.data as Uint8Array).byteOffset).getBigUint64(1, true)).toBe(7n);

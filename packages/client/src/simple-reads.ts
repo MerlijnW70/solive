@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { IntentStatus, InvalidInput } from "@intent-engine/core";
-import { isSha256Hex, type UnreadableAccount } from "@intent-engine/core/internal";
+import type { UnreadableAccount } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
@@ -12,14 +12,11 @@ import { eventAuthority, intentHistory, paidWalletsOf, type Read, releasedDelive
 import type { SimpleContext } from "./simple-orders.js";
 import type { Announcement, DeliveriesInput, EscrowOpeningsInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
 import { hexBytes } from "./encoding.js";
+import { specHashText } from "./spec-hash.js";
 import type { EngineTransaction } from "./transport.js";
 
 export function sha256Given(sha256: string, name: string): string {
-  const lowered = sha256.trim().toLowerCase();
-  if (!isSha256Hex(lowered)) {
-    throw new InvalidInput(name, "format", `${name} must be 64 hex digits`);
-  }
-  return lowered;
+  return specHashText(sha256, name);
 }
 
 type Standing = { refutedBy: Address | null; complete: boolean; unreadable: UnreadableAccount[] };

@@ -200,6 +200,8 @@ describe("reputation relative to the reader", () => {
       new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Bad Gateway", statusCode: 502 }),
       new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8899"), { code: "ECONNREFUSED" }) }),
       new TimedOut("getTransaction", 1_000),
+      new TypeError("fetch failed", { cause: Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }) }),
+      new SyntaxError("Unexpected token \"<\", \"<html>\" is not valid JSON"),
     ];
     for (const failure of failures) {
       const trust = await trustOf(failingWith(transport, failure), reader.address, a.address);

@@ -2,7 +2,7 @@ import type { Address, TransactionSigner } from "@solana/kit";
 import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { createClient } from "./client.js";
 import type { ClientOptions } from "./client-types.js";
-import { MAINNET_GENESIS_HASH } from "./jobs.js";
+import { DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH } from "./jobs.js";
 import { orderSends, type SimpleContext } from "./simple-orders.js";
 import { CLUSTER_URLS, clusterUrl, MainnetNotAllowed, mintOfToken, nameOfMint, wholeTokens } from "./simple-tokens.js";
 import type { ConnectOptions, SimpleClient, WalletBalance } from "./simple-types.js";
@@ -38,12 +38,14 @@ export { ESCROW_EXPIRES_IN, PREVIEW_SIGNATURE, RECORD_TOKEN_NEEDED } from "./sim
 export { notFirstAnnouncer, RELEASE_NEEDS_KEY_PAIR } from "./simple-work.js";
 export {
   type Cluster,
+  CLUSTER_NAMES,
   CLUSTER_URLS,
   clusterUrl,
   MAINNET_REFUSED,
   MainnetNotAllowed,
   mintOfToken,
   tokenAmount,
+  urlOfClusterName,
 } from "./simple-tokens.js";
 
 const SOL_DECIMALS = 9;
@@ -59,16 +61,18 @@ export async function connect<S extends TransactionSigner>(options: ConnectOptio
     ...(options.lookup === undefined ? {} : { lookup: options.lookup }),
   };
   const client = createClient(clientOptions);
-  if (options.allowMainnet !== true && (await client.transport.genesisHash()) === MAINNET_GENESIS_HASH) {
+  const genesis = await client.transport.genesisHash();
+  if (options.allowMainnet !== true && genesis === MAINNET_GENESIS_HASH) {
     throw new MainnetNotAllowed(url);
   }
-  const ctx: SimpleContext = { url, signer, client, options: clientOptions };
+  const devnet = genesis === DEVNET_GENESIS_HASH;
+  const ctx: SimpleContext = { url, signer, client, options: clientOptions, devnet };
   const { swap, limit, payForWork } = orderSends(ctx);
   const { findWork, deliver, release, cancel, deliveries, receipt, openings } = workSends(ctx);
 
   const balance = async (tokens?: readonly string[]): Promise<WalletBalance> => {
-    const named = tokens ?? (url === CLUSTER_URLS.devnet ? ["SOL", "TEST"] : ["SOL"]);
-    const mints: Address[] = [...new Set(named.map((token) => mintOfToken(token, url)))];
+    const named = tokens ?? (devnet ? ["SOL", "TEST"] : ["SOL"]);
+    const mints: Address[] = [...new Set(named.map((token) => mintOfToken(token, url, devnet)))];
     const { sol, tokens: held } = await client.balances(signer.address, mints);
     const listed = held.map(({ mint, account, amount, decimals }) => ({
       token: nameOfMint(mint),

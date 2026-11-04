@@ -1,9 +1,9 @@
-import { InvalidInput } from "@intent-engine/core";
+import { isSha256Hex } from "@intent-engine/core/internal";
 import { bytesHex, hexBytes } from "./encoding.js";
+import { specHashText } from "./spec-hash.js";
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 const RAW_SHA256_PREFIX: readonly number[] = [0x01, 0x55, 0x12, 0x20];
-const SPEC_HASH = /^[0-9a-f]{64}$/;
 const CID_TEXT = /^b[a-z2-7]+$/;
 
 function base32(bytes: Uint8Array): string {
@@ -37,10 +37,7 @@ function unbase32(text: string): Uint8Array {
 }
 
 export function cidOfSpecHash(hex: string): string {
-  if (!SPEC_HASH.test(hex)) {
-    throw new InvalidInput("hex", "format", "a spec hash is 64 lowercase hex digits");
-  }
-  return "b" + base32(Uint8Array.from([...RAW_SHA256_PREFIX, ...hexBytes(hex)]));
+  return "b" + base32(Uint8Array.from([...RAW_SHA256_PREFIX, ...hexBytes(specHashText(hex, "hex"))]));
 }
 
 export function specHashOfCid(cid: string): string | null {
@@ -48,5 +45,5 @@ export function specHashOfCid(cid: string): string | null {
     return null;
   }
   const hex = bytesHex(unbase32(cid.slice(1)).subarray(RAW_SHA256_PREFIX.length));
-  return SPEC_HASH.test(hex) && cidOfSpecHash(hex) === cid ? hex : null;
+  return isSha256Hex(hex) && cidOfSpecHash(hex) === cid ? hex : null;
 }

@@ -66,6 +66,8 @@ for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
 
 `watch` calls back with the current intents, then with every intent that changes, until its signal aborts. Each intent it reports carries the `slot` the node read it at, and the watch never reports a state of an intent older than one it already reported. With notifications the watch rereads the chain every `resyncSeconds` and at once after the notification stream reconnects; without notifications it rereads every `pollMs`.
 
+`createClient` throws `InvalidInput` for a `pollMs` or `resyncSeconds` that is not a positive finite number. A nonce above 2^64 - 1 is `InvalidInput`. `connect` reads the node's genesis hash, also with `allowMainnet`, and fails if it cannot; `TEST` names the devnet test token on any node whose genesis hash is devnet's, and `cluster` takes `mainnet` or `mainnet-beta`. A transport that cannot list signatures returns `next: null` from `history`.
+
 The callback's second argument, `closed`, holds the last state the watch saw of each intent before its account closed. Pass `onError` to hear about failed reads, accounts the watch cannot read and errors the callback throws; the watch skips each and goes on. A filled intent's account closes soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts

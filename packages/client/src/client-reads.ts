@@ -49,7 +49,7 @@ async function historyPage(transport: Transport, intent: Address, options: Histo
       throw new TransportLacks(transport.signaturesOf === undefined ? "signaturesOf" : "transactionsOf");
     }
     const transactions = await transport.engineTransactions(limit, intent);
-    return { transactions, next: cursor(transactions.length, transactions.at(-1)?.signature) };
+    return { transactions, next: null };
   }
   const listed = await transport.signaturesOf(intent, limit, options.before);
   return { transactions: await transport.transactionsOf(listed), next: cursor(listed.length, listed.at(-1)?.signature) };

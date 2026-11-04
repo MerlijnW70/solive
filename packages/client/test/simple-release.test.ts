@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT as TEST, feeBpsFor, IntentStatus, Kind, NATIVE_MINT as WSOL, splitFees, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { connect, FirstOpeningRefused, NotSettleable, type SimpleClient } from "../src/index.js";
 import { notFirstAnnouncer } from "../src/internal.js";
-import { funded, world, type World } from "./svm.js";
+import { funded, onDevnet, world, type World } from "./svm.js";
 import { keyed, sha, tokensOf, workUrl } from "./work.js";
 
 const WORK = sha("the delivered work");
@@ -29,7 +29,7 @@ async function job() {
   preset(w, TEST);
   const owner = await funded(w.chain);
   const judge = await keyed(w);
-  const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: w.chain.transport });
+  const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: onDevnet(w.chain.transport) });
   const buyer = await at(owner);
   const reviewer = await at(judge.signer);
   const made = await buyer.payForWork({ amount: "0.01", judge: judge.signer.address, specHash: SPEC });

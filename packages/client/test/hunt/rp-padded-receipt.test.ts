@@ -4,7 +4,7 @@ import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT as TEST, NATIVE_MINT as WSOL, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { connect } from "../../src/index.js";
-import { funded, world, type World } from "../svm.js";
+import { funded, onDevnet, world, type World } from "../svm.js";
 import { keyed, sha, workUrl } from "../work.js";
 
 const WORK = sha("the padded receipt work");
@@ -29,7 +29,7 @@ async function releasedThenPadded() {
   preset(w, TEST);
   const owner = await funded(w.chain);
   const judge = await keyed(w);
-  const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: w.chain.transport });
+  const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: onDevnet(w.chain.transport) });
   const buyer = await at(owner);
   const reviewer = await at(judge.signer);
   const made = await buyer.payForWork({ amount: "0.01", judge: judge.signer.address, specHash: SPEC });

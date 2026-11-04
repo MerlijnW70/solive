@@ -166,6 +166,12 @@ describe("global options", () => {
     expect(clusterUrl("testnet")).toBe("https://api.testnet.solana.com");
     expect(clusterUrl("localnet")).toBe(DEFAULT_URL);
     expect(clusterUrl("https://rpc.example")).toBe("https://rpc.example");
+    expect(clusterUrl("mainnet")).toBe("https://api.mainnet-beta.solana.com");
+    for (const bad of ["nope", "toString", "DEVNET"]) {
+      expect(() => clusterUrl(bad)).toThrow(UsageError);
+      expect(() => clusterUrl(bad)).toThrow(`${bad} is neither an RPC url nor one of`);
+    }
+    expect(usage(["show", "config", "--url", "nope"])).toContain("nope is neither an RPC url nor one of");
     expect(parse(["show", "config", "--url", "devnet"])).toMatchObject({ url: "https://api.devnet.solana.com" });
     const env = { [ENV_URL]: "testnet", [ENV_KEYPAIR]: "env.json" };
     expect(parse(["cancel", "--nonce", "1"], env)).toMatchObject({ url: "https://api.testnet.solana.com", keypair: "env.json" });

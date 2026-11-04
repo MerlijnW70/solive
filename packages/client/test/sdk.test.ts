@@ -31,7 +31,7 @@ import { type ClientOptions, type ConnectOptions, createClient, type Transport }
 import { chainTime, CLOCK_SYSVAR, JOBS_LIMIT, loadUser, MAX_SPEC_BYTES } from "../src/internal.js";
 import type { NodeClientOptions, NodeConnectOptions } from "../src/node.js";
 import { OBSERVE_SECTION, PLAN_SECTION, TESTING_SECTION } from "./doc-sections.js";
-import { FEE_BPS, world, type World } from "./svm.js";
+import { FEE_BPS, onDevnet, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -80,7 +80,7 @@ vi.mock("@intent-engine/client", async () => {
       if (injected.transport === undefined) {
         throw new Error("no transport injected");
       }
-      return real.connect({ ...options, transport: injected.transport });
+      return real.connect({ ...options, transport: onDevnet(injected.transport) });
     },
   };
 });
@@ -102,7 +102,7 @@ vi.mock("@intent-engine/client/node", async () => {
       if (injected.transport === undefined) {
         throw new Error("no transport injected");
       }
-      return real.connect({ ...options, transport: injected.transport });
+      return real.connect({ ...options, transport: onDevnet(injected.transport) });
     },
   };
 });

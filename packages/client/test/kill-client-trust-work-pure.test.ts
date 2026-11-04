@@ -91,7 +91,7 @@ const landed = (slot: bigint, extra: Partial<EngineTransaction> = {}): EngineTra
 const released = landed(0n);
 
 describe("feedbackOf", () => {
-  it("takes the earliest feedback from the owner, wherever it sits in the list, and the first of two in one slot", async () => {
+  it("takes the earliest feedback from the owner, wherever it sits in the list, and the first of two in one slot of a newest-first list", async () => {
     const [intent, owner] = await Promise.all([address(), address()]);
     const memo = (score: number) => feedbackMemo({ intent, score });
     const late = landed(9n, { memos: [memo(10)], memoSigners: [[owner]] });
@@ -101,8 +101,8 @@ describe("feedbackOf", () => {
     expect(feedbackOf([early, middle, late], intent, owner, released)).toBe(70);
     const first = landed(4n, { memos: [memo(11)], memoSigners: [[owner]] });
     const second = landed(4n, { memos: [memo(22)], memoSigners: [[owner]] });
-    expect(feedbackOf([first, second], intent, owner, released)).toBe(11);
-    expect(feedbackOf([second, first], intent, owner, released)).toBe(22);
+    expect(feedbackOf([second, first], intent, owner, released)).toBe(11);
+    expect(feedbackOf([first, second], intent, owner, released)).toBe(22);
   });
 
   it("ignores an owner memo that landed before the release, by slot and by place in the newest-first list within its slot", async () => {

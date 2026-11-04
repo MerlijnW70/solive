@@ -44,6 +44,7 @@ async function devnet(): Promise<World> {
   const w = await world();
   preset(w, WSOL, null);
   preset(w, TEST, w.authority.address);
+  w.chain.transport = { ...w.chain.transport, genesisHash: async () => DEVNET_GENESIS_HASH };
   return w;
 }
 
@@ -122,10 +123,10 @@ describe("the simple sdk layer", () => {
       expect(() => tokenAmount(bad, 6), bad).toThrow(InvalidInput);
     }
     expect(() => tokenAmount("0.0000001", 6)).toThrow("more than the token's 6 decimal places");
-    expect(mintOfToken("SOL", CLUSTER_URLS.localnet)).toBe(WSOL);
-    expect(mintOfToken("test", CLUSTER_URLS.devnet)).toBe(TEST);
-    expect(() => mintOfToken("TEST", CLUSTER_URLS.localnet)).toThrow(InvalidInput);
-    expect(() => mintOfToken("DOGE", CLUSTER_URLS.devnet)).toThrow(InvalidInput);
+    expect(mintOfToken("SOL", CLUSTER_URLS.localnet, false)).toBe(WSOL);
+    expect(mintOfToken("test", CLUSTER_URLS.devnet, true)).toBe(TEST);
+    expect(() => mintOfToken("TEST", CLUSTER_URLS.localnet, false)).toThrow(InvalidInput);
+    expect(() => mintOfToken("DOGE", CLUSTER_URLS.devnet, true)).toThrow(InvalidInput);
 
     const w = await devnet();
     const solive = await connect({ url: "http://127.0.0.1:8899", signer: w.owner, transport: w.chain.transport });
@@ -204,6 +205,21 @@ describe("the simple sdk layer", () => {
     await expect(other.client.plan.cancel(stranger, { owner: owner.address, nonce: escrow.nonce ?? 0n })).rejects.toThrow(
       notOwnerCancel(address, owner.address, stranger.address),
     );
+  });
+
+  it("names TEST on any node whose genesis hash is devnet, and only there", async () => {
+    const w = await devnet();
+    const plain = await world();
+    preset(plain, WSOL, null);
+    preset(plain, TEST, plain.authority.address);
+    const on = (genesis: string): Transport => ({ ...w.chain.transport, genesisHash: async () => genesis });
+    const signer = w.owner;
+    const hosted = await connect({ url: "http://10.0.0.5:8899", signer, transport: on(DEVNET_GENESIS_HASH) });
+    expect((await hosted.balance(["TEST"])).tokens.map(({ token }) => token)).toEqual(["TEST"]);
+    expect((await hosted.balance()).tokens.map(({ token }) => token)).toContain("TEST");
+    const elsewhere = await connect({ url: CLUSTER_URLS.devnet, signer, transport: plain.chain.transport });
+    await expect(elsewhere.balance(["TEST"])).rejects.toBeInstanceOf(InvalidInput);
+    expect((await elsewhere.balance()).tokens.map(({ token }) => token)).not.toContain("TEST");
   });
 
   it("connect refuses mainnet unless allowed", async () => {

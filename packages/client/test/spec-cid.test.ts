@@ -30,8 +30,13 @@ describe("the CID of a spec hash", () => {
     expect(Object.keys(cids)).toHaveLength(3);
   });
 
-  it("refuses a text that is not 64 lowercase hex digits", () => {
-    for (const bad of ["", hello.slice(1), hello.toUpperCase(), `${hello}00`, `${hello.slice(1)}g`]) {
+  it("gives the same CID for uppercase and padded hashes", () => {
+    expect(cidOfSpecHash(hello.toUpperCase())).toBe(cidOfSpecHash(hello));
+    expect(cidOfSpecHash(`  ${hello}\n`)).toBe(cidOfSpecHash(hello));
+  });
+
+  it("refuses a text that is not 64 hex digits", () => {
+    for (const bad of ["", hello.slice(1), `${hello}00`, `${hello.slice(1)}g`]) {
       expect(() => cidOfSpecHash(bad)).toThrow(InvalidInput);
     }
   });

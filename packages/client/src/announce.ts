@@ -29,6 +29,7 @@ import { MAINNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from ".
 import { payerFor, type Plan, planOf } from "./plan.js";
 import type { Transport } from "./transport.js";
 import { hexBytes } from "./encoding.js";
+import { specHashText } from "./spec-hash.js";
 
 export { isSaltSigner, type SaltSigner, type SecretInput, secretInputOf, type SecretOptions } from "./announce-keys.js";
 
@@ -64,11 +65,7 @@ export type Announced = {
 export const ANNOUNCED_UNSEEN = "the announcement landed but the node does not show it yet";
 
 export function sha256Bytes(sha256: string): Uint8Array {
-  const lowered = sha256.trim().toLowerCase();
-  if (!isSha256Hex(lowered)) {
-    throw new InvalidInput("sha256", "format", "sha256 must be 64 hex digits");
-  }
-  return hexBytes(lowered);
+  return hexBytes(specHashText(sha256, "sha256"));
 }
 
 async function claimAccounts(transport: Transport, intent: Address, claims: number, worker: Address) {

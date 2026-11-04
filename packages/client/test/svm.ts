@@ -4,6 +4,7 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, type
 import { parseAmount } from "@intent-engine/core";
 import type { LiteSVM } from "litesvm";
 import type { Transport } from "../src/index.js";
+import { DEVNET_GENESIS_HASH } from "../src/job-specs.js";
 import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL, type TestWorld } from "../src/testing.js";
 
 export const NOW = 1_700_000_000n;
@@ -29,6 +30,8 @@ export type World = {
   inputMint: Address;
   outputMint: Address;
 };
+
+export const onDevnet = (transport: Transport): Transport => ({ ...transport, genesisHash: async () => DEVNET_GENESIS_HASH });
 
 export async function funded(chain: Chain): Promise<KeyPairSigner> {
   const signer = await generateKeyPairSigner();
