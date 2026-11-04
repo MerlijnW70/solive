@@ -11,7 +11,7 @@ export type Remote = { url: string; priority: Priority };
 
 export type RelaySpec = {
   keypair: string;
-  maxLamports: bigint;
+  maxLamports: bigint | null;
   maxTtl: bigint;
   perHour: number;
   hourlyLamports: bigint;

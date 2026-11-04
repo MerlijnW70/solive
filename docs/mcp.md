@@ -126,6 +126,8 @@ Set `INTENT_ENGINE_KEYPAIR` to `usb://ledger` or another form from the [quicksta
 
 `--relayer` with `--relay-fee` lets `solive_submit_signed_intent` publish intents that owners signed off-chain. The relayer key pays.
 
+`--relay-max-lamports` caps the create fee, crank bounty and priority fee the relayer pays per intent. Without it the relayer has no cap and pays the create fee and crank bounty the config states, and `--relay-hourly-lamports` bounds the hour. `solive_preview_signed_intent` runs the checks submit runs, reserves nothing, and shows the cost submit reserves.
+
 ## All options
 
 - [The mcp command](reference/cli.md#mcp)

@@ -30,7 +30,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   spec: "--intent <escrow address> [--keypair <file>] [--out <file>]",
   show: "config | intent --owner <address> --nonce <n> | mint-cap --mint <mint>",
   domain: "",
-  mcp: `[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]; ${NO_UPDATE_CHECK}=1 skips the lookup of a newer CLI version`,
+  mcp: `[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports <lamports; default: no cap, the config's create fee and crank bounty are paid>] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]; ${NO_UPDATE_CHECK}=1 skips the lookup of a newer CLI version`,
   quote: "--owner <address> --nonce <n> [--at <unix>]",
   cancel: "[--keypair <file>] --nonce <n> [--close] [--yes]",
   expire: "[--keypair <file>] --owner <address> --nonce <n> [--yes]",

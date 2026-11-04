@@ -10,7 +10,7 @@ import { escrowJudge } from "./create.js";
 import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { relayCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
-import { admitRelay, type Relay } from "./relay.js";
+import { admitRelay, checkRelay, type Relay } from "./relay.js";
 import { type Call, enter } from "./claims.js";
 import { paramsOf } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
@@ -32,6 +32,7 @@ import {
   preparedFits,
   RELAY_TOO_LARGE,
   relayCreate,
+  relayFits,
   relayFloor,
   refuseRepricing,
   SPEC_URL_TOO_LONG,
@@ -72,21 +73,10 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
   const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
   const existing = await createdAccount(transport, intent);
   if (existing !== null) {
-    if (!sameTerms(decodeIntentAccount(existing.data), fields)) {
-      throw new AgentRefusal(
-        "NonceTaken",
-        "a different intent already uses this owner's nonce; these signed terms can never be submitted",
-      );
-    }
+    refuseTakenNonce(existing.data, fields);
     return { intent, signature: null };
   }
-  const floor = relayFloor(relay, input.input_mint);
-  if (input.relayer_fee < floor) {
-    throw new AgentRefusal(
-      "RelayFeeTooLow",
-      `this relayer charges ${floor} raw units of ${input.input_mint} per intent; prepare and sign the intent again on this server`,
-    );
-  }
+  refuseLowFee(relay, input);
   const message = await signedIntentMessage(fields);
   const signature = signatureBytes(input.signature);
   if (!(await verifySignature(await getPublicKeyFromAddress(input.owner), signature, message))) {
@@ -95,6 +85,67 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
       `the signature is not the owner's signature of these exact terms; sign the message from ${tool("prepare_signed_intent")} again`,
     );
   }
+  const plan = await planRelay(transport, relay, input, {
+    config,
+    inputToken,
+    outputToken,
+    params,
+    specUrl,
+    message,
+    signature,
+  });
+  const ticket = admitRelay(relay, input.owner, plan.charges, plan.total, input.expires_at, plan.now);
+  const paid = { any: false };
+  call.undo.push(() => {
+    if (!paid.any) {
+      ticket.cancel();
+    }
+  });
+  const { feeAccount, relayed, split } = plan;
+  let { prepared } = plan;
+  const admitted = prepared.priorityLamports;
+  if (split) {
+    await paying(paid, transport.send(feeAccount.create, relay.signer));
+    prepared = await prepare(transport, relayed, relay.signer.address);
+    refuseRepricing(admitted, prepared.priorityLamports);
+  }
+  if (!preparedFits(prepared)) {
+    throw new AgentRefusal("RelayTooLarge", specUrl === undefined ? RELAY_TOO_LARGE : SPEC_URL_TOO_LONG);
+  }
+  return { intent, signature: await paying(paid, transport.send(prepared.instructions, relay.signer)) };
+}
+
+function refuseTakenNonce(data: Uint8Array, fields: Parameters<typeof sameTerms>[1]): void {
+  if (!sameTerms(decodeIntentAccount(data), fields)) {
+    throw new AgentRefusal(
+      "NonceTaken",
+      "a different intent already uses this owner's nonce; these signed terms can never be submitted",
+    );
+  }
+}
+
+function refuseLowFee(relay: Relay, input: SignedTerms): void {
+  const floor = relayFloor(relay, input.input_mint);
+  if (input.relayer_fee < floor) {
+    throw new AgentRefusal(
+      "RelayFeeTooLow",
+      `this relayer charges ${floor} raw units of ${input.input_mint} per intent; prepare and sign the intent again on this server`,
+    );
+  }
+}
+
+type RelayContext = {
+  config: Awaited<ReturnType<typeof fieldsOf>>["config"];
+  inputToken: Awaited<ReturnType<typeof fieldsOf>>["inputToken"];
+  outputToken: Awaited<ReturnType<typeof mintOf>>;
+  params: ReturnType<typeof validate>;
+  specUrl: string | undefined;
+  message: Awaited<ReturnType<typeof signedIntentMessage>>;
+  signature: ReturnType<typeof signatureBytes>;
+};
+
+async function planRelay(transport: Transport, relay: Relay, input: SignedTerms & { signature: string }, context: RelayContext) {
+  const { config, inputToken, outputToken, params, specUrl, message, signature } = context;
   const feeAccount =
     input.relayer_fee === 0n
       ? { create: [] }
@@ -119,36 +170,22 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
     ...published(relay.signer, specUrl),
   ];
   const now = await chainTime(transport);
-  let prepared = await prepare(transport, [...feeAccount.create, ...relayed], relay.signer.address);
+  const prepared = await prepare(transport, [...feeAccount.create, ...relayed], relay.signer.address);
   const split = feeAccount.create.length !== 0 && !preparedFits(prepared);
   const rate = await rentRate(transport);
-  const ticket = admitRelay(
-    relay,
-    input.owner,
-    BigInt(config.createFee) + BigInt(config.crankBounty) + prepared.priorityLamports,
-    relayCost(config, rate) +
+  return {
+    feeAccount,
+    relayed,
+    prepared,
+    split,
+    now,
+    charges: BigInt(config.createFee) + BigInt(config.crankBounty) + prepared.priorityLamports,
+    total:
+      relayCost(config, rate) +
       prepared.priorityLamports +
       (feeAccount.create.length > 0 ? rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate) : 0n) +
       (split ? SIGNATURE_FEE + prepared.priorityLamports : 0n),
-    input.expires_at,
-    now,
-  );
-  const paid = { any: false };
-  call.undo.push(() => {
-    if (!paid.any) {
-      ticket.cancel();
-    }
-  });
-  const admitted = prepared.priorityLamports;
-  if (split) {
-    await paying(paid, transport.send(feeAccount.create, relay.signer));
-    prepared = await prepare(transport, relayed, relay.signer.address);
-    refuseRepricing(admitted, prepared.priorityLamports);
-  }
-  if (!preparedFits(prepared)) {
-    throw new AgentRefusal("RelayTooLarge", specUrl === undefined ? RELAY_TOO_LARGE : SPEC_URL_TOO_LONG);
-  }
-  return { intent, signature: await paying(paid, transport.send(prepared.instructions, relay.signer)) };
+  };
 }
 
 export const previewSignedIntent = define({
@@ -164,7 +201,7 @@ export const previewSignedIntent = define({
     summary: list(text(), 32, "what relaying creates"),
     warnings: list(text(), 16, "anything to check before relaying"),
   }),
-  run: async ({ transport }, input) => {
+  run: async ({ transport, relay }, input) => {
     const params = validate(paramsOf(input.order));
     const specUrl = await publishedUrl(transport, params, input.spec_url);
     const outputToken = await mintOf(transport, input.output_mint);
@@ -174,7 +211,31 @@ export const previewSignedIntent = define({
       throw new AgentRefusal("SignatureInvalid", "the signature is not the owner's signature of these exact terms");
     }
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
-    const exists = (await createdAccount(transport, intent)) !== null;
+    const existing = await createdAccount(transport, intent);
+    const exists = existing !== null;
+    let cost = relayCost(config, await rentRate(transport));
+    if (relay !== undefined) {
+      if (existing !== null) {
+        refuseTakenNonce(existing.data, fields);
+      } else {
+        refuseLowFee(relay, input);
+        const plan = await planRelay(transport, relay, input, {
+          config,
+          inputToken,
+          outputToken,
+          params,
+          specUrl,
+          message,
+          signature: signatureBytes(input.signature),
+        });
+        checkRelay(relay, input.owner, plan.charges, plan.total, input.expires_at, plan.now);
+        const fits = plan.split ? await relayFits(transport, relay, plan.relayed) : preparedFits(plan.prepared);
+        if (!fits) {
+          throw new AgentRefusal("RelayTooLarge", specUrl === undefined ? RELAY_TOO_LARGE : SPEC_URL_TOO_LONG);
+        }
+        cost = plan.total;
+      }
+    }
     const user = await loadUser(transport, input.owner);
     const shownAt = await chainTime(transport);
     const description = await describeSignedIntent(fields, {
@@ -192,7 +253,7 @@ export const previewSignedIntent = define({
       relayer_fee: input.relayer_fee,
       summary: [
         ...withFromNow(description.lines, fields.expiresAt, shownAt),
-        `Relaying costs you ${relayCost(config, await rentRate(transport))} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
+        `Relaying costs you ${cost} lamports in create fee, crank bounty, ${relay === undefined ? "rent and signature fee, plus any priority fee" : "rent, signature fees and priority fee"}; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
         ...(specUrl === undefined ? [] : [publishesLine(specUrl), `Mirror: ${NOT_ON_MIRROR}`]),
       ],
       warnings: [...description.warnings, ...(specUrl === undefined ? [] : [SPEC_URL_UNSIGNED])],

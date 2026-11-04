@@ -185,7 +185,7 @@ describe("agent server against the deployed engine", () => {
       const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(p["message"])));
       return { ...p["submit"], signature };
     };
-    const strict = await connect(relayer, [...free(), "--relay-max-ttl", "3600", "--relay-per-hour", "1"]);
+    const strict = await connect(relayer, [...free(), "--relay-max-lamports", "0", "--relay-max-ttl", "3600", "--relay-per-hour", "1"]);
     const lax = await connect(relayer, [...free(), "--relay-max-lamports", "10000"]);
     expect(await fail(strict, "submit_signed_intent", await signedBy(lax, "0", { expires_in: 3_601 }))).toMatchObject({
       code: "RelayTooLong",

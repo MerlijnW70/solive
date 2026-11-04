@@ -58,7 +58,7 @@ export function relaySpec(values: Values): RelaySpec | undefined {
   }
   return {
     keypair: values.relayer,
-    maxLamports: values["relay-max-lamports"] === undefined ? 0n : u64(values, "relay-max-lamports"),
+    maxLamports: values["relay-max-lamports"] === undefined ? null : u64(values, "relay-max-lamports"),
     maxTtl: BigInt(maxTtl),
     perHour,
     hourlyLamports:

@@ -51,7 +51,7 @@ describe("commands", () => {
       priority: 0n,
       relay: {
         keypair: "r.json",
-        maxLamports: 0n,
+        maxLamports: null,
         maxTtl: 86_400n,
         perHour: 10,
         hourlyLamports: 100_000_000n,

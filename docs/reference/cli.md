@@ -129,7 +129,7 @@ Options: `--url`, `--output`, `--help`, `--debug`
 ## mcp
 
 ```text
-mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]; INTENT_ENGINE_NO_UPDATE_CHECK=1 skips the lookup of a newer CLI version
+mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports <lamports; default: no cap, the config's create fee and crank bounty are paid>] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]; INTENT_ENGINE_NO_UPDATE_CHECK=1 skips the lookup of a newer CLI version
 ```
 
 Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`, `--debug`

@@ -5,7 +5,7 @@ import { AgentRefusal } from "./problems.js";
 export const RATE_WINDOW = 3_600n;
 
 type RelayPolicy = {
-  maxLamports: bigint;
+  maxLamports: bigint | null;
   maxTtl: bigint;
   perHour: number;
   hourlyLamports: bigint;
@@ -41,7 +41,7 @@ export function refuseLongRelay(relay: Relay, expiresAt: bigint, now: bigint): v
 }
 
 export function refuseCostlyTerms(relay: Relay, charges: bigint): void {
-  if (charges > relay.maxLamports) {
+  if (relay.maxLamports !== null && charges > relay.maxLamports) {
     throw new AgentRefusal(
       "RelayTooCostly",
       `relaying this intent costs at least ${charges} lamports in create fee and crank bounty before any priority fee; this relayer pays at most ${relay.maxLamports}`,
@@ -49,15 +49,15 @@ export function refuseCostlyTerms(relay: Relay, charges: bigint): void {
   }
 }
 
-export function admitRelay(
+function refuseUnadmitted(
   relay: Relay,
   owner: Address,
   charges: bigint,
   total: bigint,
   expiresAt: bigint,
   now: bigint,
-): Ticket {
-  if (charges > relay.maxLamports) {
+): bigint[] {
+  if (relay.maxLamports !== null && charges > relay.maxLamports) {
     throw new AgentRefusal(
       "RelayTooCostly",
       `relaying this intent costs ${charges} lamports in create fee, crank bounty and priority fee; this relayer pays at most ${relay.maxLamports}`,
@@ -69,6 +69,23 @@ export function admitRelay(
   if (times.length >= relay.perHour) {
     throw new AgentRefusal("RelayRateLimited", `this relayer relays at most ${relay.perHour} intents per owner per hour`);
   }
+  release(relay.budget, reserve(relay.budget, total, now));
+  return times;
+}
+
+export function checkRelay(relay: Relay, owner: Address, charges: bigint, total: bigint, expiresAt: bigint, now: bigint): void {
+  refuseUnadmitted(relay, owner, charges, total, expiresAt, now);
+}
+
+export function admitRelay(
+  relay: Relay,
+  owner: Address,
+  charges: bigint,
+  total: bigint,
+  expiresAt: bigint,
+  now: bigint,
+): Ticket {
+  const times = refuseUnadmitted(relay, owner, charges, total, expiresAt, now);
   const spend = reserve(relay.budget, total, now);
   relay.recent.set(owner, [...times, now]);
   return {
