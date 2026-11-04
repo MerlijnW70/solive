@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { copyOf, readArtifact, removeCopy } from "./artifact.js";
@@ -9,15 +9,44 @@ import { defaultWallet, expandHome } from "./wallet.js";
 
 export type DoctorCheck = { check: string; ok: boolean; detail?: string };
 
+export type Mounts = { count: number; limit: number };
+
 export type Doctor = {
   docker: string | null;
   image: string;
   gpu: boolean;
   keypair: { path: string; reachable: boolean };
   checks: DoctorCheck[];
+  mounts: Mounts | null;
+  warnings: string[];
   ready: boolean;
   next: string;
 };
+
+export const MOUNTS_NEAR = 0.8;
+export const DESKTOP_BIND_MOUNTS = "/mnt/wsl/docker-desktop-bind-mounts/";
+export const DESKTOP_COPIES = 4;
+
+export function mountsOf(mountinfo: string, limit: number): Mounts {
+  const lines = mountinfo.split("\n").filter((line) => line !== "");
+  const desktop = lines.filter((line) => (line.split(" ")[4] ?? "").startsWith(DESKTOP_BIND_MOUNTS)).length;
+  return { count: Math.max(lines.length, desktop * DESKTOP_COPIES), limit };
+}
+
+export const mountsNear = ({ count, limit }: Mounts): string | undefined =>
+  count >= limit * MOUNTS_NEAR
+    ? `warning: the Docker host holds about ${count} of the ${limit} mounts one mount namespace may hold; at the limit every docker run fails with no space left on device`
+    : undefined;
+
+export async function hostMounts(): Promise<Mounts | null> {
+  try {
+    const [info, max] = await Promise.all([readFile("/proc/self/mountinfo", "utf8"), readFile("/proc/sys/fs/mount-max", "utf8")]);
+    const limit = Number(max.trim());
+    return Number.isSafeInteger(limit) && limit > 0 ? mountsOf(info, limit) : null;
+  } catch {
+    return null;
+  }
+}
 
 export const DOCTOR_READY = "every isolation check passed on this machine; judge untrusted work with --sandbox docker and a digest-pinned --sandbox-image";
 export const DOCTOR_NOT_READY = "one or more isolation checks failed on this machine, so do not judge untrusted work here until each one passes";
@@ -90,11 +119,13 @@ async function contained(box: Box, root: { copy: Awaited<ReturnType<typeof copyO
   return { ...ran, gone };
 }
 
-export async function sandboxDoctor(box: Box, keypair: string | undefined): Promise<Doctor> {
+export async function sandboxDoctor(box: Box, keypair: string | undefined, measure: () => Promise<Mounts | null> = hostMounts): Promise<Doctor> {
   const keyPath = resolve(expandHome(keypair ?? defaultWallet(homedir()), homedir()));
   const env = dockerEnv(process.env);
   const version = await docker(["version", "--format", "{{.Server.Version}}"], env);
-  const base = { image: box.image, gpu: box.gpu, keypair: { path: keyPath, reachable: true } };
+  const mounts = await measure();
+  const near = mounts === null ? undefined : mountsNear(mounts);
+  const base = { image: box.image, gpu: box.gpu, keypair: { path: keyPath, reachable: true }, mounts, warnings: near === undefined ? [] : [near] };
   if (version.status !== 0) {
     return { docker: null, ...base, checks: [{ check: "docker is usable", ok: false, detail: version.out.slice(0, 300) }], ready: false, next: DOCTOR_NOT_READY };
   }
@@ -112,7 +143,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined): Prom
   const artifact = join(tmpdir(), `sandbox-doctor-${randomBytes(6).toString("hex")}.txt`);
   await writeFile(artifact, "sandbox doctor\n");
   const read = await readArtifact(artifact);
-  const copy = await copyOf(read, new TextEncoder().encode("sandbox doctor spec\n"));
+  const copy = await copyOf(read, new TextEncoder().encode("sandbox doctor spec\n"), undefined, true);
   const root = { copy, sha256: read.sha256 };
   let keyHidden = false;
   try {

@@ -379,7 +379,7 @@ async function checkAndSettle(
       cleanup = ran.cleanup;
     }
   } else {
-    const copy = await copyOf(read, specBytes, checkFiles);
+    const copy = await copyOf(read, specBytes, checkFiles, sandbox.kind === "docker");
     const run = command.run ?? "";
     try {
       if (signals.caught() === undefined) {

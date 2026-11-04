@@ -123,7 +123,7 @@ describe("the judge sandbox", () => {
     expect(existsSync(verdictFile)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
 
-    const copy = await copyOf(await readArtifact(j.artifact), new TextEncoder().encode(SPEC));
+    const copy = await copyOf(await readArtifact(j.artifact), new TextEncoder().encode(SPEC), undefined, true);
     const name = `judge-test-${process.pid}-${Date.now()}`;
     const sandbox = { kind: "docker", image: SANDBOX_IMAGE, memory: "256m", cpus: "1", tmp: "64m", gpu: false } as const;
     try {

@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
-import { removeCopy } from "./artifact.js";
+import { judgeRoot, removeCopy } from "./artifact.js";
 import { removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
@@ -113,7 +112,7 @@ function summarized(results: CaseResult[], image: string, path: string): NodeJud
 type Staged = { root: string; mount: string; directory: string; path: string };
 
 async function stage(source: Uint8Array, name: string): Promise<Staged> {
-  const root = await mkdtemp(join(tmpdir(), "judge-node-"));
+  const root = await judgeRoot("judge-node-", true);
   const mount = join(root, "judge");
   const random = randomBytes(16).toString("hex");
   const file = moduleName(name);

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { DOCTOR_NOT_READY, DOCTOR_READY, quiet } from "../src/sandbox-doctor.js";
+import { DOCTOR_NOT_READY, DOCTOR_READY, hostMounts, mountsNear, quiet } from "../src/sandbox-doctor.js";
 import { IMAGE_NEEDS_DIGEST, SANDBOX_IMAGE, SANDBOX_NEEDS_DOCTOR } from "../src/sandbox.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { cli } from "./harness.js";
@@ -53,6 +53,9 @@ describe("intent-engine sandbox doctor", () => {
       const run = await cli(["sandbox", "doctor"], {});
       expect(run.code).toBe(EXIT_FAILED);
       expect(run.json()).toMatchObject({ docker: null, ready: false, next: DOCTOR_NOT_READY, checks: [{ check: "docker is usable", ok: false }] });
+      const mounts = await hostMounts();
+      expect(run.json()).toMatchObject({ mounts: process.platform === "linux" ? { limit: mounts?.limit, count: expect.any(Number) } : null });
+      expect(run.json()["warnings"]).toEqual(mounts !== null && mountsNear(mounts) !== undefined ? [expect.stringContaining("no space left on device")] : []);
     } finally {
       process.env["PATH"] = saved;
     }

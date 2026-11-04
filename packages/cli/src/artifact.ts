@@ -1,7 +1,9 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, open, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { chmod, lstat, mkdir, mkdtemp, open, readdir, readlink, rm, stat, writeFile } from "node:fs/promises";
+import type { Socket } from "node:net";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { type ManifestEntry, manifestSha256 } from "@intent-engine/core/internal";
 import { UsageError } from "./arg-values.js";
 import { JudgeRefused } from "./judge-errors.js";
@@ -104,12 +106,136 @@ export type CheckFiles = { name: string; read: Artifact };
 
 export const CHECK_COPY = "check";
 
+export const MOUNT_SLOTS = 64;
+export const MOUNT_BASE = "judge-mounts-";
+
+export const SLOT_HELD = "held";
+export const MOUNT_FALLBACK =
+  "warning: no private mount slot could be taken, so this check mounts a fresh directory; Docker Desktop keeps one host mount for every fresh directory until it restarts";
+
+export const MOUNT_DIR = "intent-engine";
+
+const PRIVATE = 0o700;
+const SHARED_BITS = 0o077;
+const WRITABLE_BITS = 0o022;
+const held = new Map<string, ChildProcess>();
+
+export const slotLock = (base: string, slot: number): string => join(base, `slot-${slot}.lock`);
+
+async function opened(path: string): Promise<void> {
+  const found = await lstat(path).catch(() => undefined);
+  if (found === undefined || !found.isDirectory()) {
+    return;
+  }
+  await chmod(path, PRIVATE);
+  for (const name of await readdir(path)) {
+    await opened(join(path, name));
+  }
+}
+
+function locked(path: string): Promise<ChildProcess | null | undefined> {
+  return new Promise((done) => {
+    const child = spawn("flock", ["-n", path, "sh", "-c", `echo ${SLOT_HELD}; exec cat > /dev/null`], {
+      stdio: ["pipe", "pipe", "ignore"],
+      detached: true,
+      env: { PATH: [process.env["PATH"], "/usr/bin", "/bin"].filter((part) => part !== undefined && part !== "").join(":") },
+    });
+    child.once("error", () => done(null));
+    child.once("exit", () => done(undefined));
+    child.stdout.setEncoding("utf8");
+    child.stdout.once("data", (line: string) => {
+      if (line.trim() !== SLOT_HELD) {
+        child.kill("SIGKILL");
+        return;
+      }
+      (child.stdin as Socket).unref();
+      (child.stdout as Socket).unref();
+      child.unref();
+      done(child);
+    });
+  });
+}
+
+function unlocked(child: ChildProcess | undefined): Promise<void> {
+  return new Promise((done) => {
+    if (child === undefined || child.exitCode !== null || child.signalCode !== null) {
+      done();
+      return;
+    }
+    child.once("exit", () => done());
+    child.stdin?.end();
+  });
+}
+
+export async function mountBase(): Promise<string | undefined> {
+  const uid = process.getuid?.();
+  if (process.platform !== "linux" || uid === undefined) {
+    return undefined;
+  }
+  const space = (await readlink("/proc/self/ns/net").catch(() => "")).replace(/\D/g, "");
+  if (space === "") {
+    return undefined;
+  }
+  const runtime = process.env["XDG_RUNTIME_DIR"];
+  const tail = [MOUNT_DIR, `${MOUNT_BASE}${space}`];
+  const fromRuntime = runtime !== undefined && isAbsolute(runtime) ? await privateDir(uid, runtime, SHARED_BITS, tail) : undefined;
+  return fromRuntime ?? (await privateDir(uid, homedir(), WRITABLE_BITS, [".cache", ...tail]));
+}
+
+async function privateDir(uid: number, root: string, rootBits: number, parts: readonly string[]): Promise<string | undefined> {
+  let at = root;
+  for (const [index, part] of ["", ...parts].entries()) {
+    if (part !== "") {
+      at = join(at, part);
+      await mkdir(at, { mode: PRIVATE }).catch(() => undefined);
+    }
+    const found = await lstat(at).catch(() => undefined);
+    const bits = index === 0 ? rootBits : index === parts.length ? SHARED_BITS : WRITABLE_BITS;
+    if (found === undefined || !found.isDirectory() || found.uid !== uid || (found.mode & bits) !== 0) {
+      return undefined;
+    }
+  }
+  return at;
+}
+
+export async function judgeRoot(prefix: string, mounted: boolean): Promise<string> {
+  const base = mounted ? await mountBase() : undefined;
+  for (let slot = 0; base !== undefined && slot < MOUNT_SLOTS; slot += 1) {
+    const lock = await locked(slotLock(base, slot));
+    if (lock === null) {
+      break;
+    }
+    if (lock === undefined) {
+      continue;
+    }
+    const root = join(base, `slot-${slot}`);
+    try {
+      await opened(root);
+      await rm(root, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
+      await mkdir(root, { mode: PRIVATE });
+    } catch {
+      await unlocked(lock);
+      continue;
+    }
+    held.set(root, lock);
+    return root;
+  }
+  if (mounted && process.platform === "linux") {
+    process.stderr.write(`${MOUNT_FALLBACK}\n`);
+  }
+  return mkdtemp(join(tmpdir(), prefix));
+}
+
 export async function removeCopy(root: string): Promise<string | undefined> {
   try {
     await rm(root, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     return undefined;
   } catch (error) {
     return `the artifact copy at ${root} could not be removed: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    const lock = held.get(root);
+    held.delete(root);
+    await unlocked(lock);
   }
 }
 
@@ -124,8 +250,8 @@ async function writeEntries(under: string, entries: readonly CopiedEntry[]): Pro
   }
 }
 
-export async function copyOf(artifact: Artifact, specBytes: Uint8Array, check?: CheckFiles): Promise<Copy> {
-  const root = await mkdtemp(join(tmpdir(), "judge-artifact-"));
+export async function copyOf(artifact: Artifact, specBytes: Uint8Array, check?: CheckFiles, mounted = false): Promise<Copy> {
+  const root = await judgeRoot("judge-artifact-", mounted);
   const work = join(root, "work");
   const spec = join(root, "spec", SPEC_COPY);
   const checks = join(root, CHECK_COPY);
