@@ -48,22 +48,25 @@ async function readRent(transport: Transport): Promise<RentSysvar> {
   return checkedRent(await rentSysvar(transport));
 }
 
-const rentRates = new WeakMap<Transport, Promise<RentSysvar>>();
+export const RENT_TTL_MS = 60_000;
+
+const rentRates = new WeakMap<Transport, { at: number; pending: Promise<RentSysvar> }>();
 
 export function rentRate(transport: Transport): Promise<RentSysvar> {
   const source = unmemoized(transport);
   const known = rentRates.get(source);
-  if (known !== undefined) {
-    return known;
+  const now = Date.now();
+  if (known !== undefined && now - known.at < RENT_TTL_MS) {
+    return known.pending;
   }
-  const pending = readRent(source);
-  rentRates.set(source, pending);
-  pending.catch(() => {
-    if (rentRates.get(source) === pending) {
+  const entry = { at: now, pending: readRent(source) };
+  rentRates.set(source, entry);
+  entry.pending.catch(() => {
+    if (rentRates.get(source) === entry) {
       rentRates.delete(source);
     }
   });
-  return pending;
+  return entry.pending;
 }
 
 export const rentFor = (bytes: number, rent: RentSysvar): bigint => rentExemptFor(rent, bytes);

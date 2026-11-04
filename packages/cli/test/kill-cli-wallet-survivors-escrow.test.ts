@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { formatAmount } from "@intent-engine/core";
 import { MAX_CLAIM_STAKE, MIN_CLAIM_STAKE, seal } from "@intent-engine/core/internal";
 import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
-import { NO_SPEC_HASH, SPEC_ANSWER_OUT, SPEC_NO_ANSWER, STAKE_BELOW_RENT } from "../src/agent/wallet/escrow.js";
+import { NO_SPEC_HASH, SPEC_ANSWER_OUT, SPEC_NO_ANSWER, stakeBelowRent } from "../src/agent/wallet/escrow.js";
 import { sealedTooLarge } from "../src/agent/wallet/seal.js";
 import { call, fresh, ok } from "./agent-wallet-kit.js";
 import { approved } from "./approved.js";
@@ -31,7 +31,7 @@ describe("the claim stake of an escrow", () => {
   it("takes no stake, the smallest stake and the largest stake, and refuses one lamport either side", async () => {
     expect((await withStake("0")).error).toBe(false);
     expect((await withStake(formatAmount(MIN_CLAIM_STAKE, 9))).error).toBe(false);
-    expect((await withStake(formatAmount(MIN_CLAIM_STAKE - 1n, 9))).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: STAKE_BELOW_RENT }] });
+    expect((await withStake(formatAmount(MIN_CLAIM_STAKE - 1n, 9))).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: stakeBelowRent(MIN_CLAIM_STAKE) }] });
     expect((await withStake(formatAmount(MAX_CLAIM_STAKE, 9))).error).toBe(false);
     expect((await withStake(formatAmount(MAX_CLAIM_STAKE + 1n, 9))).value).toMatchObject({
       code: "InvalidInput",

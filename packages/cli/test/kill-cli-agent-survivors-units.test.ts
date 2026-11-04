@@ -127,7 +127,7 @@ describe("standbyStep", () => {
     const worker = await generateKeyPairSigner();
     const held = viewOf({ worker: worker.address });
     await expect(standbyStep(open, rentTransport(), escrow, held, worker, 600)).rejects.toMatchObject({ problem: { code: "HolderStandsBy" } });
-    const lapsed = await standbyStep(open, rentTransport(), escrow, viewOf({ worker: worker.address, state: "lapsed" }), worker, 600);
+    const lapsed = await standbyStep(open, rentTransport(), escrow, viewOf({ worker: worker.address, state: "lapsed", until: 900n }), worker, 600);
     expect(lapsed.key).toBe(`standby:600:1:50000000:${rent}`);
   });
 

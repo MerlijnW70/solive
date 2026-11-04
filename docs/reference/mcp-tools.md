@@ -128,7 +128,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `spec_text` | string | no | the spec's exact text; its sha256 must equal spec_hash. It is uploaded publicly to the mirror after the send, so workers can read it when spec_url fails; the mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored |
 | `publish_spec` | boolean | no | false keeps the spec off the public mirror; default true |
-| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least 0.00089088, the rent-exempt minimum of a wallet; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
+| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least the rent-exempt minimum of an empty account on the cluster; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `allow_wrong_spec` | boolean | no | true sends even when the bytes at spec_url do not hash to spec_hash; leave out to refuse such a send |
 | `approval` | string | no | the approval the preview returned; needed with send |
@@ -153,7 +153,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `pieces` | list of object, 2 to 12 | yes | the pieces, in order |
 | `expires_in` | integer 60..31536000 | no | least seconds each escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
-| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least 0.00089088, the rent-exempt minimum of a wallet; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
+| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least the rent-exempt minimum of an empty account on the cluster; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `allow_wrong_spec` | boolean | no | true sends even when the bytes at spec_url do not hash to spec_hash; leave out to refuse such a send |
 | `approval` | string | no | the approval the preview returned; needed with send |

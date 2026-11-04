@@ -11,7 +11,7 @@ import {
   getStandByInstructionAsync,
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
-import { IntentCoreError, InvalidInput } from "./errors.js";
+import { type CoreErrorCode, IntentCoreError, InvalidInput } from "./errors.js";
 
 export const CLAIMS_OPEN = 1;
 export const MAX_CLAIM_SECS = 7 * 24 * 60 * 60;
@@ -45,12 +45,27 @@ export function claimSlot(board: Pick<BoardView, "worker" | "until">, now: bigin
   return now < board.until ? { state: "held", worker: board.worker, until: board.until } : { state: "lapsed", worker: board.worker };
 }
 
-export function checkClaimant(board: Pick<BoardView, "worker" | "until" | "droppedBy" | "head" | "tail">, claimant: Address, now: bigint): void {
-  const slot = claimSlot(board, now);
-  if (slot.state === "held") throw new IntentCoreError("ClaimHeld");
-  if (lineLength(board) > 0) throw new IntentCoreError("LineWaiting");
+export function claimCooldown(board: Pick<BoardView, "worker" | "until" | "droppedBy">, now: bigint): { worker: Address; until: bigint } | null {
   const dropped = board.droppedBy ?? NONE;
-  if (slot.state === "free" && dropped !== NONE && dropped === claimant && now < board.until) throw new IntentCoreError("ClaimCooldown");
+  return claimSlot(board, now).state === "free" && dropped !== NONE && now < board.until ? { worker: dropped, until: board.until } : null;
+}
+
+export function checkClaimant(board: Pick<BoardView, "worker" | "until" | "droppedBy" | "head" | "tail">, claimant: Address, now: bigint): void {
+  if (lineLength(board) > 0) throw new IntentCoreError("LineWaiting");
+  if (claimSlot(board, now).state === "held") throw new IntentCoreError("ClaimHeld");
+  if (claimCooldown(board, now)?.worker === claimant) throw new IntentCoreError("ClaimCooldown");
+}
+
+export function takeUntil(board: Pick<BoardView, "worker" | "until" | "droppedBy" | "head" | "tail">, claimant: Address, terms: { maxSecs: number; secs: number; expiresAt: bigint }, now: bigint): bigint {
+  checkClaimant(board, claimant, now);
+  return claimUntil(terms.maxSecs, now, terms.secs, terms.expiresAt);
+}
+
+export function standByRefusal(board: Pick<BoardView, "worker" | "until" | "head" | "tail">, claimant: Address, secs: number, maxSecs: number, now: bigint): CoreErrorCode | "HolderStandsBy" | undefined {
+  if (!Number.isInteger(secs) || secs < 1 || secs > maxSecs) return "ClaimTerms";
+  const slot = claimSlot(board, now);
+  if (slot.state === "held" && slot.worker === claimant) return "HolderStandsBy";
+  return slot.state !== "held" && lineLength(board) === 0 ? "JobNotHeld" : undefined;
 }
 
 export function checkStandBy(board: Pick<BoardView, "worker" | "until" | "head" | "tail">, now: bigint): void {
@@ -68,9 +83,14 @@ export function checkClaimTerms(maxSecs: number, stake: bigint): void {
   }
 }
 
-export function checkClaimStake(stake: bigint): void {
-  if (stake > 0n && stake < MIN_CLAIM_STAKE) {
-    throw new InvalidInput("stake", "range", `StakeBelowRent: a claim stake is 0 or at least ${MIN_CLAIM_STAKE} lamports, the rent-exempt minimum of an empty wallet, so the program can always pay it to a wallet that holds nothing`);
+export function stakeBelowRent(floor?: string): string {
+  const least = floor === undefined ? "the rent-exempt minimum of an empty account on this cluster" : `${floor}, the rent-exempt minimum of an empty account on this cluster`;
+  return `a claim stake is 0 or at least ${least}, so the program can always pay a stake back to a wallet that holds nothing`;
+}
+
+export function checkClaimStake(stake: bigint, floor: bigint = MIN_CLAIM_STAKE): void {
+  if (stake > 0n && stake < floor) {
+    throw new InvalidInput("stake", "range", `StakeBelowRent: ${stakeBelowRent(`${floor} lamports`)}`);
   }
 }
 
@@ -111,10 +131,11 @@ export async function claimBoardAddress(intent: Address): Promise<Address> {
   return (await findBoardPda({ intent }))[0];
 }
 
-export async function buildOpenClaims(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint }) {
-  checkClaimTerms(input.maxSecs, input.stake);
-  checkClaimStake(input.stake);
-  return getOpenClaimsInstructionAsync({ ...input, ...(await events()) });
+export async function buildOpenClaims(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint; floor?: bigint | undefined }) {
+  const { floor, ...terms } = input;
+  checkClaimTerms(terms.maxSecs, terms.stake);
+  checkClaimStake(terms.stake, floor);
+  return getOpenClaimsInstructionAsync({ ...terms, ...(await events()) });
 }
 
 const listed = (claimList: Address | undefined) => (claimList === undefined ? {} : { claimList });

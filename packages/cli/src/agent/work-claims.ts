@@ -1,14 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
-import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatTime, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
+import { buildClaimJob, buildDropClaim, claimCooldown, takeUntil, findIntentPda, formatTime, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
 import { type ClaimListView, type ClaimsView, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";
 import { type AgentContext, define, specReach } from "./actions.js";
-import { advanceStep, closedEscrow, type EscrowState, escrowState, fillsGoing, leaveStep, type LineStep, lineWaitingHere, settleCall, settleStep, standbyStep } from "./claim-line.js";
+import { type Admit, advanceStep, claimBoard, closedEscrow, type EscrowState, escrowState, fillsGoing, leaveStep, type LineStep, lineWaitingHere, refusedBy, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
@@ -157,7 +157,7 @@ export const walletClaim = define({
     const signer = await signerOf(ctx);
     const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
     const escrow = { owner: input.owner, nonce: input.nonce, intent };
-    if (input.action === "take" || input.action === "standby") {
+    const admit: Admit = async () => {
       const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent, specReach(ctx));
       if (invited !== undefined && !invited.includes(signer.address)) {
         throw new AgentRefusal("NotInvited", claimNotInvited(signer.address, intent));
@@ -166,7 +166,7 @@ export const walletClaim = define({
       if (unlisted !== undefined && view !== null && view.list !== null) {
         throw new AgentRefusal(view.list.complete ? "NotListed" : "ClaimListIncomplete", unlisted);
       }
-    }
+    };
     let step: LineStep;
     if (input.action === "leave") {
       step = await leaveStep(client, ctx.transport, escrow, view, signer, input.seq);
@@ -175,11 +175,11 @@ export const walletClaim = define({
     } else if (input.action === "settle") {
       step = await settleStep(client, ctx.transport, escrow, view, signer.address);
     } else if (input.action === "standby") {
-      step = await standbyStep(client, ctx.transport, escrow, view, signer, needSecs(input.secs, input.action));
+      step = await standbyStep(client, ctx.transport, escrow, view, signer, needSecs(input.secs, input.action), admit);
     } else if (input.action === "advance") {
       step = await advanceStep(client, ctx.transport, escrow, view, signer.address);
     } else if (input.action === "take") {
-      step = await takeStep(client, escrow, view, signer, needSecs(input.secs, input.action));
+      step = await takeStep(client, escrow, view, signer, needSecs(input.secs, input.action), admit);
     } else {
       step = await dropStep(ctx, client, escrow, view, signer);
     }
@@ -243,33 +243,37 @@ type Signer = Awaited<ReturnType<typeof signerOf>>;
 
 type Escrow = { owner: Address; nonce: bigint; intent: Address };
 
-async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow, view: ClaimsView, signer: Signer, secs: number): Promise<LineStep> {
+export async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow, view: ClaimsView, signer: Signer, secs: number, admit: Admit = async () => undefined): Promise<LineStep> {
   const { intent } = escrow;
-  if (view.state === "held" && view.worker !== null) {
-    const held = heldBy(intent, view.worker, view.secondsLeft);
-    throw new AgentRefusal("ClaimHeld", view.worker === signer.address ? held : `${held}; join the line with ${tool("wallet_claim")} action standby`);
-  }
-  if (view.line.waiting > 0) {
-    throw new AgentRefusal("LineWaiting", lineWaitingHere(intent, view.line.waiting));
-  }
-  if (view.cooldown !== null && view.cooldown.worker === signer.address) {
-    throw new AgentRefusal("ClaimCooldown", coolingDown(intent, signer.address, view.cooldown.until));
-  }
-  if (secs > view.maxSecs) {
-    throw new InvalidInput([{ path: "secs", message: `this escrow allows at most ${view.maxSecs} seconds` }]);
-  }
   const now = await client.chainTime();
   const found = await client.intent({ owner: escrow.owner, nonce: escrow.nonce });
   if (found === null || found.intent.status !== IntentStatus.Open || now >= found.intent.expiresAt) {
     throw new AgentRefusal("InvalidTransition", `escrow ${intent} is no longer open, so its job cannot be claimed`);
   }
-  let until: bigint;
-  try {
-    until = claimUntil(view.maxSecs, now, secs, found.intent.expiresAt);
-  } catch (error) {
-    throw isSdkError(error, "intent-core-error") ? new AgentRefusal("ClaimTerms", `a claim of ${secs} seconds would outlive escrow ${intent}`) : error;
-  }
   await fillsGoing(client, escrow);
+  await admit();
+  const board = claimBoard(view);
+  let until = 0n;
+  const refused = refusedBy(() => {
+    until = takeUntil(board, signer.address, { maxSecs: view.maxSecs, secs, expiresAt: found.intent.expiresAt }, now);
+  });
+  if (refused === "LineWaiting") {
+    throw new AgentRefusal("LineWaiting", lineWaitingHere(intent, view.line.waiting));
+  }
+  if (refused === "ClaimHeld") {
+    const held = heldBy(intent, board.worker, board.until - now);
+    throw new AgentRefusal("ClaimHeld", board.worker === signer.address ? held : `${held}; join the line with ${tool("wallet_claim")} action standby`);
+  }
+  const cooling = claimCooldown(board, now);
+  if (refused === "ClaimCooldown" && cooling !== null) {
+    throw new AgentRefusal("ClaimCooldown", coolingDown(intent, signer.address, cooling.until));
+  }
+  if (refused === "ClaimTerms") {
+    throw new AgentRefusal(
+      "ClaimTerms",
+      secs > view.maxSecs ? `escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; give a lower secs` : `a claim of ${secs} seconds would outlive escrow ${intent}`,
+    );
+  }
   const stake = `${formatAmount(view.stake, 9)} SOL`;
   return {
     locks: view.stake,

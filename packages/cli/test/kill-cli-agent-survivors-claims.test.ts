@@ -54,7 +54,7 @@ describe("the claims wallet_claim takes and drops", () => {
     const free = await j.ok("wallet_claim", { ...j.escrow, action: "take", secs: 3600 });
     expect(free["summary"]).toHaveLength(2);
     expect(free["summary"][0]).toContain("3600 seconds from now");
-    expect(await j.refused({ action: "take", secs: 3601 })).toMatchObject({ code: "InvalidInput", issues: [{ path: "secs", message: "this escrow allows at most 3600 seconds" }] });
+    expect(await j.refused({ action: "take", secs: 3601 })).toMatchObject({ code: "ClaimTerms", hint: expect.stringContaining("at most 3600 seconds") });
     await j.as("holder", "take", 600);
     setNow(NOW + 600n);
     const lapsed = await j.ok("wallet_claim", { ...j.escrow, action: "take", secs: 60 });

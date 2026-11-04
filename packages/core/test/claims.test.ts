@@ -17,6 +17,7 @@ import {
   checkStandBy,
   checkClaimStake,
   checkClaimTerms,
+  claimCooldown,
   claimSlot,
   claimUntil,
   INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -26,6 +27,9 @@ import {
   MAX_CLAIM_STAKE,
   MAX_LINE_ENTRIES,
   MIN_CLAIM_STAKE,
+  stakeBelowRent,
+  takeUntil,
+  standByRefusal,
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
@@ -181,6 +185,38 @@ describe("claim stake floor", () => {
     }
   });
 
+  it("follows the floor it is given instead of the fixed one", async () => {
+    const low = MIN_CLAIM_STAKE / 2n;
+    const high = MIN_CLAIM_STAKE * 2n;
+    expect(refusal(() => checkClaimStake(low, low))).toBeNull();
+    expect(refusal(() => checkClaimStake(low))).toEqual(["stake", "range", true]);
+    expect(refusal(() => checkClaimStake(MIN_CLAIM_STAKE, high))).toEqual(["stake", "range", true]);
+    expect(refusal(() => checkClaimStake(high - 1n, high))).toEqual(["stake", "range", true]);
+    expect(refusal(() => checkClaimStake(high, high))).toBeNull();
+    expect(refusal(() => checkClaimStake(0n, high))).toBeNull();
+    try {
+      checkClaimStake(1n, high);
+    } catch (error) {
+      expect((error as Error).message).toBe(`StakeBelowRent: ${stakeBelowRent(`${high} lamports`)}`);
+    }
+  });
+
+  it("builds an open, listed or not, against the floor it is given", async () => {
+    const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
+    const low = MIN_CLAIM_STAKE / 2n;
+    const high = MIN_CLAIM_STAKE * 2n;
+    await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: low, floor: low })).resolves.toBeDefined();
+    await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: low })).rejects.toMatchObject({ code: "invalid-input", field: "stake" });
+    await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: MIN_CLAIM_STAKE, floor: high })).rejects.toMatchObject({ code: "invalid-input", field: "stake" });
+    await expect(buildOpenClaimsListed({ owner, intent, maxSecs: 60, stake: low, size: 1, workers: [WORKER], floor: low })).resolves.toBeDefined();
+    await expect(buildOpenClaimsListed({ owner, intent, maxSecs: 60, stake: MIN_CLAIM_STAKE, size: 1, workers: [WORKER], floor: high })).rejects.toMatchObject({ code: "invalid-input", field: "stake" });
+  });
+
+  it("words the refusal once, with the floor when it is known", () => {
+    expect(stakeBelowRent("5 lamports")).toContain("0 or at least 5 lamports, the rent-exempt minimum of an empty account on this cluster");
+    expect(stakeBelowRent()).toContain("0 or at least the rent-exempt minimum of an empty account on this cluster");
+  });
+
   it("refuses to build an open with a stake below the floor, listed or not", async () => {
     const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
     const stake = MIN_CLAIM_STAKE - 1n;
@@ -188,6 +224,55 @@ describe("claim stake floor", () => {
     await expect(buildOpenClaimsListed({ owner, intent, maxSecs: 60, stake, size: 1, workers: [WORKER] })).rejects.toMatchObject({ code: "invalid-input", field: "stake" });
     await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: MIN_CLAIM_STAKE })).resolves.toBeDefined();
     await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: 0n })).resolves.toBeDefined();
+  });
+});
+
+describe("the order the program checks a claim in", () => {
+  const line = (worker: Address, until: bigint, head: number, tail: number, droppedBy?: Address): BoardView => ({ ...board(worker, until, droppedBy), head, tail });
+
+  it("names a waiting line before a held claim and before a cooldown", () => {
+    expect(code(() => checkClaimant(line(WORKER, 100n, 0, 1), OTHER, 99n))).toBe("LineWaiting");
+    expect(code(() => checkClaimant(line(WORKER, 100n, 0, 1), WORKER, 99n))).toBe("LineWaiting");
+    expect(code(() => checkClaimant(line(NONE, 100n, 0, 1, WORKER), WORKER, 99n))).toBe("LineWaiting");
+    expect(code(() => checkClaimant(line(WORKER, 100n, 0, 0), OTHER, 99n))).toBe("ClaimHeld");
+    expect(code(() => checkClaimant(line(NONE, 100n, 0, 0, WORKER), WORKER, 99n))).toBe("ClaimCooldown");
+  });
+
+  it("takes a claim to its end only when the line, the slot and the cooldown allow it and the terms fit", () => {
+    const free = line(NONE, 0n, 0, 0);
+    const terms = (secs: number) => ({ maxSecs: 600, secs, expiresAt: 1_000n });
+    expect(takeUntil(free, WORKER, terms(60), 100n)).toBe(160n);
+    expect(code(() => takeUntil(free, WORKER, terms(601), 100n))).toBe("ClaimTerms");
+    expect(code(() => takeUntil(free, WORKER, terms(60), 950n))).toBe("ClaimTerms");
+    expect(code(() => takeUntil(line(WORKER, 500n, 0, 1), OTHER, terms(601), 100n))).toBe("LineWaiting");
+    expect(code(() => takeUntil(line(WORKER, 500n, 0, 0), OTHER, terms(601), 100n))).toBe("ClaimHeld");
+  });
+
+  it("names the terms, then the holder, then a job nobody holds when a stand-by is joined", () => {
+    const held = line(WORKER, 100n, 0, 0);
+    expect(standByRefusal(held, OTHER, 0, 600, 50n)).toBe("ClaimTerms");
+    expect(standByRefusal(held, OTHER, 601, 600, 50n)).toBe("ClaimTerms");
+    expect(standByRefusal(held, WORKER, 601, 600, 50n)).toBe("ClaimTerms");
+    expect(standByRefusal(held, WORKER, 60, 600, 50n)).toBe("HolderStandsBy");
+    expect(standByRefusal(held, OTHER, 60, 600, 50n)).toBeUndefined();
+    expect(standByRefusal(line(NONE, 0n, 0, 0), OTHER, 60, 600, 50n)).toBe("JobNotHeld");
+    expect(standByRefusal(line(WORKER, 100n, 0, 0), WORKER, 60, 600, 100n)).toBe("JobNotHeld");
+  });
+
+  it("lets the wallet whose claim lapsed stand by behind a line", () => {
+    expect(standByRefusal(line(WORKER, 100n, 0, 1), WORKER, 60, 600, 100n)).toBeUndefined();
+    expect(standByRefusal(line(WORKER, 100n, 0, 1), WORKER, 60, 600, 99n)).toBe("HolderStandsBy");
+  });
+});
+
+describe("claim cooldown", () => {
+  it("bars the worker that dropped, while the claim it dropped would still run and nobody holds the job", () => {
+    expect(claimCooldown(board(NONE, 100n, WORKER), 99n)).toEqual({ worker: WORKER, until: 100n });
+    expect(claimCooldown(board(NONE, 100n, WORKER), 100n)).toBeNull();
+    expect(claimCooldown(board(NONE, 100n, NONE), 99n)).toBeNull();
+    expect(claimCooldown(board(NONE, 100n), 99n)).toBeNull();
+    expect(claimCooldown(board(OTHER, 100n, WORKER), 99n)).toBeNull();
+    expect(claimCooldown(board(OTHER, 100n, WORKER), 100n)).toBeNull();
   });
 });
 

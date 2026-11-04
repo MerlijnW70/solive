@@ -22,7 +22,7 @@ export const claimsUnread = (problem: string): string =>
 export const NO_LISTED_WORKER =
   "the spec at spec_url is sealed to no wallet besides the owner and the attestor, so nobody could claim the job; seal it to the workers you invite, or escrow without claim_stake and claim_secs";
 
-export type ClaimTerms = { maxSecs: number; stake: bigint };
+export type ClaimTerms = { maxSecs: number; stake: bigint; floor?: bigint };
 
 export type Claimants = Address[] | undefined;
 

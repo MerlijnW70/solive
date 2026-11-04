@@ -9,6 +9,7 @@ import { createClient } from "@intent-engine/client/node";
 import { lineWaitingHere } from "../src/agent/claim-line.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
+import { coolingDown } from "../src/claim-commands.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, funded, h, NOW, setNow, transport, world } from "./harness.js";
 
@@ -92,6 +93,33 @@ describe("wallet_claim over MCP", () => {
     await j.run(["claims", "take", "--keypair", "holder.json", ...j.ref, "--secs", "600", "--yes"]);
     await j.run(["claims", "standby", "--keypair", "waiter.json", ...j.ref, "--secs", "600", "--yes"]);
     setNow(NOW + 600n);
+    const refused = await call(j.client, "wallet_claim", { ...j.escrow, action: "take", secs: 60 });
+    expect(refused).toMatchObject({ error: true, value: { code: "LineWaiting", hint: lineWaitingHere(j.intent, 1) } });
+  });
+
+  it("refuses to take again the claim it dropped, with the cooldown get_claims shows", async () => {
+    const j = await job();
+    await j.sent({ action: "take", secs: 600 });
+    await j.sent({ action: "drop" });
+    const shown = (await call(j.client, "get_claims", j.escrow)).value;
+    expect(shown).toMatchObject({ state: "free", dropped_by: j.wallet });
+    const refused = await call(j.client, "wallet_claim", { ...j.escrow, action: "take", secs: 60 });
+    expect(refused).toMatchObject({ error: true, value: { code: "ClaimCooldown", hint: coolingDown(j.intent, j.wallet, BigInt(shown["cooldown_until"] as string)) } });
+    const advanced = await call(j.client, "wallet_claim", { ...j.escrow, action: "advance" });
+    expect(advanced).toMatchObject({ error: true, value: { code: "LineEmpty" } });
+  });
+
+  it("names the held claim, not the empty line, when a held job is advanced", async () => {
+    const j = await job();
+    await j.run(["claims", "take", "--keypair", "holder.json", ...j.ref, "--secs", "600", "--yes"]);
+    const refused = await call(j.client, "wallet_claim", { ...j.escrow, action: "advance" });
+    expect(refused).toMatchObject({ error: true, value: { code: "ClaimHeld" } });
+  });
+
+  it("names the waiting line, as the program does, when the claim is still held", async () => {
+    const j = await job();
+    await j.run(["claims", "take", "--keypair", "holder.json", ...j.ref, "--secs", "600", "--yes"]);
+    await j.run(["claims", "standby", "--keypair", "waiter.json", ...j.ref, "--secs", "600", "--yes"]);
     const refused = await call(j.client, "wallet_claim", { ...j.escrow, action: "take", secs: 60 });
     expect(refused).toMatchObject({ error: true, value: { code: "LineWaiting", hint: lineWaitingHere(j.intent, 1) } });
   });

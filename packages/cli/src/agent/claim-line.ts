@@ -1,16 +1,19 @@
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
-import { formatAmount, IntentStatus } from "@intent-engine/core";
+import { type CoreErrorCode, formatAmount, IntentStatus } from "@intent-engine/core";
 import {
   buildAdvance,
   buildLeave,
   buildSettleClaims,
   buildStandBy,
+  type BoardView,
+  checkAdvance,
   claimBoardAddress,
   claimListAddress,
   getClaimBoardSize,
   getClaimListSize,
   getStandbySize,
   stakeReceiverOnSettle,
+  standByRefusal,
 } from "@intent-engine/core/internal";
 import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
 import { type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
@@ -27,6 +30,30 @@ export type LineStep = { instruction: Instruction; summary: string[]; key: strin
 type Escrow = { owner: Address; nonce: bigint; intent: Address };
 
 const NONE = "11111111111111111111111111111111" as Address;
+
+export function claimBoard(view: ClaimsView): BoardView {
+  return {
+    owner: view.owner,
+    worker: view.worker ?? NONE,
+    until: view.state === "free" ? (view.cooldown?.until ?? 0n) : view.until,
+    held: view.stake,
+    ...(view.cooldown === null ? {} : { droppedBy: view.cooldown.worker }),
+    head: view.line.head,
+    tail: view.line.tail,
+  };
+}
+
+export function refusedBy(check: () => void): CoreErrorCode | undefined {
+  try {
+    check();
+  } catch (error) {
+    if (isSdkError(error, "intent-core-error")) {
+      return error.engineError;
+    }
+    throw error;
+  }
+  return undefined;
+}
 
 const sol = (lamports: bigint) => `${formatAmount(lamports, 9)} SOL`;
 
@@ -107,20 +134,29 @@ export async function settleStep(client: Client, transport: Transport, escrow: E
   return { instruction, summary, key: `settle:${open}:${receiver}:${view.stake}`, done };
 }
 
-export async function standbyStep(client: Client, transport: Transport, escrow: Escrow, view: ClaimsView, worker: TransactionSigner, secs: number): Promise<LineStep> {
-  if (view.state !== "held" && view.line.waiting === 0) {
-    throw new AgentRefusal("JobNotHeld", `nobody holds escrow ${escrow.intent} and nobody stands by; nothing was sent; claim it with ${tool("wallet_claim")} action take`);
+export type Admit = () => Promise<void>;
+
+export async function openEscrow(client: Client, escrow: Escrow, closed: string): Promise<void> {
+  if ((await escrowState(client, escrow.owner, escrow.nonce)) !== "open") {
+    throw new AgentRefusal("InvalidTransition", closed);
   }
-  if (view.worker === worker.address && view.state === "held") {
-    throw new AgentRefusal("HolderStandsBy", `this wallet ${worker.address} already holds the claim on escrow ${escrow.intent}, and the holder cannot stand by for its own job; nothing was sent`);
-  }
-  if (secs > view.maxSecs) {
+}
+
+export async function standbyStep(client: Client, transport: Transport, escrow: Escrow, view: ClaimsView, worker: TransactionSigner, secs: number, admit: Admit = async () => undefined): Promise<LineStep> {
+  await openEscrow(client, escrow, `escrow ${escrow.intent} is no longer open, so nobody can stand by for it`);
+  await fillsGoing(client, escrow);
+  await admit();
+  const now = await client.chainTime();
+  const refused = standByRefusal(claimBoard(view), worker.address, secs, view.maxSecs, now);
+  if (refused === "ClaimTerms") {
     throw new AgentRefusal("ClaimTerms", `escrow ${escrow.intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; give a lower secs`);
   }
-  if ((await escrowState(client, escrow.owner, escrow.nonce)) !== "open") {
-    throw new AgentRefusal("InvalidTransition", `escrow ${escrow.intent} is no longer open, so nobody can stand by for it`);
+  if (refused === "HolderStandsBy") {
+    throw new AgentRefusal("HolderStandsBy", `this wallet ${worker.address} already holds the claim on escrow ${escrow.intent}, and the holder cannot stand by for its own job; nothing was sent`);
   }
-  await fillsGoing(client, escrow);
+  if (refused === "JobNotHeld") {
+    throw new AgentRefusal("JobNotHeld", `nobody holds escrow ${escrow.intent} and nobody stands by; nothing was sent; claim it with ${tool("wallet_claim")} action take`);
+  }
   const seq = view.line.tail;
   const rent = rentFor(getStandbySize(), await rentRate(transport));
   const summary = [
@@ -158,14 +194,14 @@ export async function leaveStep(client: Client, transport: Transport, escrow: Es
 }
 
 export async function advanceStep(client: Client, transport: Transport, escrow: Escrow, view: ClaimsView, payer: Address): Promise<LineStep> {
-  if (view.line.waiting === 0) {
-    throw new AgentRefusal("LineEmpty", `nobody stands by for escrow ${escrow.intent}; nothing was sent`);
-  }
-  if (view.state === "held" && view.worker !== null) {
+  await openEscrow(client, escrow, `escrow ${escrow.intent} is no longer open, so its line is not advanced; each waiter gets its stake back with ${tool("wallet_claim")} action leave`);
+  const now = await client.chainTime();
+  const refused = refusedBy(() => checkAdvance(claimBoard(view), now));
+  if (refused === "ClaimHeld" && view.worker !== null) {
     throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.secondsLeft} more seconds, so the line waits; nothing was sent`);
   }
-  if ((await escrowState(client, escrow.owner, escrow.nonce)) !== "open") {
-    throw new AgentRefusal("InvalidTransition", `escrow ${escrow.intent} is no longer open, so its line is not advanced; each waiter gets its stake back with ${tool("wallet_claim")} action leave`);
+  if (refused === "LineEmpty") {
+    throw new AgentRefusal("LineEmpty", `nobody stands by for escrow ${escrow.intent}; nothing was sent`);
   }
   const handover = await lineHandover(transport, escrow.intent, view.line, view.cooldown?.worker);
   const summary = [

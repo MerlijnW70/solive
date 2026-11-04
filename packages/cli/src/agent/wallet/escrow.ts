@@ -16,7 +16,8 @@ import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimT
 import { pieceUploadPlans, planLines, readerLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
 import { type Claimants, claimantsOf, listedLines, offeredWithClaims, previewFees, specReader } from "./escrow-claims.js";
 
-export { CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, notSealedTo, SPEC_TOO_LARGE, STAKE_BELOW_RENT } from "./escrow-terms.js";
+export { stakeBelowRent } from "../../stake-floor.js";
+export { CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, notSealedTo, SPEC_TOO_LARGE } from "./escrow-terms.js";
 
 export const ESCROW_CHANGED =
   "this escrow differs from its preview: the spec at spec_url, the wallets it is sealed to, its claim list or another term changed, or no approval was given; preview it again and show the user";
@@ -106,7 +107,7 @@ export const walletEscrow = define({
     if (input.spec_text !== undefined) {
       checkedText(input.spec_text, specHash, "spec_text");
     }
-    const claims = claimTerms(input, false);
+    const claims = await claimTerms(input, false, ctx.transport);
     if (claims !== undefined && specHash === undefined) {
       throw new InvalidInput([{ path: "claim_stake", message: CLAIMS_NEED_SPEC }]);
     }
@@ -311,7 +312,7 @@ export const walletEscrowPlan = define({
     const wallet = access(ctx);
     const signer = await signerOf(ctx);
     oneAtATime(signer);
-    const claims = claimTerms(input, true);
+    const claims = await claimTerms(input, true, ctx.transport);
     const sold = mintNamed(input.sell, wallet.url, "sell");
     const buy = recordedMint(sold, wallet.url, input.record_mint);
     const [token, now, { config }] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport), loadConfig(ctx.transport)]);

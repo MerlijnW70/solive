@@ -5,6 +5,7 @@ import {
   CLAIM_BOARD_DISCRIMINATOR,
   CLAIM_LIST_DISCRIMINATOR,
   claimBoardAddress,
+  claimCooldown,
   claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
@@ -45,8 +46,6 @@ export type ClaimsView = {
 };
 
 export type LineEntry = { seq: number; entry: Address; worker: Address | null; secs: number | null };
-
-const NONE = "11111111111111111111111111111111" as Address;
 
 export type JobClaim = { takesClaims: boolean; claimedBy: Address | null; claimEnds: bigint | null; waiting: number };
 
@@ -104,7 +103,7 @@ function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView
     stake: stored.stake,
     maxSecs: stored.maxSecs,
     owner: stored.owner,
-    cooldown: slot.state === "free" && stored.droppedBy !== NONE && now < stored.until ? { worker: stored.droppedBy, until: stored.until } : null,
+    cooldown: claimCooldown(stored, now),
     line: { head: stored.head, tail: stored.tail, waiting: lineLength(stored) },
     list: null,
   };

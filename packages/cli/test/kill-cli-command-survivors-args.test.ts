@@ -59,15 +59,16 @@ describe("claim stake and worker limits", () => {
 
   it("accepts zero, the minimum and the maximum stake, and refuses just outside them", () => {
     expect(stake("0")).toMatchObject({ stake: 0n });
+    expect(stake("0.000000001")).toMatchObject({ stake: 1n });
     expect(stake(formatAmount(MIN_CLAIM_STAKE, 9))).toMatchObject({ stake: MIN_CLAIM_STAKE });
     expect(stake(formatAmount(MAX_CLAIM_STAKE, 9))).toMatchObject({ stake: MAX_CLAIM_STAKE });
-    for (const bad of [formatAmount(MIN_CLAIM_STAKE - 1n, 9), formatAmount(MAX_CLAIM_STAKE + 1n, 9), "0.0000000001"]) {
+    for (const bad of [formatAmount(MAX_CLAIM_STAKE + 1n, 9), "0.0000000001"]) {
       expect(usage(open(["--stake", bad]))).toBe(STAKE_FORMAT);
     }
   });
 
   it("states the largest stake in whole SOL", () => {
-    expect(STAKE_FORMAT).toBe("--stake is SOL, 0 or from 0.00089088 (the rent-exempt minimum of a wallet) to 100, with at most 9 decimals, such as 0.01");
+    expect(STAKE_FORMAT).toBe("--stake is SOL, 0 or at least the rent-exempt minimum of an empty account on the cluster, up to 100, with at most 9 decimals, such as 0.01");
   });
 
   it("accepts the most listed workers the program takes and refuses one more", () => {

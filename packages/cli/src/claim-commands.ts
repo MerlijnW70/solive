@@ -29,6 +29,7 @@ import { finishList, listAccount, listExists, listLate, listRefusal, listShown, 
 import type { Command } from "./command-types.js";
 import { FlowRefused, ownOrder } from "./flows.js";
 import { claimNotInvited, sealedInvites } from "./invites.js";
+import { claimFloor, stakeBelowRent } from "./stake-floor.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { encryptionKeyLines } from "./sealed-commands.js";
 import type { Runtime } from "./runtime.js";
@@ -136,11 +137,15 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
       }
       throw new FlowRefused(`escrow ${intent} already takes claims on board ${board}`);
     }
+    const floor = command.stake > 0n ? await claimFloor(transport) : undefined;
+    if (floor !== undefined && command.stake < floor) {
+      throw new FlowRefused(stakeBelowRent(floor));
+    }
     const opens = `Opens: claims on escrow ${intent}; a worker holds the job for up to ${command.maxSecs} seconds by staking ${sol(command.stake)}`;
     if (command.workers !== undefined) {
-      return openListed({ ...command, workers: command.workers }, signer, transport, intent, board, opens);
+      return openListed({ ...command, workers: command.workers, floor }, signer, transport, intent, board, opens);
     }
-    const instruction = await buildOpenClaims({ owner: signer, intent, maxSecs: command.maxSecs, stake: command.stake });
+    const instruction = await buildOpenClaims({ owner: signer, intent, maxSecs: command.maxSecs, stake: command.stake, floor });
     const summary = [opens, `Pays rent: ${signer.address}, for the claims board ${board}`];
     return previewed(transport, [instruction], signer, { intent, board, summary }, command.yes);
   }
