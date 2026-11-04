@@ -6,7 +6,7 @@ import { findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } f
 import { splitFee, splitN } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
 import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
-import { COSIGN_NEEDED, NOT_A_MEMBER, SIGNS_AT_SEND, SINGLE_JUDGED, SPLIT_VOTE_NEXT } from "../src/agent/wallet/committee-split.js";
+import { COSIGN_NEEDED, NOT_A_MEMBER, SIGNS_AT_SEND, SINGLE_JUDGED, SPLIT_VOTE_NEXT, VOTE_CHANGED } from "../src/agent/wallet/committee-split.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { bytesOf, call, fresh, type Json, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
@@ -159,6 +159,23 @@ describe("the wallet server's committee-judged split releases", () => {
     expect(signedBytes()).toContain(shown["envelope"]);
     signing.mockRestore();
     expect([await paidTo(s.worker.address), await paidTo(s.lead)]).toEqual(SHARES);
+  });
+
+  it("refuses a split vote with a wrong or missing approval and signs nothing, then signs the same vote with the right one", async () => {
+    const s = await committeeSplit("e5".repeat(32), false);
+    const shown = await ok(client, "wallet_committee_vote", s.ballot);
+    const envelope = shown["envelope"] as string;
+    const signing = vi.spyOn(globalThis.crypto.subtle, "sign");
+    const signedBytes = () => signing.mock.calls.map((entry) => Buffer.from(entry[2] as ArrayBuffer).toString("hex"));
+    for (const approval of ["00".repeat(8), undefined]) {
+      const refused = await call(client, "wallet_committee_vote", { ...s.ballot, approval, send: true });
+      expect(refused.value).toMatchObject({ code: "ReleaseChanged", hint: VOTE_CHANGED });
+      expect(signedBytes()).not.toContain(envelope);
+    }
+    const signed = await ok(client, "wallet_committee_vote", { ...s.ballot, approval: shown["approval"], send: true });
+    expect(signed).toMatchObject({ signed: true, vote: { member: s.lead } });
+    expect(signedBytes()).toContain(envelope);
+    signing.mockRestore();
   });
 
   it("refuses a split vote on an escrow a single key judges", async () => {
