@@ -7,6 +7,7 @@ import { BUDGET_WINDOW, budgetOf, release, reserve } from "../src/agent/budget.j
 import { AgentRefusal } from "../src/agent/problems.js";
 import { admitRelay, RATE_WINDOW, relayOf } from "../src/agent/relay.js";
 import { paying, refuseRepricing, repriced } from "../src/agent/signed.js";
+import { httpError } from "./maybe-processed-kit.js";
 
 const A = "11111111111111111111111111111112" as Address;
 const B = "SysvarC1ock11111111111111111111111111111111" as Address;
@@ -109,7 +110,7 @@ describe("relayer payment accounting", () => {
     expect(() => refuseRepricing(100n, 101n)).toThrow(new AgentRefusal("RelayTooCostly", repriced(100n, 101n)));
   });
 
-  it("counts a send as paid when it lands or may have been charged, not when it was never delivered", async () => {
+  it("counts a send as paid when it lands or may have been charged, and as unpaid only when a refusal proves it was never delivered", async () => {
     const sent = { any: false };
     await expect(paying(sent, Promise.resolve("sig"))).resolves.toBe("sig");
     expect(sent.any).toBe(true);
@@ -120,7 +121,12 @@ describe("relayer payment accounting", () => {
     await expect(paying(unsure, Promise.reject(new MaybeSent(testSignature("sent"), 9n, "may have landed")))).rejects.toThrow("may have landed");
     expect(unsure.any).toBe(true);
     const dropped = { any: false };
-    await expect(paying(dropped, Promise.reject(new Error("rejected")))).rejects.toThrow("rejected");
+    await expect(paying(dropped, Promise.reject(httpError(400, "rejected")))).rejects.toThrow("rejected");
     expect(dropped.any).toBe(false);
+    for (const vague of [httpError(408), httpError(425), new Error("rejected")]) {
+      const timedOut = { any: false };
+      await expect(paying(timedOut, Promise.reject(vague))).rejects.toBe(vague);
+      expect(timedOut.any).toBe(true);
+    }
   });
 });

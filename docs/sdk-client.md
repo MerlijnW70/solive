@@ -18,7 +18,7 @@ const client = createClient({ url: "https://api.devnet.solana.com" });
 - `signal` takes an `AbortSignal`. Once it aborts, the client issues no further RPC call and abandons one in flight or a retry wait; these reject with `Cancelled`, which names the `method`.
 - `maxReplyBytes` caps each HTTP RPC reply. The client reads the reply as a stream, counts its bytes after the platform decompresses them, and stops reading once they pass the cap; that rejects with `ReplyTooLarge`, which names the `method` and the `maxReplyBytes`. Bytes on the wire are at most that count. Unset, a reply can be any size. It does not cover websocket subscriptions. It needs the transport built from `url`, so it cannot be combined with `rpcTransport`.
 - With `maxReplyBytes` set, the client does not merge identical requests in flight at the same time, and sends no `solana-client` header.
-- A send the node never received rejects unchanged: `Cancelled` when the signal aborted before the send was issued, `RateLimited` when the node refused it under `retry: false`. A send that may have reached the node rejects with `MaybeSent`.
+- A send the node never received rejects unchanged: `Cancelled` when the signal aborted before the send was issued, `RateLimited` when the node refused it under `retry: false`. A send that may have reached the node rejects with `MaybeSent`, and so does one answered with a timeout such as HTTP 408 or 425, or with a JSON-RPC error that does not prove the node refused it.
 - A node that answers a read of several accounts or signature statuses with a list of another length rejects with `WrongReplyLength`, which names the `method`, the entries `asked` and the entries `answered`.
 
 ## Create a swap intent

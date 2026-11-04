@@ -14,11 +14,11 @@ import {
 import { type DeliveryOpener, formatAmount, parseAmount } from "@intent-engine/core";
 import { isSdkError, LedgerError } from "@intent-engine/client";
 import { ledgerSigner, messageHash, openUsb } from "@intent-engine/client/node";
-import { type DeviceSigner, isLedgerPath, neverLanded } from "@intent-engine/client/internal";
+import { type DeviceSigner, isLedgerPath, neverLanded, refusedUnsent } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { encryptionKeyFile } from "../../delivery-shared.js";
 import { execute, type PreparedView } from "../../flows.js";
-import { rpcCause } from "../../rpc-failure.js";
+import { rpcFailed } from "../../rpc-failure.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { expandHome, faucetLink, type Files, ledgerBook, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
 import { type AgentContext, askedWith } from "../actions.js";
@@ -479,10 +479,9 @@ export function sha256Of(text: string, path: string): string {
   return hex;
 }
 
-export function rpcRefused(error: unknown): boolean {
-  const cause = rpcCause(error);
-  return cause !== null && (cause.kind === "http" ? cause.status >= 400 && cause.status < 500 : cause.kind !== "dropped");
-}
+export const rpcRefused = (error: unknown): boolean => !isSdkError(error) && refusedUnsent(error);
 
 export const refusedBeforeSending = (error: unknown): boolean =>
   neverLanded(error) || isSdkError(error, "ledger-error") || error instanceof AgentRefusal || error instanceof InvalidInput || rpcRefused(error);
+
+export const mayHaveSent = (error: unknown): boolean => isSdkError(error, "maybe-sent") || (rpcFailed(error) && !rpcRefused(error));

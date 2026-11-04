@@ -19,7 +19,7 @@ import { confirmSent, type SignatureWatch, signatureStatus } from "./confirmatio
 import { joined, type Observer, QUIET } from "./observe.js";
 import { askedOf, delivering, observable, wireSend } from "./observe-transport.js";
 import { answeredEach } from "./rpc-limits.js";
-import { refusedUnsent, staleBlockhash } from "./rpc-retry.js";
+import { afterIssued, refusedUnsent, staleBlockhash } from "./rpc-retry.js";
 import { BehindMinSlot, BlockhashExpired, MaybeSent } from "./send-errors.js";
 import { askedSignature, isTransactionSignature, nodeSignature, NotASignature } from "./signatures.js";
 import type {
@@ -154,9 +154,25 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
             { cause: error },
           );
         }
-        const { value } = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
-        if (answeredEach("getSignatureStatuses", 1, value)[0]) {
+        const unsure = () =>
+          new MaybeSent(
+            signature,
+            lastValidBlockHeight,
+            `transaction ${signature} was refused for its blockhash only after an earlier attempt that may have reached the node; look the signature up before sending again`,
+            { cause: error },
+          );
+        let landing: unknown;
+        try {
+          const { value } = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
+          landing = answeredEach("getSignatureStatuses", 1, value)[0];
+        } catch (lookup) {
+          throw afterIssued(error) ? unsure() : lookup;
+        }
+        if (landing) {
           return signature;
+        }
+        if (afterIssued(error)) {
+          throw unsure();
         }
         throw new BlockhashExpired("the node refused the transaction because its blockhash expired; nothing was charged, so sign it again with a fresh blockhash", { cause: error });
       }

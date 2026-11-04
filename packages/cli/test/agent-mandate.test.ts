@@ -9,6 +9,7 @@ import { NO_MANDATE_HINT, REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ENGINE_PROBLEMS, SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { ata, balance, funded, h, NOW, send, transport, type World } from "./harness.js";
 import { allowance, execute, fail, FIRST_LANE, grantOf, mandateServed, ok, order, serve } from "./agent-mandate-kit.js";
+import { httpError } from "./maybe-processed-kit.js";
 
 describe("mandates through the agent server", () => {
   let w: World;
@@ -209,14 +210,14 @@ describe("mandates through the agent server", () => {
     const exact = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", opening.toString()], { "a.json": agent });
     const delivered = transport.send;
     transport.send = async () => {
-      throw new Error("the node dropped the transaction");
+      throw httpError(400, "the node dropped the transaction");
     };
     try {
       expect(await fail(exact, "agent_create", { owner: w.owner.address, order: order("390", "200"), expires_in: 600 })).toEqual({
         code: "Failed",
         retryable: false,
         hint: SERVER_PROBLEMS.Failed.hint,
-        untrustedDetail: "the node dropped the transaction",
+        untrustedDetail: expect.stringContaining("the node dropped the transaction"),
       });
     } finally {
       transport.send = delivered;

@@ -12,6 +12,7 @@ import { callOf, claim, claimsOf } from "../src/agent/claims.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, funded, NOW, setNow, transport, type World } from "./harness.js";
 import { execute, fail, FIRST_LANE, grantOf, mandateServed, ok, order, serve } from "./agent-mandate-kit.js";
+import { httpError, TIMEOUTS } from "./maybe-processed-kit.js";
 
 describe("mandates through the agent server", () => {
   let w: World;
@@ -85,7 +86,7 @@ describe("mandates through the agent server", () => {
     const dropped = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", cost.toString()], { "a.json": agent });
     const delivered = transport.send;
     transport.send = async () => {
-      throw new Error("the node rejected the transaction");
+      throw httpError(400, "the node rejected the transaction");
     };
     try {
       expect((await fail(dropped, "agent_create", args))["code"]).toBe("Failed");
@@ -103,6 +104,21 @@ describe("mandates through the agent server", () => {
       transport.send = delivered;
     }
     expect((await fail(charged, "agent_create", args))["code"]).toBe("BudgetExhausted");
+    for (const status of TIMEOUTS) {
+      const timedOut = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", cost.toString()], { "a.json": agent });
+      let sends = 0;
+      transport.send = async () => {
+        sends += 1;
+        throw httpError(status);
+      };
+      try {
+        expect((await fail(timedOut, "agent_create", args))["code"]).toBe("Failed");
+      } finally {
+        transport.send = delivered;
+      }
+      expect(sends).toBe(1);
+      expect((await fail(timedOut, "agent_create", args))["code"]).toBe("BudgetExhausted");
+    }
   });
 
   it("reports and enforces expiry, epoch revocation and explicit revocation", async () => {

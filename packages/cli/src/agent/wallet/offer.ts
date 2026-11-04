@@ -9,7 +9,7 @@ import { account, amount, flag, list, object, optional, type Schema, text } from
 import { orderSchema } from "../shapes.js";
 import type { Sale } from "../sales.js";
 import { networkFee } from "./costs.js";
-import { walletEmpty, access, signerOf, mintNamed, limited, bookOf, live, salesOf, checkSale, sent, refusedBeforeSending, deviceOutput } from "./guard.js";
+import { walletEmpty, access, signerOf, mintNamed, limited, bookOf, live, salesOf, checkSale, sent, refusedBeforeSending, deviceOutput, mayHaveSent } from "./guard.js";
 
 export const offerFields = {
   intent: account(),
@@ -99,7 +99,7 @@ export async function offered(
     try {
       return await sent(ctx, signer, first, true, call, { done });
     } catch (error) {
-      if (!nonceTaken(error)) {
+      if (mayHaveSent(error) || !nonceTaken(error)) {
         throw error;
       }
       return await sent(ctx, signer, await created({ ...ctx, transport: unmemoized(ctx.transport) }), true, call, { done });

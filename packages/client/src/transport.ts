@@ -27,6 +27,8 @@ export {
   POLL_MS,
   RATE_LIMIT_ATTEMPTS,
   rateLimited,
+  REFUSED_RPC_CODES,
+  REFUSED_STATUSES,
   refusedUnsent,
   type Retry,
 } from "./rpc-retry.js";

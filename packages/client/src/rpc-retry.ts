@@ -1,4 +1,20 @@
-import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND } from "@solana/kit";
+import {
+  isSolanaError,
+  SOLANA_ERROR__JSON_RPC__INVALID_PARAMS,
+  SOLANA_ERROR__JSON_RPC__INVALID_REQUEST,
+  SOLANA_ERROR__JSON_RPC__METHOD_NOT_FOUND,
+  SOLANA_ERROR__JSON_RPC__PARSE_ERROR,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_MIN_CONTEXT_SLOT_NOT_REACHED,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_NODE_UNHEALTHY,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_TRANSACTION_PRECOMPILE_VERIFICATION_FAILURE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_TRANSACTION_SIGNATURE_LEN_MISMATCH,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_TRANSACTION_SIGNATURE_VERIFICATION_FAILURE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_UNSUPPORTED_TRANSACTION_VERSION,
+  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
+  SOLANA_ERROR__TRANSACTION_ERROR__ALREADY_PROCESSED,
+  SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND,
+} from "@solana/kit";
 import { isSdkError, type SdkError } from "@intent-engine/core";
 import type { RetryEvent } from "./observe.js";
 import { scopedStop } from "./stop-scope.js";
@@ -137,24 +153,46 @@ const UNSENT_CODES: ReadonlySet<unknown> = new Set(["ECONNREFUSED", "ENOTFOUND",
 const JSON_RPC_FIRST = -32_000;
 const JSON_RPC_LAST = -32_768;
 
+export const REFUSED_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 405, 407, 411, 413, 414, 415, 421, 429, 431]);
+
+export const REFUSED_RPC_CODES: ReadonlySet<number> = new Set([
+  SOLANA_ERROR__JSON_RPC__PARSE_ERROR,
+  SOLANA_ERROR__JSON_RPC__INVALID_REQUEST,
+  SOLANA_ERROR__JSON_RPC__METHOD_NOT_FOUND,
+  SOLANA_ERROR__JSON_RPC__INVALID_PARAMS,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_TRANSACTION_SIGNATURE_VERIFICATION_FAILURE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_NODE_UNHEALTHY,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_TRANSACTION_PRECOMPILE_VERIFICATION_FAILURE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_TRANSACTION_SIGNATURE_LEN_MISMATCH,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_UNSUPPORTED_TRANSACTION_VERSION,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_MIN_CONTEXT_SLOT_NOT_REACHED,
+]);
+
 export function unissued<E extends SdkError>(error: E): E {
   UNISSUED.add(error);
   return error;
 }
 
+export const afterIssued = (error: unknown): boolean => typeof error === "object" && error !== null && AFTER_ISSUED.has(error);
+
 export function refusedUnsent(error: unknown): boolean {
-  if (typeof error === "object" && error !== null && AFTER_ISSUED.has(error)) {
+  if (afterIssued(error)) {
     return false;
   }
   if (isSdkError(error)) {
     return UNISSUED.has(error) || (isSdkError(error, "rate-limited") && refusedUnsent(error.cause));
   }
-  for (const link of causes(error)) {
+  const chain = causes(error);
+  if (chain.some((link) => isSolanaError(link, SOLANA_ERROR__TRANSACTION_ERROR__ALREADY_PROCESSED))) {
+    return false;
+  }
+  for (const link of chain) {
     if (isSolanaError(link, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
-      return link.context.statusCode >= 400 && link.context.statusCode < 500;
+      return REFUSED_STATUSES.has(link.context.statusCode);
     }
     if (isSolanaError(link) && link.context.__code <= JSON_RPC_FIRST && link.context.__code >= JSON_RPC_LAST) {
-      return true;
+      return REFUSED_RPC_CODES.has(link.context.__code);
     }
     if (UNSENT_CODES.has((link as { code?: unknown }).code)) {
       return true;

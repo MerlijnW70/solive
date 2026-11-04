@@ -53,20 +53,37 @@ describe("which refusals prove nothing was sent", () => {
     expect(refusedUnsent(new InvalidInput("amount", "range", "out of range"))).toBe(false);
   });
 
-  it("is true for a 4xx answer from 400 up to 499 and false outside", () => {
+  it("is true only for a 4xx answer that proves refusal, never for 408, 425 or 499, and false outside 4xx", () => {
     expect(refusedUnsent(httpError(399))).toBe(false);
     expect(refusedUnsent(httpError(400))).toBe(true);
-    expect(refusedUnsent(httpError(450))).toBe(true);
-    expect(refusedUnsent(httpError(499))).toBe(true);
+    expect(refusedUnsent(httpError(408))).toBe(false);
+    expect(refusedUnsent(httpError(425))).toBe(false);
+    expect(refusedUnsent(httpError(431))).toBe(true);
+    expect(refusedUnsent(httpError(450))).toBe(false);
+    expect(refusedUnsent(httpError(499))).toBe(false);
     expect(refusedUnsent(httpError(500))).toBe(false);
     expect(refusedUnsent(httpError(200))).toBe(false);
   });
 
-  it("is true for a json-rpc code from -32768 up to -32000 and false outside", () => {
+  it("is true only for a json-rpc code that proves refusal, false for the other codes from -32768 up to -32000 and outside", () => {
     expect(refusedUnsent(jsonRpcError(-31_999))).toBe(false);
-    expect(refusedUnsent(jsonRpcError(-32_000))).toBe(true);
+    expect(refusedUnsent(jsonRpcError(-32_000))).toBe(false);
+    expect(refusedUnsent(jsonRpcError(-32_002))).toBe(true);
     expect(refusedUnsent(jsonRpcError(-32_602))).toBe(true);
-    expect(refusedUnsent(jsonRpcError(-32_768))).toBe(true);
+    expect(refusedUnsent(jsonRpcError(-32_603))).toBe(false);
+    expect(refusedUnsent(jsonRpcError(-32_700))).toBe(true);
+    expect(refusedUnsent(jsonRpcError(-32_768))).toBe(false);
     expect(refusedUnsent(jsonRpcError(-32_769))).toBe(false);
+  });
+
+  it("stops at the first answer from the node and reads a connection refusal only below one from outside the json-rpc range", () => {
+    const unreached = Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
+    const answered = (code: number) => Object.assign(new Error("json rpc", { cause: unreached }), { name: "SolanaError", context: { __code: code } });
+    expect(refusedUnsent(new Error("http", { cause: unreached }))).toBe(true);
+    expect(refusedUnsent(Object.assign(httpError(408), { cause: unreached }))).toBe(false);
+    expect(refusedUnsent(answered(-31_999))).toBe(true);
+    expect(refusedUnsent(answered(-32_000))).toBe(false);
+    expect(refusedUnsent(answered(-32_768))).toBe(false);
+    expect(refusedUnsent(answered(-32_769))).toBe(true);
   });
 });

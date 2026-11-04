@@ -12,6 +12,7 @@ import { RELAY_TOO_LARGE } from "../src/agent/signed.js";
 import { ata, balance, cli, funded, h, NOW, setNow, transport, type World } from "./harness.js";
 import { connect, exists, execute, fail, ok, served, swapOf } from "./agent-kit.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
+import { httpError, TIMEOUTS } from "./maybe-processed-kit.js";
 
 describe("agent server against the deployed engine", () => {
   let w: World;
@@ -114,14 +115,14 @@ describe("agent server against the deployed engine", () => {
     const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(p["message"])));
     const delivered = transport.send;
     transport.send = async () => {
-      throw new Error("the node dropped the transaction");
+      throw httpError(400, "the node dropped the transaction");
     };
     try {
       expect(await fail(relaying, "submit_signed_intent", { ...p["submit"], signature })).toEqual({
         code: "Failed",
         retryable: false,
         hint: SERVER_PROBLEMS.Failed.hint,
-        untrustedDetail: "the node dropped the transaction",
+        untrustedDetail: expect.stringContaining("the node dropped the transaction"),
       });
     } finally {
       transport.send = delivered;
@@ -135,24 +136,29 @@ describe("agent server against the deployed engine", () => {
     expect((await fail(relaying, "submit_signed_intent", { ...second["submit"], signature: again }))["code"]).toBe("RelayRateLimited");
   });
 
-  it("keeps the budget and the owner's hourly slot when a relay may already have been paid for", async () => {
-    const owner = await funded();
-    await ata(w.authority, owner.address, w.inputMint, 1_000n);
-    const relayer = await funded();
-    const relaying = await connect(relayer, [...free(), "--relay-per-hour", "1"]);
-    const p = await ok(relaying, "prepare_signed_intent", swap({ owner: owner.address }));
-    await execute(p["setup"], owner);
-    const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(p["message"])));
-    const delivered = transport.send;
-    transport.send = async () => {
-      throw new FailedOnChain("transaction landed and failed", failure(testSignature("sent"), null));
-    };
-    try {
-      expect((await fail(relaying, "submit_signed_intent", { ...p["submit"], signature }))["code"]).toBe("Failed");
-    } finally {
-      transport.send = delivered;
+  it("keeps the budget and the owner's hourly slot when a relay may already have been paid for, as after a landed failure or a raw 408 or 425", async () => {
+    for (const error of [new FailedOnChain("transaction landed and failed", failure(testSignature("sent"), null)), ...TIMEOUTS.map((status) => httpError(status))]) {
+      const owner = await funded();
+      await ata(w.authority, owner.address, w.inputMint, 1_000n);
+      const relayer = await funded();
+      const relaying = await connect(relayer, [...free(), "--relay-per-hour", "1"]);
+      const p = await ok(relaying, "prepare_signed_intent", swap({ owner: owner.address }));
+      await execute(p["setup"], owner);
+      const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(p["message"])));
+      const delivered = transport.send;
+      let sends = 0;
+      transport.send = async () => {
+        sends += 1;
+        throw error;
+      };
+      try {
+        expect((await fail(relaying, "submit_signed_intent", { ...p["submit"], signature }))["code"]).toBe("Failed");
+      } finally {
+        transport.send = delivered;
+      }
+      expect(sends).toBe(1);
+      expect((await fail(relaying, "submit_signed_intent", { ...p["submit"], signature }))["code"]).toBe("RelayRateLimited");
     }
-    expect((await fail(relaying, "submit_signed_intent", { ...p["submit"], signature }))["code"]).toBe("RelayRateLimited");
   });
 
   it("relays only the tokens its operator priced, so nobody can make it pay for intents in a throwaway token", async () => {

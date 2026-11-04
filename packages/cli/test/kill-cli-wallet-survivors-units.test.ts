@@ -20,10 +20,13 @@ const httpError = (statusCode: number) => new SolanaError(SOLANA_ERROR__RPC__TRA
 const failing = (code: string) => Object.assign(new Error("transport failed"), { code });
 
 describe("which RPC failures count as refused before sending", () => {
-  it("treats a client error status as a refusal and nothing else as one", () => {
+  it("treats a client error status that proves refusal as one, and a timeout, a closed request or anything else as none", () => {
     expect(rpcRefused(httpError(399))).toBe(false);
     expect(rpcRefused(httpError(400))).toBe(true);
-    expect(rpcRefused(httpError(499))).toBe(true);
+    expect(rpcRefused(httpError(408))).toBe(false);
+    expect(rpcRefused(httpError(425))).toBe(false);
+    expect(rpcRefused(httpError(431))).toBe(true);
+    expect(rpcRefused(httpError(499))).toBe(false);
     expect(rpcRefused(httpError(500))).toBe(false);
     expect(rpcRefused(httpError(200))).toBe(false);
     expect(rpcRefused(httpError(700))).toBe(false);

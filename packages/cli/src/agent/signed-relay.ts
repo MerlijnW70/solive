@@ -7,6 +7,7 @@ import { type Prepared, transactionSize } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import type { Relay } from "./relay.js";
 import type { SignedTerms } from "./signed-terms.js";
+import { refusedBeforeSending } from "./wallet/guard.js";
 
 export function relayFloor(relay: Relay, mint: Address): bigint {
   const floor = relay.fees.get(mint);
@@ -81,7 +82,7 @@ export async function paying<T>(paid: { any: boolean }, sending: Promise<T>): Pr
     paid.any = true;
     return result;
   } catch (error) {
-    if (isSdkError(error, "maybe-sent") || isSdkError(error, "failed-on-chain")) {
+    if (isSdkError(error, "failed-on-chain") || !refusedBeforeSending(error)) {
       paid.any = true;
     }
     throw error;
