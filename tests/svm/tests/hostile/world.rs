@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+
 use anchor_spl::token_2022::spl_token_2022::state::Mint as MintState;
 use intent_core::kinds::{attested_result, dutch_auction, limit_order, Intent as CoreIntent, Kind};
 use intent_core::lifecycle::Status;
@@ -98,6 +100,7 @@ pub struct World {
     pub mandate: Pubkey,
     pub captured: Vec<Instruction>,
     pub agent_fees: Pubkey,
+    pub own_rent: HashMap<Pubkey, u64>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -162,6 +165,7 @@ impl World {
             mandate: Pubkey::default(),
             captured: Vec::new(),
             agent_fees: Pubkey::default(),
+            own_rent: HashMap::new(),
         };
         world.open_intents()?;
         world.grant()?;
@@ -798,6 +802,8 @@ impl World {
         let mut earned: u64 = 0;
         let mut bounties: u64 = 0;
         let mut forfeited: u64 = 0;
+        let mut reclaimed: u64 = 0;
+        let mut returned: Vec<Pubkey> = Vec::new();
         let rent = self
             .env
             .svm
@@ -833,6 +839,16 @@ impl World {
                         .and_then(|r| r.checked_add(was.vault_lamports))
                         .and_then(|r| r.checked_add(forfeited))
                         .ok_or("overflow")?;
+                } else if state.rent_payer == me {
+                    let intent = intent_pda(&i.owner, i.nonce);
+                    let paid = self.own_rent.get(&intent).copied().ok_or_else(|| {
+                        format!(
+                            "intent {} names the attacker as rent payer without rent it paid",
+                            i.nonce
+                        )
+                    })?;
+                    reclaimed = reclaimed.checked_add(paid).ok_or("overflow")?;
+                    returned.push(intent);
                 }
             }
             if is.in_flight != 0 {
@@ -934,16 +950,46 @@ impl World {
         if gained > earned {
             return Err(format!("attacker gained {gained} but settled only {earned}").into());
         }
-        let lamports_gained = self.env.lamports(&me).saturating_sub(lamports_before);
-        let released = bounties.checked_add(forfeited).ok_or("overflow")?;
+        let lamports_after = self.env.lamports(&me);
+        let lamports_gained = lamports_after.saturating_sub(lamports_before);
+        let released = bounties
+            .checked_add(forfeited)
+            .and_then(|r| r.checked_add(reclaimed))
+            .ok_or("overflow")?;
         if lamports_gained > released {
             return Err(format!(
-                "attacker gained {lamports_gained} lamports but only {bounties} in bounties and {forfeited} in forfeited rent were released"
+                "attacker gained {lamports_gained} lamports but only {bounties} in bounties, {forfeited} in forfeited rent and {reclaimed} in rent it paid itself were released"
+            )
+            .into());
+        }
+        for intent in returned {
+            self.own_rent.remove(&intent);
+        }
+        let owner = self.trader(VICTIM)?.key.pubkey();
+        let mut funded: u64 = 0;
+        for &nonce in &created {
+            let intent = intent_pda(&owner, nonce);
+            let state = self.env.intent(&owner, nonce)?;
+            let paid = self
+                .env
+                .lamports(&intent)
+                .checked_sub(u64::from(state.bounty))
+                .and_then(|r| r.checked_add(self.env.lamports(&vault_pda(&intent))))
+                .ok_or("overflow")?;
+            funded = funded
+                .checked_add(paid)
+                .and_then(|f| f.checked_add(u64::from(state.bounty)))
+                .ok_or("overflow")?;
+            self.own_rent.insert(intent, paid);
+        }
+        let spent = lamports_before.saturating_sub(lamports_after);
+        if spent < funded {
+            return Err(format!(
+                "attacker spent {spent} lamports on agent intents that hold {funded} in rent and bounties"
             )
             .into());
         }
         for nonce in created {
-            let owner = self.trader(VICTIM)?.key.pubkey();
             let receiver = self.trader(VICTIM)?.receiver;
             let intent = intent_pda(&owner, nonce);
             self.pool.extend([intent, vault_pda(&intent)]);
