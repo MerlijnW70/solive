@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
+guard_temps
 engine="${INTENT_ENGINE_SO:-$PWD/target/deploy/intent_engine.so}"
 program="$(sed -n 's/^intent_engine = "\(.*\)"/\1/p' Anchor.toml | head -n 1)"
 span=40
@@ -12,7 +13,7 @@ if [[ ! -d node_modules ]]; then
   pnpm install --frozen-lockfile
 fi
 pnpm --filter @intent-engine/core build >/dev/null
-work="$(mktemp -d)"
+make_temp work -d
 validator=""
 stop() {
   if [[ -n "$validator" ]] && kill -0 "$validator" 2>/dev/null; then
@@ -24,11 +25,9 @@ stop() {
     kill -KILL "$validator" 2>/dev/null || true
     wait "$validator" 2>/dev/null || true
   fi
-  rm -rf "$work"
+  remove_temps
 }
 trap stop EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 free_base() {
   local used base port clash
   used="$(ss -Htuan | awk '{print $5}' | sed 's/.*://')"

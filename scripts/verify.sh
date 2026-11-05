@@ -27,6 +27,9 @@ wipe() {
     exit 1
   fi
 }
+trap wipe EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 wipe
 mkdir "$work"
 git archive HEAD | tar -x -C "$work"

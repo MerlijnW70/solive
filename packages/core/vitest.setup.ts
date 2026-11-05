@@ -12,4 +12,4 @@ if (chosen !== "random") {
   fc.configureGlobal({ ...fc.readConfigureGlobal(), seed });
 }
 
-export default defineConfig({ test: { setupFiles: [fileURLToPath(import.meta.url)] } });
+export default defineConfig({ test: { globalSetup: [fileURLToPath(new URL("../cli/test/run-root-setup.ts", import.meta.url))], setupFiles: [fileURLToPath(import.meta.url)] } });

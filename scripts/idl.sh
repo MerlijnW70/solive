@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
+guard_temps
 usage="usage: idl.sh devnet|mainnet-beta|<https rpc url> [--multisig <address> | --check]"
 mainnet_genesis="5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
 case "${1:-}" in
@@ -65,7 +66,7 @@ if [[ "$mode" == multisig ]]; then
   fi
   "${pmp[@]}" set-buffer-authority "$buffer" --new-authority "$vault" >/dev/null
   exported="$("${pmp[@]}" update idl "$program" --buffer "$buffer" --close-buffer "$(solana-keygen pubkey "$authority")" --format json --export "$vault" --export-encoding instruction-list)"
-  proposal="$(mktemp)"
+  make_temp proposal
   printf '%s\n' "$exported" | node scripts/instruction-list.mjs > "$proposal"
   "${squads[@]}" propose-admin --multisig "$multisig" --keypair "${MULTISIG_MEMBER:-$authority}" --url "$url" --yes -- cat "$proposal"
   echo "buffer   $buffer, now controlled by the vault $vault and closed by the proposal"
@@ -77,7 +78,7 @@ if [[ "$mode" == write ]] && ! "${pmp[@]}" write idl "$program" "$idl" --format 
   echo "a half-written IDL account can only be removed with: npx @solana-program/program-metadata@0.10.0 --keypair $authority --rpc $url close idl $program" >&2
   exit 1
 fi
-fetched="$(mktemp)"
+make_temp fetched
 "${pmp[@]}" fetch idl "$program" --output "$fetched" >/dev/null
 node -e "
 const fs = require('fs');

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
+guard_temps
 commit=6a25ec47d6e776996062509edfc1164b4f7f3bb5
 toolchain=1.99.0
 pinned=packages/cli/assets/viperjs-judge.sha256
-work=/tmp/viperjs-judge-build
+make_temp work -d
 rustup toolchain install "$toolchain" --profile minimal --target wasm32-unknown-unknown >/dev/null
-rm -rf "$work"
 git clone -q https://github.com/MerlijnW70/viperjs "$work"
 git -C "$work" checkout -q "$commit"
 (

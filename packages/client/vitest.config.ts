@@ -7,4 +7,4 @@ const BYTES_PER_WORKER = 2 * 1024 ** 3;
 
 export const workers = Math.max(1, Math.min(WORKER_CAP, availableParallelism() - 1, Math.floor(totalmem() / BYTES_PER_WORKER)));
 
-export default defineConfig({ test: { setupFiles: [fileURLToPath(new URL("../cli/test/faucet-setup.ts", import.meta.url))], maxWorkers: workers, execArgv: ["--expose-gc"] } });
+export default defineConfig({ test: { globalSetup: [fileURLToPath(new URL("../cli/test/run-root-setup.ts", import.meta.url))], setupFiles: [fileURLToPath(new URL("../cli/test/faucet-setup.ts", import.meta.url))], maxWorkers: workers, execArgv: ["--expose-gc"] } });

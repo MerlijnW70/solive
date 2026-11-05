@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
+guard_temps
 mode="${1:-pinned}"
 [[ "$mode" == pinned || "$mode" == newest ]] || { echo "usage: pack-test.sh [pinned|newest]" >&2; exit 2; }
 packages=(core client solver cli)
@@ -12,8 +13,7 @@ if [[ "$mode" == newest ]]; then
   newest_kit="$(npm view "@solana/kit@$kit_range" version --json | node -e 'console.log([JSON.parse(require("node:fs").readFileSync(0, "utf8"))].flat().at(-1));')"
   [[ "$newest_kit" =~ ^8\.[0-9]+\.[0-9]+$ ]] || { echo "the newest @solana/kit in $kit_range is $newest_kit, not an 8.x release" >&2; exit 1; }
 fi
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+make_temp work -d
 mkdir -p "$work/packs"
 for p in "${packages[@]}"; do
   pnpm --filter "@intent-engine/$p" build

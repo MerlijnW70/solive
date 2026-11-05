@@ -6,7 +6,7 @@ import { type AnnouncementView, type SpecFetch, type Transport } from "@intent-e
 import { MAX_SPEC_BYTES, opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS } from "@intent-engine/client/internal";
 import { isLocalWorkUrl } from "@intent-engine/core/internal";
 import { hex } from "./announcement-views.js";
-import { MAX_ARTIFACT_BYTES } from "./artifact.js";
+import { MAX_ARTIFACT_BYTES, removeCopy } from "./artifact.js";
 import { temporaryStatus } from "./fetch-class.js";
 import { fetchFailure, lastingFailure, reached } from "./fetch-failure.js";
 import { type Lookup, systemLookup } from "./public-address.js";
@@ -157,7 +157,12 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
     throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, which the commitment ${hex(delivery.announcement.commitment)} of ${delivery.announcement.worker} does not bind`);
   }
   const root = await mkdtemp(join(tmpdir(), "judge-delivery-"));
-  const path = join(root, fetchedName(checked.url));
-  await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
-  return { root, path, sha256 };
+  try {
+    const path = join(root, fetchedName(checked.url));
+    await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
+    return { root, path, sha256 };
+  } catch (error) {
+    await removeCopy(root);
+    throw error;
+  }
 }

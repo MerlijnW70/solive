@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { copyOf, readArtifact, removeCopy } from "./artifact.js";
-import { type Check, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runContainer } from "./check-process.js";
+import { type Check, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, holdSignals, runContainer } from "./check-process.js";
+import { JudgeInterrupted } from "./judge-errors.js";
 import { type Box, containerArgs, containerName, dockerEnv, SANDBOX_PIDS, sandboxReady } from "./sandbox.js";
 import { defaultWallet, expandHome } from "./wallet.js";
 
@@ -138,13 +139,24 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
     return { docker: version.out, ...base, checks, ready: false, next: DOCTOR_NOT_READY };
   }
   const canary = `sandbox-doctor-canary-${randomBytes(16).toString("hex")}`;
+  const signals = holdSignals();
   const planted = join(tmpdir(), `${canary}.json`);
-  await writeFile(planted, JSON.stringify({ canary }));
   const artifact = join(tmpdir(), `sandbox-doctor-${randomBytes(6).toString("hex")}.txt`);
-  await writeFile(artifact, "sandbox doctor\n");
-  const read = await readArtifact(artifact);
-  const copy = await copyOf(read, new TextEncoder().encode("sandbox doctor spec\n"), undefined, true);
-  const root = { copy, sha256: read.sha256 };
+  let copy: Awaited<ReturnType<typeof copyOf>>;
+  let sha256: string;
+  try {
+    await writeFile(planted, JSON.stringify({ canary }));
+    await writeFile(artifact, "sandbox doctor\n");
+    const read = await readArtifact(artifact);
+    sha256 = read.sha256;
+    copy = await copyOf(read, new TextEncoder().encode("sandbox doctor spec\n"), undefined, true);
+  } catch (error) {
+    await removeCopy(planted);
+    await removeCopy(artifact);
+    signals.release();
+    throw error;
+  }
+  const root = { copy, sha256 };
   let keyHidden = false;
   try {
     const allowed = await allowedEnvOf(box.image, env);
@@ -152,6 +164,9 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
       checks.push({ check: "the image's own environment can be read", ok: false });
     }
     for (const probe of probes(box, canary, keyPath, allowed ?? [...CONTAINER_ENV])) {
+      if (signals.caught() !== undefined) {
+        break;
+      }
       const ran = await contained(box, root, probe.script, PROBE_SECONDS);
       const ok = ran.exitCode === 0 && ran.gone && ran.infra === undefined;
       checks.push({ check: probe.check, ok, ...(ok ? {} : { detail: ran.infra ?? (ran.gone ? `exit ${ran.exitCode ?? "none"}` : "the container was left behind") }) });
@@ -159,14 +174,23 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
         keyHidden = ok;
       }
     }
-    const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), PROBE_SECONDS);
-    checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.oom === true && memory.gone });
-    const slow = await contained(box, root, "sleep 600", TIMEOUT_PROBE_SECONDS);
-    checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.timedOut && slow.gone });
+    if (signals.caught() === undefined) {
+      const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), PROBE_SECONDS);
+      checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.oom === true && memory.gone });
+    }
+    if (signals.caught() === undefined) {
+      const slow = await contained(box, root, "sleep 600", TIMEOUT_PROBE_SECONDS);
+      checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.timedOut && slow.gone });
+    }
   } finally {
     await removeCopy(copy.root);
-    await rm(planted, { force: true });
-    await rm(artifact, { force: true });
+    await removeCopy(planted);
+    await removeCopy(artifact);
+    signals.release();
+  }
+  const interrupted = signals.caught();
+  if (interrupted !== undefined) {
+    throw new JudgeInterrupted(interrupted);
   }
   const ready = checks.every((check) => check.ok);
   return { docker: version.out, ...base, keypair: { path: keyPath, reachable: !keyHidden }, checks, ready, next: ready ? DOCTOR_READY : DOCTOR_NOT_READY };

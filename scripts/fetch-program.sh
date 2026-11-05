@@ -15,8 +15,14 @@ if [[ -f "$out" && "$(digest "$out")" == "$expected" ]]; then
   exit 0
 fi
 mkdir -p "$dir"
-partial="$(mktemp "$dir/fixture.XXXXXX")"
-trap 'rm -f "$partial"' EXIT
+partial="$(mktemp "$dir/fixture.XXXXXX")" || { echo "mktemp failed" >&2; exit 1; }
+if [[ -z "$partial" || "$partial" != "$dir"/?* ]]; then
+  echo "mktemp returned $partial, not a path under $dir" >&2
+  exit 1
+fi
+trap 'rm -f -- "$partial"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 node - "$rpc" "$program" "$partial" <<'JS'
 const [rpc, program, out] = process.argv.slice(2);
 const bs58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
