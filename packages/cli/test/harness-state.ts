@@ -85,7 +85,7 @@ export const harnessLookup: Lookup = async (host) => {
   return h.hosts.get(host) ?? (host === "localhost" || host.endsWith(".localhost") ? ["127.0.0.1"] : [PUBLIC_TEST_ADDRESS]);
 };
 
-export const HOME = "/home/tester";
+export const HOME = mkdtempSync(join(tmpdir(), "home-"));
 export const PACKET_LIMIT = 1_232;
 
 export function touch(tx: Transaction): void {

@@ -12,7 +12,7 @@ import { WORK_OPENS } from "../src/agent/wallet/work.js";
 import { EXIT_OK } from "../src/main.js";
 import { fresh, preset } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 import { cliWith, SECOND, secondNode } from "./confirm-node.js";
 import { h, world } from "./harness.js";
 import { CANARY, HOSTILE, heldTo, hostileProfile, plainAbout, PROSE, refusalHeld, served } from "./untrusted-kit.js";
@@ -74,11 +74,11 @@ describe("text other parties control, through the wallet server", () => {
     });
     expect(heldTo(tool("wallet_fetch_work"), fetched.value).sort()).toEqual(["untrusted_text", "url"]);
     const release = { owner: wallet, nonce, delivered_sha256: sha256 };
-    const preview = await served(client, "wallet_attest", release);
+    const preview = await served(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(preview.value).toMatchObject({ pay_to: worker.address, announcement: first.announcement, delivered_sha256: sha256, sent: false });
     expect(heldTo(tool("wallet_attest"), preview.value)).toEqual([]);
-    expect((await served(client, "wallet_attest", release)).value["approval"]).toBe(preview.value["approval"]);
-    const sent = await served(client, "wallet_attest", { ...release, approval: preview.value["approval"], send: true });
+    expect((await served(client, "wallet_attest", { ...UNJUDGED, ...release })).value["approval"]).toBe(preview.value["approval"]);
+    const sent = await served(client, "wallet_attest", { ...UNJUDGED, ...release, approval: preview.value["approval"], send: true });
     expect(sent.value).toMatchObject({ pay_to: worker.address, delivered_sha256: sha256, approval: preview.value["approval"], sent: true });
     expect(heldTo(tool("wallet_attest"), sent.value)).toEqual([]);
     for (const name of ["wallet_receipt", "get_receipt"]) {
@@ -150,7 +150,7 @@ describe("text other parties control, through the wallet server", () => {
     h.specPages.set(WORK_URL, new TextEncoder().encode(HOSTILE));
     await announced(intent, await keyed(), sha256, WORK_URL);
     const wires = h.wires.length;
-    const refused = await served(client, "wallet_attest", { owner: wallet, nonce, delivered_sha256: sha256 });
+    const refused = await served(client, "wallet_attest", { ...UNJUDGED, owner: wallet, nonce, delivered_sha256: sha256 });
     expect(refused).toMatchObject({ error: true, value: { code: "ConfirmMismatch", hint: SECOND_NODE_UNREAD } });
     expect(refusalHeld(refused.value as never)).toEqual(["untrustedDetail"]);
     expect(refused.value["untrustedDetail"]).toContain(CANARY);

@@ -65,6 +65,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `EncryptionKeyInvalid` | no | the file mcp --encryption-keypair names is not an encryption key file that profile encryption-key new writes, so nothing sealed to it can be opened; start the server with the right file |
 | `NoMessageSigner` | no | the wallet cannot sign messages, and an announcement derives its salt and keys from the wallet's signature; use a key file or give the signature the hint asks for |
 | `NoJudgeCases` | no | the spec has no single judge-cases block the ViperJS sandbox can run, so this server judges nothing; save the spec and the work and judge them with the CLI command judge --sandbox docker |
+| `NoJudgeReceipt` | no | a release, vote or cosign for a proof escrow needs a receipt of a passing judge run on this machine for the same escrow, spec, work and announcement: none matched, or it was unreadable or changed, as the hint says; nothing was signed or sent |
 | `NotJudged` | no | the work was not judged: the spec does not match the escrow, the work is not one UTF-8 module, or the ViperJS judge could not run, as the hint says; nothing was approved or sent |
 | `WorkerUnfit` | no | a separate worker could not satisfy this job: it is not open, its spec is sealed or unreadable, or its claims are closed to a new key, as the hint says; nothing was sent |
 | `WorkerBusy` | no | the worker may still need its SOL: its job is open or it holds a claim or a place in line, as the hint says; nothing was sent |

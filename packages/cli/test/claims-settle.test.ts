@@ -13,7 +13,7 @@ import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, funded, h, NOW, send, setNow, world } from "./harness.js";
 import { announced } from "./announce.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -96,9 +96,9 @@ describe("settling a claims board from the wallet tools", () => {
     await send(worker, [await buildClaimJob({ worker, intent: job.intent, owner: wallet, secs: 600 })]);
     await announced(job.intent, worker, WORK);
     const release = { ...job.ref, delivered_sha256: WORK };
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown["summary"]).toContain(`Leaves: ${leaves(job.board, wallet, job.nonce)}`);
-    const released = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
+    const released = await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true });
     expect(released["next"]).toBe(`released to ${worker.address}; ${tool("wallet_feedback")} to rate; ${leaves(job.board, wallet, job.nonce)}`);
     expect(sol(job.board)).toBe(rent());
     const read = await ok(client, "get_claims", job.ref);
@@ -124,7 +124,7 @@ describe("settling a claims board from the wallet tools", () => {
     const job = await escrow();
     const worker = await funded();
     await announced(job.intent, worker, WORK);
-    const shown = await ok(client, "wallet_attest_split", { ...job.ref, delivered_sha256: WORK, recipients: [{ wallet: worker.address, weight: 10000 }] });
+    const shown = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...job.ref, delivered_sha256: WORK, recipients: [{ wallet: worker.address, weight: 10000 }] });
     expect(shown["summary"]).toContain(`Leaves: ${leaves(job.board, wallet, job.nonce)}`);
   });
 

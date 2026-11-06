@@ -47,6 +47,8 @@ import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sh
 import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
 import { checkInvited, InviteRefused } from "../../invites.js";
 import { confirmedRelease, DELIVERED_NEEDED, notAttestor } from "./delivery.js";
+import { ReceiptRefused } from "../../judge-receipt.js";
+import { type Authority, authorizeEscrow, boundApproval, OVERRIDE_INPUT, recorded, type Target } from "../../receipt-gate.js";
 
 export const RESULT_MEANS =
   "the plain count the attestor signs, between the escrow's min_result and max_result; it does not change the amount paid. On a proof escrow it records that the work passed the spec, and is 1 unless the escrow allows a range";
@@ -66,6 +68,26 @@ export const notEarliest = (worker: string, sha256: string) =>
 
 export const claimHeldBy = (worker: Address, until: bigint) =>
   `${worker} holds this job's claim until ${formatTime(until)}, so only that worker can be paid until then; nothing was sent`;
+
+export const NEEDS_RECEIPT = "Needs a judge receipt or without_receipt.";
+
+export const WALLET_RECEIPT_NEXT = `run ${tool("wallet_judge_work")} or the CLI command judge on this work first, which saves a receipt when the check passes, or pass ${OVERRIDE_INPUT} with a reason to sign without one; nothing was signed or sent`;
+
+export const withoutReceipt = optional(
+  text(`a non-empty reason to sign without a receipt of a passing judge run on this machine; the warning names what was not checked and the output records it in unchecked. Leave it out: judge the work first`),
+);
+
+export const uncheckedOutput = optional(
+  object({ reason: text("the reason given in without_receipt"), warning: text("what was not checked") }, "present only when without_receipt signed without a receipt of a passing judge run"),
+);
+
+export async function walletAuthority(ctx: AgentContext, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined): Promise<Authority> {
+  try {
+    return await authorizeEscrow(ctx.wallet?.files.home, ctx.transport, at, judges, override);
+  } catch (error) {
+    throw error instanceof ReceiptRefused ? new AgentRefusal("NoJudgeReceipt", `${error.why}; ${WALLET_RECEIPT_NEXT}`) : error;
+  }
+}
 
 export async function claimsOfRelease(ctx: AgentContext, intent: Address, claims: number, payees: readonly Address[]) {
   try {
@@ -212,7 +234,7 @@ async function proofTarget(ctx: AgentContext, escrow: Escrow, input: { owner: Ad
 export const walletAttest = define({
   name: tool("wallet_attest"),
   title: "Release an escrow as its attestor",
-  description: `Pays approved work when this wallet is the escrow's attestor (judge): a proof escrow pays the first announcement opening to delivered_sha256, other attested escrows pay pay_to. Irreversible; the approval binds the send to the preview. Approve only a judge pass, never a fail or infra. ${PREVIEW_APPROVAL}`,
+  description: `Pays approved work when this wallet is the escrow's attestor (judge): a proof escrow pays the first announcement opening to delivered_sha256, other attested escrows pay pay_to. Irreversible; the approval binds the send to the preview. ${NEEDS_RECEIPT} ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     owner: account("the wallet that made the escrow"),
@@ -220,6 +242,7 @@ export const walletAttest = define({
     delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for, as ${tool("wallet_fetch_work")} shows it; required for a proof escrow`)),
     pay_to: optional(account("the wallet to pay, only for an attested escrow without a spec hash; a proof escrow pays its announcing worker")),
     result: optional(amount("the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result")),
+    without_receipt: withoutReceipt,
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -236,6 +259,7 @@ export const walletAttest = define({
     announcement: optional(account("the announcement the release pays")),
     seq: optional(amount("its place among the escrow's announcements")),
     skipped: skippedOutput,
+    unchecked: uncheckedOutput,
     summary: list(text(), 16),
     warnings: list(text(), 8),
     sent: flag(),
@@ -254,6 +278,10 @@ export const walletAttest = define({
     }
     const isProof = params.specHash.some((b) => b !== 0);
     const proof = isProof ? await proofTarget(ctx, escrow, input, signer, result) : undefined;
+    const authority =
+      proof === undefined
+        ? undefined
+        : await walletAuthority(ctx, { owner: input.owner, nonce: input.nonce, intent, deliveredSha256: proof.delivered, announcement: proof.opening.announcement }, [signer.address], input.without_receipt);
     const payTo = proof?.opening.worker ?? input.pay_to;
     if (payTo === undefined) {
       throw new InvalidInput([{ path: "pay_to", message: PAY_TO_NEEDED }]);
@@ -307,7 +335,7 @@ export const walletAttest = define({
       const signed = message;
       instructions = async () => [...setup, buildEd25519Instruction({ publicKey: signer.address, signature: await signer.signBytes(signed), message: signed }), settle];
     }
-    const approval = approvalOf(message);
+    const approval = authority === undefined ? approvalOf(message) : boundApproval(approvalOf(message), authority);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
@@ -326,6 +354,7 @@ export const walletAttest = define({
       approval,
       ...(device ? { digest: envelopeDigest(message) } : {}),
       ...(proof === undefined ? {} : { delivered_sha256: proof.delivered, announcement: proof.opening.announcement, seq: proof.opening.seq, ...skippedField(proof.skipped) }),
+      ...(authority === undefined ? {} : recorded(authority)),
       summary: [
         `Pays: ${paid} of ${name} to ${payTo} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         ...(proof === undefined ? [] : [`For: the work with sha256 ${proof.delivered}, announced in ${proof.opening.announcement} (seq ${proof.opening.seq}), the first that opens to it`]),

@@ -14,7 +14,7 @@ import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { announced } from "./announce.js";
 import { balance, cli, FEE_BPS, funded, h, HOME, send, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -138,14 +138,14 @@ describe("claims from the wallet tools", () => {
     const release = { owner: wallet, nonce: job.nonce, delivered_sha256: WORK };
     const wires = h.wires.length;
     for (const args of [{ ...release, delivered_sha256: OTHER_WORK }, { ...release, delivered_sha256: OTHER_WORK, approval: "0".repeat(16), send: true }]) {
-      expect((await call(client, "wallet_attest", args)).value).toMatchObject(heldBy(job.worker.address));
+      expect((await call(client, "wallet_attest", { ...UNJUDGED, ...args })).value).toMatchObject(heldBy(job.worker.address));
     }
     expect(claimHeldBy(job.worker.address, job.until)).toContain(`${job.worker.address} holds this job's claim until ${new Date(Number(job.until) * 1000).toISOString()}`);
     expect(h.wires.length).toBe(wires);
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown["summary"]).toContain(`Returns: the claim stake of 0.05 SOL to ${job.worker.address}`);
     const before = sol(job.worker.address);
-    const done = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
+    const done = await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true });
     expect(done).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(accountsOf(h.wires[h.wires.length - 1] as string)).toContain(board);
     const { net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
@@ -158,15 +158,15 @@ describe("claims from the wallet tools", () => {
   it("wallet_attest_split passes the claims board and refuses a split that leaves out the claiming worker", async () => {
     const job = await claimed(client, wallet, wallet);
     const release = { owner: wallet, nonce: job.nonce, delivered_sha256: WORK };
-    expect((await call(client, "wallet_attest_split", { ...release, delivered_sha256: OTHER_WORK, recipients: [{ wallet: job.rival, weight: 10000 }] })).value).toMatchObject(heldBy(job.worker.address));
-    expect((await call(client, "wallet_attest_split", { ...release, recipients: [{ wallet: job.rival, weight: 10000 }] })).value).toMatchObject({ code: "NotEarliestAnnouncer" });
+    expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...release, delivered_sha256: OTHER_WORK, recipients: [{ wallet: job.rival, weight: 10000 }] })).value).toMatchObject(heldBy(job.worker.address));
+    expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...release, recipients: [{ wallet: job.rival, weight: 10000 }] })).value).toMatchObject({ code: "NotEarliestAnnouncer" });
     const recipients = [{ wallet: job.worker.address, weight: 10000 }];
-    const shown = await ok(client, "wallet_attest_split", { ...release, recipients });
+    const shown = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...release, recipients });
     expect(shown["summary"]).toContain(`Returns: the claim stake of 0.05 SOL to ${job.worker.address}`);
     const envelope = Uint8Array.from(Buffer.from(shown["envelope"] as string, "hex"));
     const signature = getBase16Decoder().decode(new Uint8Array(await signBytes(job.worker.keyPair.privateKey, envelope)));
     const before = sol(job.worker.address);
-    const done = await ok(client, "wallet_attest_split", { ...release, recipients: [{ ...recipients[0], signature }], approval: shown["approval"], send: true });
+    const done = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...release, recipients: [{ ...recipients[0], signature }], approval: shown["approval"], send: true });
     expect(done).toMatchObject({ sent: true });
     expect(sol(job.worker.address) - before).toBe(STAKE);
   });
@@ -222,9 +222,9 @@ describe("claims from the wallet tools", () => {
     const job = await claimed(client, wallet, committee);
     const ballot = { owner: wallet, nonce: job.nonce, result: "1", delivered_sha256: WORK };
     const held = heldBy(job.worker.address);
-    expect((await call(client, "wallet_committee_vote", { ...ballot, delivered_sha256: OTHER_WORK })).value).toMatchObject(held);
-    const preview = await ok(client, "wallet_committee_vote", ballot);
-    const own = (await ok(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
+    expect((await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, delivered_sha256: OTHER_WORK })).value).toMatchObject(held);
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const own = (await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const client2 = createClient({ url: "http://cluster", transport });
     const first = await client2.firstOpening({ intent: job.intent, sha256: WORK, keypair: Uint8Array.from(JSON.parse(h.files.get(defaultWallet(HOME)) ?? "[]") as number[]) });
     const ballotOf = await client2.committeeBallot({ intent: { owner: wallet, nonce: BigInt(job.nonce) }, announcement: first.announcement, opening: first, result: 1n });

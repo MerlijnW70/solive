@@ -143,7 +143,12 @@ describe("what the docs and help say about --spec-file", () => {
 
   it("says plainly that the upload is public, in the docs and both tool descriptions, how long the tools say the mirror keeps it, and notes the wider request type", () => {
     const kept = "while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored";
-    expect(page("mcp.md")).toContain(`The upload is public: anyone can read it. The mirror keeps it ${kept}.`);
+    const cited = "while open SOL escrows lock 0.01 SOL per COST_STEP_BYTES of spec, the mirror's cost step in `services/specs/src/limits.ts`, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored";
+    expect(page("mcp.md")).toContain(`The upload is public: anyone can read it. The mirror keeps it ${cited}.`);
+    const root = new URL("../../../", import.meta.url);
+    expect(readFileSync(new URL("services/specs/src/limits.ts", root), "utf8")).toMatch(/^export const COST_STEP_BYTES = \d+;$/m);
+    expect(readFileSync(new URL("packages/client/src/spec-sources.ts", root), "utf8")).toMatch(/^export const SPEC_READ_MS = [\d_]+;$/m);
+    expect(page("mcp.md")).toContain("the upload adds up to SPEC_READ_MS, the budget in `packages/client/src/spec-sources.ts`, to the send's answer");
     expect(page("sdk-client.md")).toContain(`The upload is public, and the mirror keeps it ${kept}; a spec whose escrows lock less is refused with 402.`);
     for (const name of ["mcp.md", "sdk-client.md", "reference/cli.md", "reference/mcp-tools.md"]) {
       expect([name, /permanent|for good|cannot be deleted/.test(page(name))]).toStrictEqual([name, false]);

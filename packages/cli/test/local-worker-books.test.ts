@@ -6,7 +6,7 @@ import { announcementsBy } from "@intent-engine/client/internal";
 import { testSignature } from "@intent-engine/client/testing";
 import { BOOK_ESCROW_OPEN, bookKept, bookLive, booksClosed, booksKeptLine, bookUnclosed, bookUnread } from "../src/agent/wallet/worker-books.js";
 import { h, NOW, setNow } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 import { commandNamed, hireWith, lamportsOf, makeWorker, ok, plantBook, removeWorkFiles, run, server, sha, SOLUTION, startHirer, workFile } from "./local-worker-kit.js";
 
 const REFUTE_WINDOW = 30n * 86_400n;
@@ -71,7 +71,7 @@ describe("a local worker's delivery book", () => {
 
   it("keeps the key and lists the book while a paid announcement holds it, and closes both once the refute window passed", async () => {
     const job = await announced();
-    const paid = await ok(hirer, "wallet_attest", await approved(hirer, "wallet_attest", { owner: wallet, nonce: job.nonce, delivered_sha256: sha(SOLUTION) }));
+    const paid = await ok(hirer, "wallet_attest", await approved(hirer, "wallet_attest", { ...UNJUDGED, owner: wallet, nonce: job.nonce, delivered_sha256: sha(SOLUTION) }));
     expect(paid).toMatchObject({ sent: true, pay_to: job.worker });
     const kept = bookKept(job.book, job.intent, job.rent, bookLive(1n), job.keypair);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: job.worker });

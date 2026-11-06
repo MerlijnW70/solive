@@ -15,7 +15,7 @@ import { escrowFor } from "../src/judge.js";
 import { EXIT_OK, nodeRuntime } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cli, h, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -124,8 +124,8 @@ describe("the order of announcements", () => {
     expect(listed).toMatchObject({ complete: true, next_seq: "3", missing: [] });
     expect((await ok(client, "check_delivery", { intent }))["announcements"]).toEqual(listed["announcements"]);
     const release = { owner: wallet, nonce, delivered_sha256: WORK };
-    expect((await call(client, "wallet_attest", { ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, WORK) });
-    expect(await ok(client, "wallet_attest", release)).toMatchObject({ sent: false, pay_to: worker.address, announcement: first.announcement });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, WORK) });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release })).toMatchObject({ sent: false, pay_to: worker.address, announcement: first.announcement });
   });
 });
 
@@ -194,7 +194,7 @@ describe("waiting through rate limiting", () => {
 describe("the text of an InvalidInput refusal", () => {
   it("names each wrong field and its message, while the structured content stays as it was", async () => {
     const { client, wallet, intent } = await setUp();
-    const refused = await call(client, "wallet_attest", { intent, pay_to: wallet });
+    const refused = await call(client, "wallet_attest", { ...UNJUDGED, intent, pay_to: wallet });
     expect(refused.error).toBe(true);
     expect(refused.value).toEqual({
       code: "InvalidInput",

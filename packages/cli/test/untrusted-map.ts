@@ -72,6 +72,8 @@ export const COMMON_OWN: readonly string[] = [
   "skipped[].reason",
   "unreadable[].reason",
   "prepared.transaction",
+  "unchecked.reason",
+  "unchecked.warning",
 ];
 
 const RECEIPT = ["standing_note", "paid", "stake_returned", "delivered_salt", "held[].amount", "withheld[].role", "withheld[].amount"];
@@ -91,7 +93,7 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_deliver")]: ["sha256", "url", "commitment"],
   [tool("wallet_check_delivery")]: ["announcements[].state", "mine[].state"],
   [tool("wallet_fetch_work")]: ["refused.message"],
-  [tool("wallet_judge_work")]: ["engine.wasm_sha256", "engine.commit"],
+  [tool("wallet_judge_work")]: ["engine.wasm_sha256", "engine.commit", "receipt", "receipt_refused"],
   [tool("wallet_refute")]: ["sha256"],
   [tool("wallet_reclaim")]: ["reasons[].reason"],
   [tool("wallet_claim_held")]: ["shares[].amount", "shares[].token", "claiming.amount", "claiming.token"],

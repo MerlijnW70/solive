@@ -30,6 +30,7 @@ import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { isResaved, RESAVED, resavedFrom } from "./resaved.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
+import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
 
 export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
@@ -85,6 +86,7 @@ export type Verdict = {
   skipped?: SkippedLine[];
   next?: string;
   cleanup?: string;
+  receiptRefused?: string;
 };
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
@@ -272,6 +274,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
       keypair,
       feePayer,
       skipped: skippedLines(opening),
+      home: runtime.home,
     };
     return await checkAndSettle(command, transport, signer, signals, judged);
   } finally {
@@ -353,6 +356,7 @@ type Judged = {
   keypair: DeliveryOpener[];
   feePayer: TransactionPartialSigner | undefined;
   skipped: SkippedLine[];
+  home: string;
 };
 
 async function checkAndSettle(
@@ -360,7 +364,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, plan, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped }: Judged,
+  { address, attestor, committee, specHash, plan, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped, home }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = plan;
   let check: Check = { exitCode: null, timedOut: false };
@@ -406,6 +410,8 @@ async function checkAndSettle(
   if (passed && confirm !== undefined) {
     await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, payees: [payTo], keypair });
   }
+  const ran = { judge: signer.address, owner: command.owner, nonce: command.nonce, intent: address, specSha256: specHash, deliveredSha256: sha256, announcement, route: routeOfPlan(plan) };
+  const kept = passed ? await keptReceipt(home, { ...ran, outcome: "pass", cluster: await transport.genesisHash() }) : undefined;
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;
@@ -478,5 +484,5 @@ async function checkAndSettle(
       `the check passed and ${during} arrived while the release was being sent; it was sent in ${signature}${command.verdict !== undefined ? ` and the verdict was written to ${command.verdict}` : ""}`,
     );
   }
-  return verdict;
+  return kept?.receiptRefused === undefined ? verdict : { ...verdict, receiptRefused: kept.receiptRefused };
 }

@@ -104,9 +104,9 @@ describe("wallet_judge_work at its edges", () => {
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
     h.through = svmTransport(h.svm, { genesisHash: getBase58Decoder().decode(DOMAIN) });
-    judge = await server("/home/judge");
+    judge = await server(mkdtempSync(join(tmpdir(), "judge-home-")));
     judgeWallet = (await ok(judge, "wallet_setup"))["address"] as Address;
-    worker = await server("/home/worker");
+    worker = await server(mkdtempSync(join(tmpdir(), "worker-home-")));
     workerWallet = (await ok(worker, "wallet_setup"))["address"] as Address;
     h.watched.push(judgeWallet);
   });
@@ -146,7 +146,7 @@ describe("wallet_judge_work at its edges", () => {
     const intent = await escrow();
     h.specPages.set(WORK_URL, SOLUTION);
     await announce(worker, intent, sha(OTHER), WORK_URL);
-    const second = await server("/home/second");
+    const second = await server(mkdtempSync(join(tmpdir(), "second-home-")));
     const secondWallet = (await ok(second, "wallet_setup"))["address"] as Address;
     await announce(second, intent, sha(SOLUTION), WORK_URL);
     const judged = await ok(judge, "wallet_judge_work", { intent });

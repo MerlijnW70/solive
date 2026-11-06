@@ -11,7 +11,7 @@ import { WALLET_NOTICE } from "../../src/agent/wallet.js";
 import { EXIT_OK } from "../../src/main.js";
 import { announced, keyed } from "../announce.js";
 import { ata, balance, cli, funded, h, transport, world, type World } from "../harness.js";
-import { approved } from "../approved.js";
+import { approved, UNJUDGED } from "../approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -91,8 +91,8 @@ describe("a committee release through the wallet server", () => {
     const work = "e7".repeat(32);
     const made = await announced(intent, worker, work);
     const ballot = { owner: wallet, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work };
-    const preview = await ok(client, "wallet_committee_vote", ballot);
-    const voted = await ok(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true });
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const voted = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: preview["approval"], send: true });
     const own = voted["vote"] as { member: Address; signature: string };
     const digest = await createClient({ url: "http://cluster", transport }).committeeBallot({
       intent: { owner: wallet, nonce: BigInt(ballot.nonce) },

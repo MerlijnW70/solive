@@ -15,7 +15,7 @@ import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, funded, h, HOME, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -118,9 +118,9 @@ describe("a team judging together through the default wallet tools", () => {
     const ballot = { owner: lead, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work };
 
     const vote = async (): Promise<{ member: Address; signature: string }> => {
-      const shown = await ok(client, "wallet_committee_vote", ballot);
+      const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
       expect(shown).toMatchObject({ intent, committee, signed: false });
-      const signed = await ok(client, "wallet_committee_vote", { ...ballot, approval: shown["approval"], send: true });
+      const signed = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shown["approval"], send: true });
       expect(signed).toMatchObject({ signed: true });
       return signed["vote"];
     };

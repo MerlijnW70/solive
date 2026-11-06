@@ -10,7 +10,7 @@ import { MAINNET_GENESIS, WALLET_NOTICE } from "../../src/agent/wallet.js";
 import { EXIT_OK } from "../../src/main.js";
 import { announced, keyed } from "../announce.js";
 import { ata, balance, cli, funded, h, transport, world, type World } from "../harness.js";
-import { approved } from "../approved.js";
+import { approved, UNJUDGED } from "../approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -88,18 +88,18 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
 
   it("M-2: the RPC serves mainnet's genesis after the preview and the wallet still signs the committee vote", async () => {
     const { ballot } = await committeeEscrow();
-    const preview = await ok(client, "wallet_committee_vote", ballot);
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
     expect(preview).toMatchObject({ signed: false });
     h.genesis = MAINNET_GENESIS;
-    const { value } = await call(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true });
+    const { value } = await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: preview["approval"], send: true });
     expect(value).not.toHaveProperty("vote");
     expect(value).toMatchObject({ code: "WalletNotMainnet" });
   });
 
   it("M-2: the RPC serves mainnet's genesis after the release preview and the wallet still sends the release's setup transaction", async () => {
     const e = await committeeEscrow();
-    const preview = await ok(client, "wallet_committee_vote", e.ballot);
-    const own = (await ok(client, "wallet_committee_vote", { ...e.ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot });
+    const own = (await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
       intent: { owner: e.ballot.owner, nonce: BigInt(e.ballot.nonce) },
       announcement: e.made.announcement,

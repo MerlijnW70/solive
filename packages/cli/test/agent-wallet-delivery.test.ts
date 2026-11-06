@@ -17,7 +17,7 @@ import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { call, connect, fresh, ok, tag } from "./agent-wallet-kit.js";
 import { announced, griefed, keyed } from "./announce.js";
 import { FEE_BPS, funded, h, transport } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 const url = (name: string) => "https://" + "example.org/" + name;
 
@@ -117,8 +117,8 @@ describe("the wallet server's deliveries", () => {
     h.specPages.set(url("own"), new TextEncoder().encode(work));
     expect(await ok(client, "wallet_fetch_work", { intent, announcement: own.announcement })).toMatchObject({ opens_commitment: false, next: WORK_DIFFERS });
     const release = { owner: wallet, nonce, delivered_sha256: sha256 };
-    expect((await call(client, "wallet_attest", { ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, sha256) });
-    expect(await ok(client, "wallet_attest", release)).toMatchObject({ pay_to: worker.address, announcement: first.announcement, delivered_sha256: sha256, sent: false });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, sha256) });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release })).toMatchObject({ pay_to: worker.address, announcement: first.announcement, delivered_sha256: sha256, sent: false });
     const foreign = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: worker.address, spec_hash: "5c".repeat(32) }));
     expect(await ok(client, "wallet_check_delivery", { intent: foreign["intent"] })).toMatchObject({ intent: foreign["intent"], announcements: [] });
     expect((await call(client, "wallet_fetch_work", { intent: foreign["intent"] })).value).toMatchObject({ code: "WorkUnfetchable" });
@@ -142,7 +142,7 @@ describe("the wallet server's deliveries", () => {
     const outside = await ok(plain, "check_delivery", { intent });
     expect(outside).not.toHaveProperty("mine");
     expect(outside["announcements"]).toMatchObject([{ announcement: grief, worker: griefer.address }, { announcement: forged, worker: forger.address }, { announcement: own["announcement"], worker: wallet }]);
-    const shown = await ok(client, "wallet_attest", { owner: wallet, nonce, delivered_sha256: work });
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, owner: wallet, nonce, delivered_sha256: work });
     expect(shown).toMatchObject({
       pay_to: wallet,
       announcement: own["announcement"],

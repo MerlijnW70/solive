@@ -15,6 +15,7 @@ import { announced, keyed } from "./announce.js";
 import { balance, cli, FEE_BPS, funded, h, NOW, runtime, send, transport, world } from "./harness.js";
 import { device, type Device, deviceKey as newKey, found, type Key, MESSAGE, messageThen, SIGN, transactionThen } from "./ledger-device.js";
 import { airdropped } from "./airdrop.js";
+import { judgedBy } from "./receipt-kit.js";
 
 const LEVELS = [44, 501];
 const LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
@@ -52,6 +53,7 @@ async function panel(member?: () => Promise<Address>, outsider = false) {
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   const work = sha("split work");
   const made = await announced(intent, worker, work);
+  await judgedBy(members, { owner: w.owner.address, nonce: 0n, intent, specSha256: "04".repeat(32), deliveredSha256: work, announcement: made.announcement });
   const dir = await mkdtemp(join(tmpdir(), "committee-split-"));
   const recipients = [worker.address, outsider ? coauthor.address : m1.address];
   const vote = (path: string, extra: string[] = []) => [

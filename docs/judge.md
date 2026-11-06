@@ -148,6 +148,16 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artif
 
 The release pays the announcement the verdict names and records its sha256 and salt on chain. The payer checks it with `intent-engine receipt`.
 
+## A signature needs a passing run
+
+Every pass of `judge`, with or without `--yes`, single or committee, and `--watch`, saves a receipt on this machine; a fail or infra saves none. `solive_wallet_attest`, `solive_wallet_attest_split`, `committee vote` and `solive_wallet_committee_vote` sign for a proof escrow only with a receipt that matches the escrow, the spec's sha256, the work's sha256, the announcement it opens and the route that ran.
+
+A committee release only relays the members' votes, each already gated on its member's machine, so any wallet sends it without a receipt. A member who releases a split and signs its own co-author share signs the same bytes as a vote, so that signature needs its own receipt.
+
+Receipts live in `~/.config/intent-engine/receipts`, a directory readable only by you, beside the wallet's settings. A missing, changed or foreign receipt is refused, and the refusal says to run `judge` or `solive_wallet_judge_work` first.
+
+To sign without a receipt, name a reason: `--without-receipt <reason>` on `committee vote`, or `without_receipt` over MCP. It prints a warning naming what was not checked and records it as `unchecked` in the output. No setting turns it on. Over MCP the reason is bound into the preview's `approval`, so it cannot be added or dropped before the send.
+
 ## Keep judging
 
 `judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it lists the announcements to its judge from accounts, opens each new one, downloads the work from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
@@ -271,7 +281,7 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/w
 
 `--sandbox viper` needs neither WSL nor Docker on Windows: a demo job is judged from PowerShell as is. Save the spec and the work byte for byte, such as with `curl.exe -o`; `Set-Content` adds a byte-order mark or line ends that change the sha256, and `judge` then says so.
 
-An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, `pass`, `fail` or `infra`, each engine's failed cases and the work's sha256, and sends nothing. `infra` is no verdict: approve nothing and judge again later. On a pass, `solive_wallet_attest` with that sha256 pays.
+An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, `pass`, `fail` or `infra`, each engine's failed cases and the work's sha256, and sends nothing. `infra` is no verdict: approve nothing and judge again later. On a pass it saves the receipt `solive_wallet_attest` needs, and `solive_wallet_attest` with that sha256 pays.
 
 `solive_wallet_judge_work` refuses a spec without a `judge-cases` block: judge that with `--sandbox docker`. It also refuses a spec with a `judge-run` block, which `judge` runs exactly. It does not wait for drawn cases, so it refuses a spec with a `draw`.
 
@@ -335,7 +345,7 @@ Because that message lists every member, a release by a large committee can exce
 
 Each vote names the `announcement` it pays, the work's `sha256` and that announcement's `salt`. `committee release` refuses votes that differ in any of them, and pays that announcement.
 
-Any member who voted then submits the votes:
+Any wallet then submits the votes:
 
 ```powershell
 intent-engine committee release --keypair a.json --vote a.json.verdict --vote b.json.verdict --yes

@@ -6,3 +6,5 @@ export async function approved(client: Client, name: string, args: object): Prom
   const shown = (preview.structuredContent ?? {}) as Record<string, unknown>;
   return { ...terms, ...(typeof shown["approval"] === "string" ? { approval: shown["approval"] } : {}), send: true };
 }
+
+export const UNJUDGED = { without_receipt: "this test signs work it never ran a judge over, to test what the signature does" } as const;

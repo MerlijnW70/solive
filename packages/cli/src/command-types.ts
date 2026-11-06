@@ -165,6 +165,7 @@ export type Command =
       out: string | undefined;
       encryptionKeypairs?: string[] | undefined;
       split?: { recipients: Address[]; weights: number[] } | undefined;
+      withoutReceipt?: string | undefined;
     })
   | (Keyed & {
       name: "committee-release";

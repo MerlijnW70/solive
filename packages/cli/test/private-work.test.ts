@@ -18,7 +18,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { balance, cli, funded, h, HOME, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
@@ -146,8 +146,8 @@ describe("an invite-only job with wallet tools only", () => {
       next: WORK_OPENS,
     });
     const release = { owner: judge.address, nonce, delivered_sha256: fetched["sha256"] };
-    const shown = await ok(client, "wallet_attest", release);
-    expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true, pay_to: worker.address });
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true, pay_to: worker.address });
     const payee = await findAssociatedTokenAddress({ owner: worker.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(payee)).toBeGreaterThan(0n);
   }, 60_000);

@@ -23,7 +23,7 @@ import { walletHistory } from "../src/agent/wallet/history.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, FEE_BPS, funded, h, HOME, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -165,8 +165,8 @@ describe("wallet_history of a job a contractor resold", () => {
     h.files.set(defaultWallet(HOME), payerKey);
     h.engineLog = [announced, jobMade];
     const attest = { owner: payer, nonce: job["nonce"], delivered_sha256: work };
-    const shown = await ok(client, "wallet_attest", attest);
-    expect(await ok(client, "wallet_attest", { ...attest, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...attest });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...attest, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
 
     useKey(contractor);
     const judge = (await generateKeyPairSigner()).address;

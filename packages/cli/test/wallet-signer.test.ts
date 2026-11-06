@@ -35,7 +35,7 @@ import { MAINNET_GENESIS, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { balance, cli, h, resetHarness, runtime, saleBook, transport, world } from "./harness.js";
 import { announced, keyed } from "./announce.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -194,7 +194,7 @@ describe("a wallet server whose RPC turns to mainnet after a split release previ
     await announced(intent, coauthor, "ab".repeat(32));
     const release = { owner, nonce: escrow["nonce"] as string, delivered_sha256: "ab".repeat(32) };
     const recipients = [{ wallet: coauthor.address, weight: 10000 }];
-    const shown = await ok(client, "wallet_attest_split", { ...release, recipients });
+    const shown = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...release, recipients });
     expect(shown).toMatchObject({ sent: false });
     const envelope = Uint8Array.from(getBase16Encoder().encode(shown["envelope"] as string));
     const signed = [{ ...recipients[0], signature: getBase16Decoder().decode(new Uint8Array(await signBytes(coauthor.keyPair.privateKey, envelope))) }];
@@ -202,7 +202,7 @@ describe("a wallet server whose RPC turns to mainnet after a split release previ
     h.wires.length = 0;
     h.simulated.length = 0;
     h.genesis = MAINNET_GENESIS;
-    const { value } = await call(client, "wallet_attest_split", { ...release, recipients: signed, approval: shown["approval"], send: true });
+    const { value } = await call(client, "wallet_attest_split", { ...UNJUDGED, ...release, recipients: signed, approval: shown["approval"], send: true });
     expect(value).toMatchObject({ code: "WalletNotMainnet", hint: WALLET_NOT_MAINNET });
     expect(value).not.toHaveProperty("signature");
     expect(h.simulated).toEqual([]);

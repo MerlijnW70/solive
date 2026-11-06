@@ -12,7 +12,7 @@ import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { h, world } from "./harness.js";
 import { cliWith, disagreements, SECOND, secondNode, type SecondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -70,7 +70,7 @@ async function escrowed(more: string[]) {
 describe("mcp --confirm-url", () => {
   it("lets wallet_attest release only when both nodes agree, refusing each disagreement before anything is sent", async () => {
     const { node, client, intent, release, status } = await escrowed(["--confirm-url", SECOND]);
-    const shown = await call(client, "wallet_attest", release);
+    const shown = await call(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(node.reads).toBeGreaterThan(0);
     const approval = shown.value["approval"];
@@ -78,7 +78,7 @@ describe("mcp --confirm-url", () => {
       node.lie = lie;
       const wires = h.wires.length;
       for (const args of [release, { ...release, approval, send: true }]) {
-        const refused = await call(client, "wallet_attest", args);
+        const refused = await call(client, "wallet_attest", { ...UNJUDGED, ...args });
         expect(refused, field).toMatchObject({ error: true, value: { code: "ConfirmMismatch", retryable: SERVER_PROBLEMS.ConfirmMismatch.retryable } });
         if (field === "second node") {
           expect(refused.value["hint"]).toBe(SECOND_NODE_UNREAD);
@@ -93,7 +93,7 @@ describe("mcp --confirm-url", () => {
       expect(status()).toBe(IntentStatus.Open);
     }
     node.lie = {};
-    const sent = await call(client, "wallet_attest", { ...release, approval, send: true });
+    const sent = await call(client, "wallet_attest", { ...UNJUDGED, ...release, approval, send: true });
     expect(sent.error, JSON.stringify(sent.value)).toBe(false);
     expect(sent.value).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(status()).toBe(IntentStatus.Filled);
@@ -102,9 +102,9 @@ describe("mcp --confirm-url", () => {
   it("releases on one node, as today, without the flag", async () => {
     const { node, client, release, status } = await escrowed([]);
     node.lie = { down: true };
-    const shown = await call(client, "wallet_attest", release);
+    const shown = await call(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
-    const sent = await call(client, "wallet_attest", { ...release, approval: shown.value["approval"], send: true });
+    const sent = await call(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown.value["approval"], send: true });
     expect(sent.value).toMatchObject({ sent: true });
     expect(node.reads).toBe(0);
     expect(status()).toBe(IntentStatus.Filled);

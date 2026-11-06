@@ -18,7 +18,7 @@ import { jobClosed } from "../src/sealed-commands.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -86,13 +86,13 @@ describe("an invite-only job through MCP", () => {
     const release = { owner, nonce: escrow.value["nonce"] };
     const copied = sha("stranger's work");
     await announced(intent, strangerKey, copied, "https://" + "example.org/stranger.mjs");
-    expect(await call(client, "wallet_attest", { ...release, delivered_sha256: copied })).toEqual({
+    expect(await call(client, "wallet_attest", { ...UNJUDGED, ...release, delivered_sha256: copied })).toEqual({
       error: true,
       value: { code: "NotInvited", retryable: SERVER_PROBLEMS.NotInvited.retryable, hint: notInvited(stranger, intent) },
     });
     const work = sha(COUNT);
     await announced(intent, workerKey, work, "https://" + "example.org/count.mjs");
-    const shown = await call(client, "wallet_attest", { ...release, delivered_sha256: work });
+    const shown = await call(client, "wallet_attest", { ...UNJUDGED, ...release, delivered_sha256: work });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(shown.value).toMatchObject({ intent, pay_to: worker, sent: false });
   });

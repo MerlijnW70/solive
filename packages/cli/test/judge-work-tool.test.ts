@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, getBase58Decoder, lamports, none } from "@solana/kit";
@@ -21,6 +22,7 @@ import { EXIT_OK, main } from "../src/main.js";
 import { DOMAIN, h, runtime, world } from "./harness.js";
 import { approved } from "./approved.js";
 import { guideOf } from "./served-texts.js";
+import { receiptsDir } from "../src/judge-receipt.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -99,6 +101,8 @@ describe("wallet_judge_work", () => {
   let judge: Client;
   let worker: Client;
   let judgeWallet: Address;
+  let judgeHome: string;
+  const receipts = () => (existsSync(receiptsDir(judgeHome)) ? readdirSync(receiptsDir(judgeHome)).filter((name) => name.endsWith(".json")) : []);
   let workerWallet: Address;
 
   beforeEach(async () => {
@@ -106,9 +110,10 @@ describe("wallet_judge_work", () => {
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
     h.through = svmTransport(h.svm, { genesisHash: getBase58Decoder().decode(DOMAIN) });
-    judge = await server("/home/judge");
+    judgeHome = mkdtempSync(join(tmpdir(), "judge-home-"));
+    judge = await server(judgeHome);
     judgeWallet = (await ok(judge, "wallet_setup"))["address"] as Address;
-    worker = await server("/home/worker");
+    worker = await server(mkdtempSync(join(tmpdir(), "worker-home-")));
     workerWallet = (await ok(worker, "wallet_setup"))["address"] as Address;
     h.watched.push(judgeWallet);
   });
@@ -139,7 +144,9 @@ describe("wallet_judge_work", () => {
       host: { total: 13, passed: 13, failures: [] },
       sent: false,
       next: JUDGED_PASS,
+      receipt: expect.stringContaining(receiptsDir(judgeHome)),
     });
+    expect(receipts()).toHaveLength(1);
     expect(lamportsOf(judgeWallet)).toBe(before);
     expect(status(intent)).toBe(IntentStatus.Open);
     const attested = await ok(judge, "wallet_attest", await approved(judge, "wallet_attest", { owner: judgeWallet, nonce, delivered_sha256: judged["sha256"] }));
@@ -148,13 +155,17 @@ describe("wallet_judge_work", () => {
   }, 120_000);
 
   it("fails a wrong solution, names its failed cases in both engines and sends nothing", async () => {
-    const { intent } = await delivered(SPEC, WRONG);
+    const { intent, nonce } = await delivered(SPEC, WRONG);
     const before = lamportsOf(judgeWallet);
     const judged = await ok(judge, "wallet_judge_work", { intent });
     expect(judged).toMatchObject({ verdict: "fail", sha256: sha(WRONG), sent: false, next: JUDGED_FAIL });
     expect(judged["cases"]["passed"]).toBeLessThan(13);
     expect(judged["host"]["passed"]).toBeLessThan(13);
     expect(judged["cases"]["failures"][0]).toMatchObject({ case: 2, verdict: "wrong", detail: "Buzz" });
+    expect(judged).not.toHaveProperty("receipt");
+    expect(receipts()).toEqual([]);
+    const attest = await judge.callTool({ name: tool("wallet_attest"), arguments: { owner: judgeWallet, nonce, delivered_sha256: sha(WRONG) } });
+    expect([attest.isError, (attest.structuredContent as Json)["code"]]).toEqual([true, "NoJudgeReceipt"]);
     expect(lamportsOf(judgeWallet)).toBe(before);
     expect(status(intent)).toBe(IntentStatus.Open);
   }, 120_000);
@@ -167,7 +178,9 @@ describe("wallet_judge_work", () => {
       expect(judged, mark.slice(0, 40)).toMatchObject({ verdict: "infra", sent: false, next: JUDGED_INFRA });
       expect(String(judged["reason"])).toContain("ended with exit code 9");
       expect(judged["next"]).not.toContain(tool("wallet_attest"));
+      expect(judged).not.toHaveProperty("receipt");
     }
+    expect(receipts()).toEqual([]);
     faults.marks.length = 0;
     const pending = new TextEncoder().encode(`if (typeof Intl !== "undefined") await new Promise(() => {});\n${new TextDecoder().decode(SOLUTION)}`);
     const { intent: unsettled } = await delivered(SPEC, pending);

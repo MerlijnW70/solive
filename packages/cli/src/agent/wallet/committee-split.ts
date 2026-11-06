@@ -17,7 +17,8 @@ import { TOKEN_NAMES } from "../../tokens.js";
 import { PREVIEW_APPROVAL_NEXT, sent, sha256Of, walletOpeners, type WalletSigner } from "./guard.js";
 import { firstOpeningFor, skippedField } from "./openings.js";
 import { confirmedRelease } from "./delivery.js";
-import { approvalOf, invitedPayees, RELEASE_CHANGED, settleRefused } from "./attest.js";
+import { approvalOf, invitedPayees, RELEASE_CHANGED, settleRefused, walletAuthority } from "./attest.js";
+import { boundApproval, recorded } from "../../receipt-gate.js";
 import {
   checkedShares,
   committeeFees,
@@ -54,7 +55,7 @@ export const SETUP_FIRST = "this Ledger send creates the token accounts only, on
 
 export const hex = (bytes: Uint8Array) => getBase16Decoder().decode(bytes).toLowerCase();
 
-export type BallotArgs = { owner: Address; nonce: bigint; result: bigint; delivered_sha256: string };
+export type BallotArgs = { owner: Address; nonce: bigint; result: bigint; delivered_sha256: string; without_receipt?: string | undefined };
 
 export async function memberOnly(ctx: AgentContext, intent: Address, judge: Address): Promise<void> {
   const held = await intentAt(ctx.transport, intent);
@@ -84,6 +85,8 @@ export async function splitBallotOf(ctx: AgentContext, input: BallotArgs, signer
   if (committee === null) {
     throw new AgentRefusal("KindMismatch", SINGLE_JUDGED);
   }
+  const at = { owner: input.owner, nonce: input.nonce, intent, deliveredSha256: delivered, announcement: opening.announcement };
+  const authority = voting ? await walletAuthority(ctx, at, [signer.address], input.without_receipt) : undefined;
   await invitedPayees(ctx, intent, wallets);
   await confirmedRelease(ctx, { intent, attestor: committee.address, sha256: delivered, payees: wallets, keypair: await walletOpeners(ctx) });
   const held = await intentAt(ctx.transport, intent);
@@ -111,8 +114,9 @@ export async function splitBallotOf(ctx: AgentContext, input: BallotArgs, signer
     envelope: hex(ballot.message),
     paid: paidShares(preview, shares, token.decimals),
     ...skippedField(skipped),
+    ...recorded(authority),
   };
-  return { target, ballot, committee, shares, wallets, summary, shown, settle, token, preview };
+  return { target, ballot, committee, shares, wallets, summary, shown, settle, token, preview, authority, at };
 }
 
 export const releaseApproval = (digest: Uint8Array, setup: readonly string[]) =>
@@ -133,11 +137,11 @@ export const votesOf = (votes: readonly { member: Address; signature: string }[]
   });
 
 export async function splitVote(ctx: AgentContext, input: BallotArgs & { approval?: string | undefined; send?: boolean | undefined }, signer: WalletSigner, recipients: readonly { wallet: Address; weight: number }[]): Promise<Record<string, unknown>> {
-  const { ballot, committee, summary, shown } = await splitBallotOf(ctx, input, signer, recipients, true);
+  const { ballot, committee, summary, shown, authority } = await splitBallotOf(ctx, input, signer, recipients, true);
   if (!committee.members.includes(signer.address)) {
     throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
   }
-  const approval = approvalOf(ballot.message);
+  const approval = boundApproval(approvalOf(ballot.message), authority);
   const view = { ...shown, approval, summary };
   if (input.send !== true) {
     return { ...view, signed: false, next: SPLIT_VOTE_NEXT };
@@ -164,12 +168,13 @@ export const sigRefused = (error: unknown): never => {
 };
 
 export async function splitRelease(ctx: AgentContext, input: SplitReleaseArgs, signer: WalletSigner, call: Call): Promise<Record<string, unknown>> {
-  const { target, ballot, committee, shares, summary, shown, settle, token, preview } = await splitBallotOf(ctx, input, signer, input.recipients, false);
+  const { target, ballot, committee, shares, summary, shown, settle, token, preview, at } = await splitBallotOf(ctx, input, signer, input.recipients, false);
   const votes = votesOf(input.votes);
   const voted = (wallet: Address) => input.votes.find(({ member }) => member === wallet)?.signature;
   const given = input.recipients.map((r) => ({ wallet: r.wallet, signature: r.signature ?? voted(r.wallet) }));
   const unsigned = (r: { wallet: Address; signature?: string | undefined }) => r.wallet === signer.address && r.signature === undefined;
   const selfSigns = given.some(unsigned);
+  const authority = selfSigns && committee.members.includes(signer.address) ? await walletAuthority(ctx, at, [signer.address], input.without_receipt) : undefined;
   const others = await coSignatures(signer, given.filter((r) => !unsigned(r)), ballot.message, COSIGN_NEEDED, true);
   const { needed } = await splitQuorum(ballot, votes).catch(sigRefused);
   await checkCosigns(ballot, others).catch(sigRefused);
@@ -179,7 +184,7 @@ export async function splitRelease(ctx: AgentContext, input: SplitReleaseArgs, s
   const signFirst = device && selfSigns;
   const setupFirst = device && !selfSigns && preview.setup.length > 0;
   const setup = preview.setup.length === 0 ? [] : [`${await setupLine(ctx, preview.setup.length, token.tokenProgram, false)}, in its own transaction before the release`];
-  const approval = releaseApproval(ballot.message, [...setup, input.lookup_table ?? ""]);
+  const approval = boundApproval(releaseApproval(ballot.message, [...setup, input.lookup_table ?? ""]), authority);
   if (input.send === true && input.approval !== approval) {
     throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
   }
@@ -194,6 +199,7 @@ export async function splitRelease(ctx: AgentContext, input: SplitReleaseArgs, s
   const size = await sizeOf(ctx, plan?.instructions ?? estimate, signer.address, tables);
   const view = {
     ...shown,
+    ...recorded(authority),
     signers: voters,
     approval,
     lookup_accounts: lookupAccountsOf(settle, token.tokenProgram, signer.address),

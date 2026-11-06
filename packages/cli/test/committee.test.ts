@@ -143,12 +143,15 @@ describe("intent-engine committee", () => {
     const other = "ef".repeat(32);
     await announced(p.intent, await keyed(), other, "https://" + "example.org/other.mjs");
     const base = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1"];
+    const unjudged = await cli([...base, "--keypair", "m0.json", "--sha256", sha(CORRECT)], p.keys);
+    expect([unjudged.code, unjudged.err]).toEqual([EXIT_FAILED, expect.stringContaining("no judge receipt on this machine")]);
+    await cli(p.judging("m0.json", join(p.dir, "judged.json")), p.keys);
     const unsigned = await cli([...base, "--keypair", "m0.json", "--sha256", sha(CORRECT)], p.keys);
     expect(unsigned.json()).toMatchObject({ intent: p.intent, announcement: p.made.announcement, signed: false, next: VOTE_NOT_SIGNED });
     const a = join(p.dir, "a.json");
     const b = join(p.dir, "b.json");
     await cli([...base, "--keypair", "m0.json", "--sha256", sha(CORRECT), "--out", a, "--yes"], p.keys);
-    await cli([...base, "--keypair", "m1.json", "--sha256", other, "--out", b, "--yes"], p.keys);
+    await cli([...base, "--keypair", "m1.json", "--sha256", other, "--out", b, "--without-receipt", "no work under this sha256 can be fetched", "--yes"], p.keys);
     expect(JSON.parse(await readFile(a, "utf8"))).toMatchObject({ kind: "committee-vote", member: p.keys["m0.json"]?.address, announcement: p.made.announcement });
     const split = await cli(["committee", "release", "--keypair", "solver.json", "--vote", a, "--vote", b], p.keys);
     expect(split.code).toBe(EXIT_FAILED);
@@ -165,6 +168,9 @@ describe("intent-engine committee", () => {
     const p = await panel(CORRECT);
     const base = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1", "--sha256", sha(CORRECT), "--yes"];
     const files = [join(p.dir, "a.json"), join(p.dir, "b.json")];
+    for (const member of ["m0.json", "m1.json"]) {
+      await cli(p.judging(member, join(p.dir, `${member}.verdict`)), p.keys);
+    }
     for (const [member, file] of [["m0.json", files[0] ?? ""], ["m1.json", files[1] ?? ""]] as const) {
       const voted = await cli([...base, "--keypair", member, "--out", file], p.keys);
       expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
@@ -175,6 +181,52 @@ describe("intent-engine committee", () => {
     expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(p.status()).toBe(IntentStatus.Filled);
     expect(await p.paid(p.worker.address)).toBeGreaterThan(0n);
+  });
+});
+
+describe("intent-engine committee without a judge receipt", () => {
+  it("refuses a vote for work its member did not judge here, signs it with the override, printed and recorded, and a wallet outside the committee relays the votes with no receipt", async () => {
+    const p = await panel(CORRECT);
+    const vote = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1", "--sha256", sha(CORRECT), "--yes"];
+    const files = [join(p.dir, "a.json"), join(p.dir, "b.json")];
+    const refused = await cli([...vote, "--keypair", "m0.json", "--out", files[0] ?? ""], p.keys);
+    expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
+    expect(refused.err).toContain("--without-receipt <reason>");
+    await expect(readFile(files[0] ?? "", "utf8")).rejects.toThrow();
+    const empty = await cli([...vote, "--keypair", "m0.json", "--without-receipt", " "], p.keys);
+    expect(empty.code).toBe(EXIT_USAGE);
+    const voted = await cli([...vote, "--keypair", "m0.json", "--out", files[0] ?? "", "--without-receipt", "judged on the member's own machine"], p.keys);
+    const unchecked = voted.json()["unchecked"] as { reason: string; warning: string };
+    expect([voted.code, voted.err, unchecked.reason]).toEqual([EXIT_OK, `WARNING: ${unchecked.warning}`, "judged on the member's own machine"]);
+    await cli(p.judging("m2.json", join(p.dir, "m2.verdict")), p.keys);
+    const other = await cli([...vote, "--keypair", "m1.json", "--out", files[1] ?? ""], p.keys);
+    expect([other.code, other.err]).toEqual([EXIT_FAILED, expect.stringContaining("no judge receipt on this machine")]);
+    await cli(p.judging("m1.json", join(p.dir, "m1.verdict")), p.keys);
+    const judged = await cli([...vote, "--keypair", "m1.json", "--out", files[1] ?? ""], p.keys);
+    expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
+    expect(judged.json()).not.toHaveProperty("unchecked");
+    const release = ["committee", "release", "--keypair", "solver.json", ...files.flatMap((file) => ["--vote", file]), "--yes"];
+    expect((await cli([...release, "--without-receipt", "a reason"], p.keys)).code).toBe(EXIT_USAGE);
+    const sent = await cli(release, p.keys);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(sent.json()).toMatchObject({ sent: true });
+    expect(sent.json()).not.toHaveProperty("unchecked");
+    expect(p.status()).toBe(IntentStatus.Filled);
+  });
+
+  it("saves a receipt from a member's passing judge run that its later vote and release use, and none from a failing one", async () => {
+    const wrong = await panel(WRONG);
+    await cli(wrong.judging("m0.json", join(wrong.dir, "fail.json")), wrong.keys);
+    const after = await cli(["committee", "vote", "--keypair", "m0.json", "--owner", wrong.w.owner.address, "--nonce", "0", "--result", "1", "--sha256", sha(WRONG)], wrong.keys);
+    expect(after.code).toBe(EXIT_FAILED);
+    expect(after.err).toContain("no judge receipt on this machine");
+    const p = await panel(CORRECT);
+    const judged = await cli(p.judging("m1.json", join(p.dir, "m1.verdict")), p.keys);
+    expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
+    expect(judged.json()).not.toHaveProperty("receiptRefused");
+    const voted = await cli(["committee", "vote", "--keypair", "m1.json", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1", "--sha256", sha(CORRECT)], p.keys);
+    expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
+    expect(voted.json()).not.toHaveProperty("unchecked");
   });
 });
 

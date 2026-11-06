@@ -18,7 +18,7 @@ import { announced, keyed } from "./announce.js";
 import { NO_BOOK } from "../src/agent/wallet/openings.js";
 import { PAY_TO_NEEDED } from "../src/agent/wallet.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 describe("the wallet server's escrows", () => {
   let client: Client;
@@ -39,14 +39,14 @@ describe("the wallet server's escrows", () => {
     const nonce = escrow["nonce"] as string;
     expect(h.svm.getAccount(intent).exists).toBe(true);
     const release = { owner, nonce, pay_to: worker };
-    expect((await call(client, "wallet_attest", { ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "result" }] });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "result" }] });
     h.simulated.length = 0;
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown).toMatchObject({ sent: false, next: PREVIEW_APPROVAL_NEXT });
     expect(h.simulated).toEqual([]);
     expect(shown["summary"][0]).toContain(WRAPPED);
     const wrapped = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    expect((await call(client, "wallet_attest", { ...release, pay_to: wrapped })).value).toMatchObject({
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, pay_to: wrapped })).value).toMatchObject({
       code: "InvalidInput",
       issues: [{ path: "pay_to", message: TOKEN_ACCOUNT_RECIPIENT }],
     });
@@ -58,37 +58,37 @@ describe("the wallet server's escrows", () => {
     expect(shown["summary"]).toContain(`Setup: creates the engine treasury's SOL account for the fee, paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`);
     expect(JSON.stringify(shown)).not.toMatch(/transaction/);
     expect(h.svm.getAccount(payee).exists).toBe(false);
-    expect((await call(client, "wallet_attest", { ...release, pay_to: intent })).value).toMatchObject({
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, pay_to: intent })).value).toMatchObject({
       code: "InvalidInput",
       issues: [{ path: "pay_to", message: notAWallet(INTENT_ENGINE_PROGRAM_ADDRESS) }],
     });
     const changed = { code: "ReleaseChanged", hint: RELEASE_CHANGED };
-    expect((await call(client, "wallet_attest", { ...release, result: "2", send: true })).value).toMatchObject(changed);
-    expect((await call(client, "wallet_attest", { ...release, result: "2", approval: shown["approval"], send: true })).value).toMatchObject(changed);
-    const second = await ok(client, "wallet_attest", { ...release, result: "2" });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, result: "2", send: true })).value).toMatchObject(changed);
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, result: "2", approval: shown["approval"], send: true })).value).toMatchObject(changed);
+    const second = await ok(client, "wallet_attest", { ...UNJUDGED, ...release, result: "2" });
     expect(second["approval"]).toMatch(/^[0-9a-f]{16}$/);
     expect(second["approval"]).not.toBe(shown["approval"]);
     expect(second).not.toHaveProperty("delivered_sha256");
-    expect((await call(client, "wallet_attest", { ...release, result: "1", approval: second["approval"], send: true })).value).toMatchObject(changed);
-    expect((await call(client, "wallet_attest", { owner, nonce })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "pay_to", message: PAY_TO_NEEDED }] });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, result: "1", approval: second["approval"], send: true })).value).toMatchObject(changed);
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "pay_to", message: PAY_TO_NEEDED }] });
     expect(h.svm.getAccount(payee).exists).toBe(false);
-    expect(await ok(client, "wallet_attest", { ...release, result: "2", approval: second["approval"], send: true })).toMatchObject({
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release, result: "2", approval: second["approval"], send: true })).toMatchObject({
       sent: true,
       signature: expect.any(String),
     });
     expect(balance(payee)).toBe(net);
-    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "InvalidTransition" });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release })).value).toMatchObject({ code: "InvalidTransition" });
     const other = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: stranger }));
-    expect((await call(client, "wallet_attest", { owner, nonce: other["nonce"], pay_to: worker, send: true })).value).toMatchObject({
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce: other["nonce"], pay_to: worker, send: true })).value).toMatchObject({
       code: "Unauthorized",
       hint: notAttestor(stranger),
     });
-    expect((await call(client, "wallet_attest", { owner, nonce: "99", pay_to: worker })).value).toMatchObject({ code: "NotFound" });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce: "99", pay_to: worker })).value).toMatchObject({ code: "NotFound" });
     expect(await ok(client, "wallet_cancel", { nonce: other["nonce"], send: true })).toMatchObject({ sent: true });
     expect(h.svm.getAccount(other["intent"] as Address).exists).toBe(false);
     const brief = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: owner, expires_in: 60 }));
     setNow(h.svm.getClock().unixTimestamp + 3_600n);
-    expect((await call(client, "wallet_attest", { owner, nonce: brief["nonce"], pay_to: worker })).value).toMatchObject({ code: "IntentExpired" });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce: brief["nonce"], pay_to: worker })).value).toMatchObject({ code: "IntentExpired" });
   });
 
   it("escrows a proof intent that binds a spec, pays the first announcement that opens to the work and the judge out of the escrow", async () => {
@@ -116,19 +116,19 @@ describe("the wallet server's escrows", () => {
     }
     const work = "ab".repeat(32);
     const release = { owner, nonce, delivered_sha256: work };
-    expect((await call(client, "wallet_attest", { owner, nonce })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "delivered_sha256", message: DELIVERED_NEEDED }] });
-    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "NotAnnounced", hint: expect.stringContaining(NO_BOOK) });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "delivered_sha256", message: DELIVERED_NEEDED }] });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release })).value).toMatchObject({ code: "NotAnnounced", hint: expect.stringContaining(NO_BOOK) });
     const copier = await keyed();
     await announced(intent, copier, "cd".repeat(32));
     const worker = await keyed();
     const made = await announced(intent, worker, work);
-    expect((await call(client, "wallet_attest", { ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, work) });
-    expect((await call(client, "wallet_attest", { ...release, delivered_sha256: "ef".repeat(32) })).value).toMatchObject({ code: "NotAnnounced" });
-    const shown = await ok(client, "wallet_attest", { ...release, delivered_sha256: work.toUpperCase() });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, work) });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release, delivered_sha256: "ef".repeat(32) })).value).toMatchObject({ code: "NotAnnounced" });
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release, delivered_sha256: work.toUpperCase() });
     expect(shown).toMatchObject({ pay_to: worker.address, announcement: made.announcement, seq: "2", delivered_sha256: work, sent: false });
     expect(shown["warnings"]).toEqual([WARN_PROOF]);
     expect(shown["summary"]).toEqual(expect.arrayContaining([expect.stringContaining("Pays the judge"), expect.stringContaining(`Binds: the result to the committed spec ${specHash}`)]));
-    const settled = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
+    const settled = await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true });
     const judgeFee = LAMPORTS_PER_SOL / 1_000n;
     const { fee } = splitFee(LAMPORTS_PER_SOL / 20n - judgeFee, FEE_BPS);
     expect(settled["paid"]).toBe(formatAmount(LAMPORTS_PER_SOL / 20n - judgeFee - fee, 9));
@@ -182,9 +182,9 @@ describe("the wallet server's escrows", () => {
       expect.objectContaining({ kind: "attested", amount_in: String(LAMPORTS_PER_SOL / 100n), attestor: owner }),
     ]);
     const release = { owner, nonce: "0", pay_to: worker };
-    const shown = await ok(client, "wallet_attest", release);
-    expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
-    expect((await call(client, "wallet_attest", { owner, nonce: "1", pay_to: worker })).value).toMatchObject({ code: "Unauthorized" });
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce: "1", pay_to: worker })).value).toMatchObject({ code: "Unauthorized" });
     expect(await ok(client, "wallet_cancel", { nonce: "2", send: true })).toMatchObject({ sent: true });
     const left = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
     expect(left.map((intent) => [intent["nonce"], intent["status"]])).toEqual([

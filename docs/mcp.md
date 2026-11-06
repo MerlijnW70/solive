@@ -6,7 +6,9 @@ With `--wallet` the server serves the everyday tools, the committee and profile 
 
 ## How a job works
 
-A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`, runs the spec's check, and only on a pass pays with `solive_wallet_attest`, or, as a committee, votes with `solive_wallet_committee_vote`.
+A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`, runs the spec's check with `solive_wallet_judge_work` or the CLI command `judge`, and only on a pass pays with `solive_wallet_attest`, or, as a committee, votes with `solive_wallet_committee_vote`.
+
+A signature needs a passing run. `solive_wallet_judge_work` and `judge` save a receipt on each pass, and `solive_wallet_attest`, `solive_wallet_attest_split` and `solive_wallet_committee_vote` sign for a proof escrow only with a matching one; otherwise they refuse with `NoJudgeReceipt`. `solive_wallet_committee_release` relays votes without a receipt, except a member's own co-author signature. The override is `without_receipt`, a non-empty reason: the output records it as `unchecked` with a warning, and the preview's `approval` binds it. See [Judge work](judge.md#a-signature-needs-a-passing-run).
 
 The previews of `solive_wallet_attest` and `solive_wallet_attest_split` check each fee account the way the program does. `fee` counts the fees the release pays, the judge's included. `withheld` counts fees whose account cannot receive them, for example one that is frozen, has a CPI guard or now belongs to another owner. Those stay in the escrow and go to its owner when it closes. `fees` lists each fee, its account, and whether it is paid.
 
@@ -79,9 +81,9 @@ The server without a wallet holds no keys, so it has `solive_prepare_deliver` in
 
 ## Where a spec is uploaded
 
-After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
+After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per COST_STEP_BYTES of spec, the mirror's cost step in `services/specs/src/limits.ts`, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
 
-The preview says what will happen, a preview uploads nothing, and the upload adds up to 20 seconds to the send's answer. Its retries count against the mirror's rate limit.
+The preview says what will happen, a preview uploads nothing, and the upload adds up to SPEC_READ_MS, the budget in `packages/client/src/spec-sources.ts`, to the send's answer. Its retries count against the mirror's rate limit.
 
 - With `spec_url`, it uploads the bytes at that url when they hash to `spec_hash` and are not sealed.
 - With `spec_text`, a wrong hash is refused before anything is sent. It is uploaded unless `spec_url` is sealed or cannot be read.

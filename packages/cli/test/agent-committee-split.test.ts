@@ -11,7 +11,8 @@ import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { bytesOf, call, fresh, type Json, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
 import { balance, funded, h, HOME, transport } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
+import { judgedBy } from "./receipt-kit.js";
 
 const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
 const WEIGHTS = [6_000, 4_000];
@@ -56,19 +57,20 @@ describe("the wallet server's committee-judged split releases", () => {
     const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "5c".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const worker = await keyed();
-    await announced(intent, worker, work);
+    const made = await announced(intent, worker, work);
+    const at = { owner: lead, nonce: BigInt(escrow["nonce"] as string), intent, specSha256: "5c".repeat(32), deliveredSha256: work, announcement: made.announcement };
     const recipients = [
       { wallet: worker.address, weight: WEIGHTS[0] as number },
       { wallet: releaser ? lead : outsider ? coauthor.address : peer.address, weight: WEIGHTS[1] as number },
     ];
     const ballot = { owner: lead, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work, recipients };
     const restore = () => h.files.set(defaultWallet(HOME), leadKey);
-    return { lead, peer, coauthor, committee, intent, worker, recipients, ballot, restore };
+    return { lead, peer, coauthor, committee, intent, worker, recipients, ballot, restore, at };
   }
 
   const signedVote = async (ballot: object) => {
-    const shown = await ok(client, "wallet_committee_vote", ballot);
-    const signed = await ok(client, "wallet_committee_vote", { ...ballot, approval: shown["approval"], send: true });
+    const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const signed = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shown["approval"], send: true });
     return { shown, vote: signed["vote"] as { member: Address; signature: string } };
   };
 
@@ -82,7 +84,7 @@ describe("the wallet server's committee-judged split releases", () => {
     const { vote: peerVote } = await signedVote(s.ballot);
     expect(peerVote.member).toBe(s.peer.address);
     useKey(await funded());
-    expect((await call(client, "wallet_committee_vote", s.ballot)).value).toMatchObject({ code: "Unauthorized", hint: NOT_A_MEMBER });
+    expect((await call(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot })).value).toMatchObject({ code: "Unauthorized", hint: NOT_A_MEMBER });
     s.restore();
 
     const envelope = shown["envelope"] as string;
@@ -143,6 +145,10 @@ describe("the wallet server's committee-judged split releases", () => {
     s.restore();
     const recipients = [{ ...s.recipients[0], signature: await signedOver(s.worker, shown["envelope"] as string) }, { ...s.recipients[1] }];
     const base = { ...s.ballot, votes: [peerVote], recipients };
+    expect((await call(client, "wallet_committee_release", base)).value).toMatchObject({ code: "NoJudgeReceipt" });
+    await judgedBy([s.peer.address], s.at);
+    expect((await call(client, "wallet_committee_release", base)).value).toMatchObject({ code: "NoJudgeReceipt" });
+    await judgedBy([s.lead], s.at);
     const signing = vi.spyOn(globalThis.crypto.subtle, "sign");
     const preview = await ok(client, "wallet_committee_release", base);
     const signedBytes = () => signing.mock.calls.map((call) => Buffer.from(call[2] as ArrayBuffer).toString("hex"));
@@ -163,16 +169,16 @@ describe("the wallet server's committee-judged split releases", () => {
 
   it("refuses a split vote with a wrong or missing approval and signs nothing, then signs the same vote with the right one", async () => {
     const s = await committeeSplit("e5".repeat(32), false);
-    const shown = await ok(client, "wallet_committee_vote", s.ballot);
+    const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot });
     const envelope = shown["envelope"] as string;
     const signing = vi.spyOn(globalThis.crypto.subtle, "sign");
     const signedBytes = () => signing.mock.calls.map((entry) => Buffer.from(entry[2] as ArrayBuffer).toString("hex"));
     for (const approval of ["00".repeat(8), undefined]) {
-      const refused = await call(client, "wallet_committee_vote", { ...s.ballot, approval, send: true });
+      const refused = await call(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot, approval, send: true });
       expect(refused.value).toMatchObject({ code: "ReleaseChanged", hint: VOTE_CHANGED });
       expect(signedBytes()).not.toContain(envelope);
     }
-    const signed = await ok(client, "wallet_committee_vote", { ...s.ballot, approval: shown["approval"], send: true });
+    const signed = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot, approval: shown["approval"], send: true });
     expect(signed).toMatchObject({ signed: true, vote: { member: s.lead } });
     expect(signedBytes()).toContain(envelope);
     signing.mockRestore();
@@ -186,6 +192,6 @@ describe("the wallet server's committee-judged split releases", () => {
     const work = "e2".repeat(32);
     await announced(escrow["intent"] as Address, worker, work);
     const ballot = { owner, nonce: escrow["nonce"], result: "1", delivered_sha256: work, recipients: [{ wallet: worker.address, weight: 10_000 }] };
-    expect((await call(client, "wallet_committee_vote", ballot)).value).toMatchObject({ code: "KindMismatch", hint: SINGLE_JUDGED });
+    expect((await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot })).value).toMatchObject({ code: "KindMismatch", hint: SINGLE_JUDGED });
   });
 });

@@ -11,6 +11,7 @@ import { NOBODY_ANNOUNCED } from "../src/announcement-views.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced, griefed, keyed } from "./announce.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
+import { judgedBy } from "./receipt-kit.js";
 
 const WORK = createHash("sha256").update("the committee work").digest("hex");
 const OTHER = createHash("sha256").update("other work").digest("hex");
@@ -40,7 +41,8 @@ async function panel() {
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   const vote = (member: string, extra: string[] = []) => ["committee", "vote", "--keypair", member, "--owner", w.owner.address, "--nonce", "0", "--sha256", WORK, "--result", "1", ...extra];
   const first = `m${members.findIndex((m) => m.address === addresses[0])}.json`;
-  return { w, keys, committee, addresses, first, intent, vote, dir: await mkdtemp(join(tmpdir(), "kill-committee-")) };
+  const judged = (announcement: Address) => judgedBy(addresses, { owner: w.owner.address, nonce: 0n, intent, specSha256: "05".repeat(32), deliveredSha256: WORK, announcement });
+  return { w, keys, committee, addresses, first, intent, vote, judged, dir: await mkdtemp(join(tmpdir(), "kill-committee-")) };
 }
 
 describe("committee vote refusals", () => {
@@ -60,7 +62,7 @@ describe("committee vote refusals", () => {
 describe("committee vote output", () => {
   it("lists skipped announcements only when some were skipped, and names the file only when one was written", async () => {
     const p = await panel();
-    await announced(p.intent, await keyed(), WORK, url("work"));
+    await p.judged((await announced(p.intent, await keyed(), WORK, url("work"))).announcement);
     const clean = await cli(p.vote("m0.json"), p.keys);
     expect([clean.code, clean.err]).toStrictEqual([EXIT_OK, ""]);
     expect(clean.json()).not.toHaveProperty("skipped");
@@ -80,7 +82,7 @@ describe("committee vote output", () => {
     const p = await panel();
     await announced(p.intent, await keyed(), OTHER, url("other"));
     await griefed(p.intent, await keyed(), p.committee, p.addresses, WORK, true);
-    await announced(p.intent, await keyed(), WORK, url("work"));
+    await p.judged((await announced(p.intent, await keyed(), WORK, url("work"))).announcement);
     const preview = await cli(p.vote(p.first), p.keys);
     expect([preview.code, preview.err]).toStrictEqual([EXIT_OK, ""]);
     expect((preview.json()["skipped"] as unknown[]).length).toBeGreaterThan(0);
@@ -93,7 +95,7 @@ describe("committee vote output", () => {
 describe("committee release", () => {
   it("refuses votes whose escrow differs, or whose committee differs, from the one the release is for", async () => {
     const p = await panel();
-    await announced(p.intent, await keyed(), WORK, url("work"));
+    await p.judged((await announced(p.intent, await keyed(), WORK, url("work"))).announcement);
     const files: string[] = [];
     for (const member of ["m0.json", "m2.json"]) {
       const file = join(p.dir, `${member}.vote`);

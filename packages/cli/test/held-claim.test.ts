@@ -13,6 +13,7 @@ import { keyed } from "./announce.js";
 import { ata22, HELD_SHARE, HELD_WEIGHTS, heldEscrow, heldRelease, keyOf, otherAccount22 } from "./held-kit.js";
 import { willHold } from "../src/agent/wallet/split.js";
 import { balance, cli, DOMAIN, h, NOW, setNow, world } from "./harness.js";
+import { UNJUDGED } from "./approved.js";
 
 const WORK = "7e".repeat(32);
 const held = formatAmount(HELD_SHARE, 6);
@@ -112,7 +113,7 @@ describe("claiming a held split share", () => {
       { wallet: made.announcer.address, weight: HELD_WEIGHTS[0] },
       { wallet: coauthor.address, weight: HELD_WEIGHTS[1] },
     ];
-    const preview = await ok(client, "wallet_attest_split", { owner: made.owner.address, nonce: String(made.nonce), recipients, delivered_sha256: WORK });
+    const preview = await ok(client, "wallet_attest_split", { ...UNJUDGED, owner: made.owner.address, nonce: String(made.nonce), recipients, delivered_sha256: WORK });
     expect(preview["warnings"]).toContain(willHold([coauthor.address]));
   });
 });

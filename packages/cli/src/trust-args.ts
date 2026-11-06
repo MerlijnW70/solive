@@ -50,6 +50,19 @@ function membersOf(values: Values): Address[] {
   return members;
 }
 
+export const EMPTY_OVERRIDE = "--without-receipt needs a reason: a non-empty text saying why this signature needs no passing judge run";
+
+function withoutReceiptOf(values: Values): { withoutReceipt?: string } {
+  const reason = values["without-receipt"];
+  if (reason === undefined) {
+    return {};
+  }
+  if (reason.trim() === "") {
+    throw new UsageError(EMPTY_OVERRIDE);
+  }
+  return { withoutReceipt: reason };
+}
+
 export function committeeOf(sub: string | undefined, remote: Remote, values: Values): Command {
   switch (sub) {
     case "create": {
@@ -79,6 +92,7 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
         out: values.out,
         ...encryptionKeypairOf(values),
         ...splitOf(values),
+        ...withoutReceiptOf(values),
       };
     case "release":
       return {

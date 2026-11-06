@@ -13,7 +13,7 @@ import { SYNC_FIRST, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { keyed } from "./announce.js";
 import { balance, cli, DOMAIN, funded, h, runtime, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -94,7 +94,7 @@ describe("the wallet tools through a job on announcements", () => {
     expect(checked).toMatchObject({ complete: true, next_seq: "2", mine: [{ announcement: delivered["announcement"], seq: "1", state: "announced", earlier: 0 }] });
     const fetched = await ok(judge, "wallet_fetch_work", { intent });
     expect(fetched).toMatchObject({ sha256: WORK, opens_commitment: true, untrusted_text: WORK_TEXT, first: { announcement: delivered["announcement"], worker: workerWallet } });
-    const attested = await sent(judge, "wallet_attest", { owner: judgeWallet, nonce: escrow["nonce"], delivered_sha256: fetched["sha256"] });
+    const attested = await sent(judge, "wallet_attest", { ...UNJUDGED, owner: judgeWallet, nonce: escrow["nonce"], delivered_sha256: fetched["sha256"] });
     expect(attested).toMatchObject({ sent: true, pay_to: workerWallet, announcement: delivered["announcement"], seq: "1" });
     expect(await paid(workerWallet)).toBeGreaterThan(0n);
     const receipt = await ok(worker, "wallet_receipt", { owner: judgeWallet, nonce: escrow["nonce"], sha256: WORK });
@@ -119,7 +119,7 @@ describe("the wallet tools through a job on announcements", () => {
     const fetched = await ok(judge, "wallet_fetch_work", { intent });
     expect(fetched).toMatchObject({ sha256: WORK, first: { announcement: delivered["announcement"], worker: workerWallet } });
     const ballot = { owner: judgeWallet, nonce: escrow["nonce"], result: "1", delivered_sha256: WORK };
-    const voted = await sent(judge, "wallet_committee_vote", ballot);
+    const voted = await sent(judge, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
     expect(voted).toMatchObject({ signed: true, announcement: delivered["announcement"], worker: workerWallet, vote: { member: judgeWallet } });
     const client = createClient({ url: "http://cluster", transport: h.through ?? transport });
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: h.keypairs.get(other.address) });

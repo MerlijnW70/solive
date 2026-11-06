@@ -130,7 +130,23 @@ A file hashes as the SHA-256 of its bytes, so its name does not matter and any s
 
 ## MCP releases
 
-An MCP server started with `--wallet` lists the same announcements with `solive_wallet_check_delivery`, opens one and fetches its work with `solive_wallet_fetch_work`, which returns the first announcement that opens to the fetched sha256 with any it skipped, and releases with `solive_wallet_attest`, which needs `delivered_sha256` for a proof escrow and pays that first announcement, refusing as `judge` does. `solive_wallet_attest_split` pays a split whose recipients include that announcement's worker. Neither runs or fetches anything else, so run the check with `judge` or on your own. `solive_wallet_refute` and `solive_wallet_reclaim` wrap `refute` and `reclaim`.
+An MCP server started with `--wallet` lists the same announcements with `solive_wallet_check_delivery`, opens one and fetches its work with `solive_wallet_fetch_work`, which returns the first announcement that opens to the fetched sha256 with any it skipped, and releases with `solive_wallet_attest`, which needs `delivered_sha256` for a proof escrow and pays that first announcement, refusing as `judge` does. `solive_wallet_attest_split` pays a split whose recipients include that announcement's worker. Neither runs or fetches anything else, so run the check with `judge` or `solive_wallet_judge_work` first. `solive_wallet_refute` and `solive_wallet_reclaim` wrap `refute` and `reclaim`.
+
+## Receipts
+
+A signature needs a passing run. On every `pass`, and never on `fail` or `infra`, `judge` and `solive_wallet_judge_work` write a receipt with `packages/cli/src/judge-receipt.ts`. It records the cluster's genesis hash, the judge, the escrow's owner, nonce and intent, the spec's sha256, the work's sha256, the first announcement that opens to it, and the route: the sandbox, the command, the image, the `judge-run` block and the ViperJS pins.
+
+The receipt lives at `~/.config/intent-engine/receipts/<sha256>.json`, named by the sha256 of the cluster, judge, intent, announcement and work, so no path holds untrusted text. The directory is created with mode 0700 and each file with 0600, written to a temporary file and renamed into place. An HMAC-SHA256 under a 32-byte key in that directory, made once, seals each receipt.
+
+One gate, `packages/cli/src/receipt-gate.ts`, runs before any preview approval, Ledger prompt or send in `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_vote` and `committee vote`. It refuses a symbolic link, a file or directory owned by another user or open to other users, a receipt whose mac fails, an outcome other than `pass`, a field that differs from what is signed, and a ViperJS pin this CLI does not hold.
+
+A committee release signs only as fee payer: it relays votes each member's own gate passed, so it needs no receipt. In `solive_wallet_committee_release` a member that signs its own co-author share signs the vote's bytes, and the program counts that signature as a vote, so that one signature needs the member's own receipt; a co-author outside the committee needs none. `committee release` signs no share itself.
+
+`judge` signing its own fresh pass needs no receipt, so `judge --yes` signs as before. An attested escrow without a spec hash has no spec to judge and is not gated. `judge digest` signs nothing.
+
+The override, `--without-receipt <reason>` on `committee vote` or `without_receipt` over MCP, needs a non-empty reason. It is never read from a setting or the environment. The output records it as `unchecked`, with a warning naming the escrow, spec, work and announcement that were not checked; the CLI also prints that warning on stderr. Over MCP the reason changes the preview's `approval`, so a send cannot add or drop it.
+
+The work cannot plant a receipt from a Docker or ViperJS check, which never sees the home directory. A check run with `--sandbox none --i-trust-this-work` runs as you and can write one, as it can read your keypair.
 
 ## Committees
 

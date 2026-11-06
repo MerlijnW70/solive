@@ -24,6 +24,7 @@ import { creation, funded, h, NOW, runtime, transport, world } from "./harness.j
 import { device, deviceKey, found, type Key, messageThen, SIGN, TransportError, transactionThen } from "./ledger-device.js";
 import { paddedTransport } from "./pad-budget.js";
 import { airdropped } from "./airdrop.js";
+import { UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -172,7 +173,7 @@ describe("a Ledger wallet's kept previews and device", () => {
     const e = await escrow();
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger.open, e.payer);
-    const shown = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", delivered_sha256: WORK });
+    const shown = await call(client, "wallet_attest", { ...UNJUDGED, owner: e.owner, nonce: "0", delivered_sha256: WORK });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(shown.value).toMatchObject({ pay_to: e.worker, delivered_sha256: WORK, seq: "1", sent: false });
     expect(shown.value).not.toHaveProperty("recorded");
@@ -188,8 +189,8 @@ describe("a Ledger wallet's kept previews and device", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger.open);
     const ballot = { owner: e.owner, nonce: "0", result: "1", delivered_sha256: WORK };
-    const shown = await call(client, "wallet_committee_vote", ballot);
-    const voted = await call(client, "wallet_committee_vote", { ...ballot, approval: shown.value["approval"], send: true });
+    const shown = await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const voted = await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shown.value["approval"], send: true });
     expect(voted.error, JSON.stringify(voted.value)).toBe(false);
     const release = await call(client, "wallet_committee_release", { ...ballot, votes: [voted.value["vote"]] });
     expect(release.error, JSON.stringify(release.value)).toBe(false);
@@ -202,7 +203,7 @@ describe("a Ledger wallet's split release size", () => {
 
   async function cosigned(e: Escrow, client: Client) {
     const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK };
-    const shown = await call(client, "wallet_attest_split", split);
+    const shown = await call(client, "wallet_attest_split", { ...UNJUDGED, ...split });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown.value["envelope"])));
     const signature = Buffer.from(await signBytes(e.workerKey.keyPair.privateKey, envelope)).toString("hex");
@@ -214,7 +215,7 @@ describe("a Ledger wallet's split release size", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await walletServer(paddedTransport({ size: PACKET_DATA_SIZE }, engineIn), ledger.open, e.payer);
     h.wires.length = 0;
-    const sent = await call(client, "wallet_attest_split", await cosigned(e, client));
+    const sent = await call(client, "wallet_attest_split", { ...UNJUDGED, ...(await cosigned(e, client)) });
     expect(sent.error, JSON.stringify(sent.value)).toBe(false);
     expect(sent.value).toMatchObject({ sent: true });
     expect(h.wires).toHaveLength(2);
@@ -225,7 +226,7 @@ describe("a Ledger wallet's split release size", () => {
     const e = await escrow();
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await walletServer(paddedTransport({ size: 1_300 }, engineIn), ledger.open, e.payer);
-    const refused = await call(client, "wallet_attest_split", await cosigned(e, client));
+    const refused = await call(client, "wallet_attest_split", { ...UNJUDGED, ...(await cosigned(e, client)) });
     expect(refused).toMatchObject({ error: true, value: { code: "ReleaseTooLarge", hint: splitTooLarge(1_300, 1, false) } });
     expect(h.wires).toEqual([]);
   });

@@ -17,6 +17,8 @@ import { keyedProfile } from "./encryption-job.js";
 import { balance, creation, FEE_BPS, funded, h, NOW, runtime, transport, world } from "./harness.js";
 import { device, deviceKey, found, MESSAGE, messageThen, SIGN, transactionThen } from "./ledger-device.js";
 import { airdropped } from "./airdrop.js";
+import { UNJUDGED } from "./approved.js";
+import { judgedBy } from "./receipt-kit.js";
 
 type Json = Record<string, any>;
 
@@ -117,8 +119,8 @@ describe("a Ledger member's committee split over the wallet server", () => {
       { wallet: key.address, weight: WEIGHTS[1] as number },
     ];
     const ballot = { owner: w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK, recipients };
-    const shown = await ok(client, "wallet_committee_vote", ballot);
-    const voted = await ok(client, "wallet_committee_vote", { ...ballot, approval: shown["approval"], send: true });
+    const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const voted = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shown["approval"], send: true });
     expect(ledger.signed.map((s) => [s.kind, Buffer.from(s.bytes).toString("hex")])).toEqual([[MESSAGE, shown["envelope"]]]);
     const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown["envelope"])));
     const signature = Buffer.from(await signBytes(worker.keyPair.privateKey, envelope)).toString("hex");
@@ -155,6 +157,7 @@ describe("a Ledger member's committee split over the wallet server", () => {
     const params = { kind: Kind.AttestedResult, amountIn: PAY, minResult: 1n, maxResult: 1n, attestor: committee, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
     const { intent } = await client0.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
     const made = await announced(intent, worker, WORK);
+    await judgedBy([key.address], { owner: w.owner.address, nonce: 0n, intent, specSha256: "07".repeat(32), deliveredSha256: WORK, announcement: made.announcement });
     h.engineLog = [creation(intent), profile.entry];
     h.env[ENV_KEYPAIR] = PATH;
     const recipients = [
@@ -196,12 +199,12 @@ describe("a Ledger member's committee split over the wallet server", () => {
     const s = await scene(5);
     const ledger = device(s.key, [...found(LEVELS, s.key), ...messageThen()]);
     const client = await served(ledger.open);
-    const shown = await ok(client, "wallet_committee_vote", s.ballot);
+    const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot });
     for (const approval of ["00".repeat(8), undefined]) {
-      expect(await refused(client, "wallet_committee_vote", { ...s.ballot, approval, send: true })).toMatchObject({ code: "ReleaseChanged", hint: VOTE_CHANGED });
+      expect(await refused(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot, approval, send: true })).toMatchObject({ code: "ReleaseChanged", hint: VOTE_CHANGED });
       expect(ledger.signed).toEqual([]);
     }
-    const voted = await ok(client, "wallet_committee_vote", { ...s.ballot, approval: shown["approval"], send: true });
+    const voted = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot, approval: shown["approval"], send: true });
     expect(voted).toMatchObject({ signed: true, vote: { member: s.key.address } });
     ledger.store.ensureQueueEmpty();
     expect(ledger.signed.map((x) => [x.kind, Buffer.from(x.bytes).toString("hex")])).toEqual([[MESSAGE, shown["envelope"]]]);
@@ -213,7 +216,7 @@ describe("a Ledger member's committee split over the wallet server", () => {
       const ledger = device(s.key, [...found(LEVELS, s.key), ...messageThen()]);
       const client = await served(ledger.open);
       const recipients = [{ ...s.recipients[0], signature: await s.signedBy(s.worker) }, s.recipients[1]];
-      const good = { ...s.ballot, votes: [{ member: s.other.address, signature: await s.signedBy(s.other) }], recipients };
+      const good = { ...UNJUDGED, ...s.ballot, votes: [{ member: s.other.address, signature: await s.signedBy(s.other) }], recipients };
       const preview = await ok(client, "wallet_committee_release", good);
       expect(preview["summary"]).toContain(SIGN_FIRST);
       const bad = { ...good, votes: await votesOf(s) };

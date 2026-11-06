@@ -9,7 +9,7 @@ import { loadConfig } from "@intent-engine/client/internal";
 import { WRAPPED } from "../src/agent/create.js";
 import { call, closeAccount, connect, fresh, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 import { keyedProfile } from "./encryption-job.js";
 import { ata, cli, FEE_BPS, funded, h, mint, setNow, transport } from "./harness.js";
 import { deviceKey } from "./ledger-device.js";
@@ -86,9 +86,9 @@ describe("releasing an escrow as its attestor", () => {
     const { expiresAt } = getIntentDecoder().decode(held.data);
     const release = { owner: wallet, nonce: made["nonce"], pay_to: worker.address };
     setNow(expiresAt - 1n);
-    expect(await ok(client, "wallet_attest", release)).toMatchObject({ pay_to: worker.address, sent: false });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release })).toMatchObject({ pay_to: worker.address, sent: false });
     setNow(expiresAt);
-    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "IntentExpired" });
+    expect((await call(client, "wallet_attest", { ...UNJUDGED, ...release })).value).toMatchObject({ code: "IntentExpired" });
   });
 
   it("asks for the treasury account when a protocol fee is owed", async () => {
@@ -96,10 +96,10 @@ describe("releasing an escrow as its attestor", () => {
     const worker = await keyed();
     const large = await escrow({ amount: "0.05" });
     const full = { owner: wallet, nonce: large["nonce"], pay_to: worker.address };
-    const shown = await ok(client, "wallet_attest", full);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...full });
     expect(shown["fee"]).toBe(formatAmount(splitFee(50_000_000n, FEE_BPS).fee, 9));
     expect(JSON.stringify(shown["summary"])).toContain("engine treasury");
-    await ok(client, "wallet_attest", { ...full, approval: shown["approval"], send: true });
+    await ok(client, "wallet_attest", { ...UNJUDGED, ...full, approval: shown["approval"], send: true });
     expect(accountKeys(h.wires.at(-1) ?? "")).toContain(await treasuryAccount());
   });
 
@@ -108,10 +108,10 @@ describe("releasing an escrow as its attestor", () => {
     const worker = await keyed();
     const made = await escrow({ amount: "0.05" });
     const release = { owner: wallet, nonce: made["nonce"], pay_to: worker.address };
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown).toMatchObject({ fee: "0", paid: "0.05" });
     expect(JSON.stringify(shown["summary"])).not.toContain("engine treasury");
-    expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     expect(accountKeys(h.wires.at(-1) ?? "")).not.toContain(await treasuryAccount());
   });
 
@@ -123,9 +123,9 @@ describe("releasing an escrow as its attestor", () => {
     const paid = await escrow({ amount: "0.05", spec_hash: "5d".repeat(32), judge_fee: "0.001" });
     await announced(paid["intent"] as Address, worker, WORK);
     closeAccount(await walletAccount(wallet));
-    const shown = await ok(client, "wallet_attest", { owner: wallet, nonce: free["nonce"], delivered_sha256: WORK });
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, owner: wallet, nonce: free["nonce"], delivered_sha256: WORK });
     expect(JSON.stringify(shown["summary"])).not.toContain("judge fee");
-    const withFee = await ok(client, "wallet_attest", { owner: wallet, nonce: paid["nonce"], delivered_sha256: WORK });
+    const withFee = await ok(client, "wallet_attest", { ...UNJUDGED, owner: wallet, nonce: paid["nonce"], delivered_sha256: WORK });
     expect(withFee["summary"]).toContainEqual(expect.stringContaining("Pays the judge: 0.001 of SOL"));
     expect(withFee["summary"]).toContainEqual(expect.stringContaining("Setup: creates this wallet's SOL account for the judge fee"));
   });
@@ -138,7 +138,7 @@ describe("splitting a release among co-authors with a judge fee", () => {
     const recipients = coauthors.map((c) => ({ wallet: c.address, weight: 5_000 }));
     const made = await escrow({ amount, spec_hash: "61".repeat(32), judge_fee: judgeFee });
     await announced(made["intent"] as Address, coauthors[0], WORK);
-    return { wallet, shown: await ok(client, "wallet_attest_split", { owner: wallet, nonce: made["nonce"], recipients, delivered_sha256: WORK }) };
+    return { wallet, shown: await ok(client, "wallet_attest_split", { ...UNJUDGED, owner: wallet, nonce: made["nonce"], recipients, delivered_sha256: WORK }) };
   }
 
   it("takes the judge fee off before the protocol fee and counts it in the fee shown", async () => {
@@ -166,7 +166,7 @@ describe("splitting a release among co-authors with a judge fee", () => {
     const sdk = createClient({ url: "http://cluster", transport });
     const partnered = await sdk.createIntent({ signer: owner, params, inputMint: token, outputMint: other, partner, partnerBps: 40 });
     await announced(partnered.intent, coauthor, WORK);
-    const shown = await ok(client, "wallet_attest_split", { owner: owner.address, nonce: String(partnered.nonce), recipients, delivered_sha256: WORK });
+    const shown = await ok(client, "wallet_attest_split", { ...UNJUDGED, owner: owner.address, nonce: String(partnered.nonce), recipients, delivered_sha256: WORK });
     const partnerAccount = await findAssociatedTokenAddress({ owner: partner, mint: token, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(shown["lookup_accounts"]).toContain(partnerAccount);
     const held = h.svm.getAccount(partnered.intent);
@@ -179,7 +179,7 @@ describe("splitting a release among co-authors with a judge fee", () => {
     expect(shown["fee"]).toBe(formatAmount(fees.protocol + fees.partner, 6));
     const plain = await sdk.createIntent({ signer: owner, params, inputMint: token, outputMint: other });
     await announced(plain.intent, coauthor, WORK);
-    const bare = await ok(client, "wallet_attest_split", { owner: owner.address, nonce: String(plain.nonce), recipients, delivered_sha256: WORK });
+    const bare = await ok(client, "wallet_attest_split", { ...UNJUDGED, owner: owner.address, nonce: String(plain.nonce), recipients, delivered_sha256: WORK });
     const left = h.svm.getAccount(plain.intent);
     if (!left.exists) {
       throw new Error("the escrow was not created");

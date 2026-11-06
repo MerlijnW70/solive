@@ -187,6 +187,7 @@ export const OPTIONS = {
   committee: { type: "string" },
   vote: { type: "string", multiple: true },
   cosign: { type: "string", multiple: true },
+  "without-receipt": { type: "string" },
   worker: { type: "string" },
   reader: { type: "string" },
   seed: { type: "string", multiple: true },
@@ -413,6 +414,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "weights",
     "cosign",
     "lookup-table",
+    "without-receipt",
   ],
   claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs", "seq", "workers"],
   profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key", "out"],
@@ -471,7 +473,7 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
   committee: {
     create: ["url", "priority-fee", "keypair", "yes", "members", "threshold", "fee-wallet"],
     show: ["url", "committee"],
-    vote: ["url", "keypair", "yes", "owner", "nonce", "sha256", "encryption-keypair", "result", "out", "recipients", "weights"],
+    vote: ["url", "keypair", "yes", "owner", "nonce", "sha256", "encryption-keypair", "result", "out", "recipients", "weights", "without-receipt"],
     release: ["url", "priority-fee", "keypair", "yes", "vote", "cosign", "lookup-table", "confirm-url", "no-confirm-url"],
   },
   claims: {

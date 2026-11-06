@@ -19,7 +19,7 @@ import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cliWith, secondNode, SECOND } from "./confirm-node.js";
 import { ata, cli, funded, h, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -116,7 +116,7 @@ describe("a second node that cannot be read", () => {
     const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: createHash("sha256").update("spec").digest("hex") }));
     const intent = escrow["intent"] as Address;
     await announced(intent, await keyed(), WORK, URL_OF_WORK);
-    const refused = await call(client, "wallet_attest", { owner, nonce: escrow["nonce"], delivered_sha256: WORK });
+    const refused = await call(client, "wallet_attest", { ...UNJUDGED, owner, nonce: escrow["nonce"], delivered_sha256: WORK });
     expect(refused).toMatchObject({ error: true, value: { code: "ConfirmMismatch" } });
     expect(refused.value["hint"]).toBe(SECOND_NODE_UNREAD);
     expect(refused.value["untrustedDetail"]).toContain("bad node");
@@ -154,8 +154,8 @@ describe("a committee release from a key file", () => {
     }
     await announced(intent, worker, WORK, URL_OF_WORK);
     const ballot = { owner: wallet, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: WORK };
-    const preview = await ok(client, "wallet_committee_vote", ballot);
-    const own = (await ok(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const own = (await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const local = createClient({ url: "http://cluster", transport });
     const first = await local.firstOpening({ intent, sha256: WORK, keypair: h.keypairs.get(other.address) });
     const digest = await local.committeeBallot({ intent: { owner: wallet, nonce: BigInt(ballot.nonce) }, announcement: first.announcement, opening: first, result: 1n });

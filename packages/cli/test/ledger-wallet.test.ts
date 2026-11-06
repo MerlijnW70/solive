@@ -25,6 +25,8 @@ import { ata, balance, creation, funded, h, NOW, runtime, setNow, transport, wor
 const KEY_FILE = "judge.enc";
 import { type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen } from "./ledger-device.js";
 import { airdropped } from "./airdrop.js";
+import { UNJUDGED } from "./approved.js";
+import { judgedBy } from "./receipt-kit.js";
 
 type Json = Record<string, unknown>;
 
@@ -32,7 +34,7 @@ const PATH = "usb://ledger?key=2";
 const LEVELS = [44, 501, 2];
 const WORK = createHash("sha256").update("work").digest("hex");
 
-type Escrow = { key: Key; owner: Address; worker: Address; workerKey: KeyPairSigner; intent: Address; mint: Address; output: Address; authority: KeyPairSigner; payer: KeyPairSigner };
+type Escrow = { key: Key; owner: Address; announcement: Address; worker: Address; workerKey: KeyPairSigner; intent: Address; mint: Address; output: Address; authority: KeyPairSigner; payer: KeyPairSigner };
 
 async function escrow(attestorOf?: (key: Key) => Promise<Address>): Promise<Escrow> {
   const w = await world();
@@ -44,10 +46,10 @@ async function escrow(attestorOf?: (key: Key) => Promise<Address>): Promise<Escr
   const attestor = attestorOf === undefined ? key.address : await attestorOf(key);
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  await announced(intent, workerKey, WORK);
+  const made = await announced(intent, workerKey, WORK);
   h.engineLog = [creation(intent), profile.entry];
   h.env[ENV_KEYPAIR] = PATH;
-  return { key, owner: w.owner.address, worker, workerKey, intent, mint: w.inputMint, output: w.outputMint, authority: w.authority, payer: await funded() };
+  return { key, owner: w.owner.address, announcement: made.announcement, worker, workerKey, intent, mint: w.inputMint, output: w.outputMint, authority: w.authority, payer: await funded() };
 }
 
 async function served(ledger: Device, payer?: KeyPairSigner, opening = true): Promise<Client> {
@@ -103,10 +105,10 @@ describe("an MCP wallet on a Ledger", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger, e.payer);
     const release = { owner: e.owner, nonce: "0", delivered_sha256: WORK };
-    const shown = await call(client, "wallet_attest", release);
+    const shown = await call(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
-    const sent = await call(client, "wallet_attest", { ...release, approval: shown.value["approval"], send: true });
+    const sent = await call(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown.value["approval"], send: true });
     expect(sent.error, JSON.stringify(sent.value)).toBe(false);
     ledger.store.ensureQueueEmpty();
     expect(ledger.signed.map(({ kind, path }) => [kind, path])).toEqual([[MESSAGE, LEVELS]]);
@@ -119,11 +121,32 @@ describe("an MCP wallet on a Ledger", () => {
     expect(balance(await findAssociatedTokenAddress({ owner: e.worker, mint: e.mint, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBeGreaterThan(0n);
   });
 
+  it("asks the device nothing for a release without a judge receipt, and signs the one a matching receipt covers", async () => {
+    const e = await escrow();
+    const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
+    const client = await served(ledger, e.payer);
+    const release = { owner: e.owner, nonce: "0", delivered_sha256: WORK };
+    const refused = await call(client, "wallet_attest", release);
+    expect(refused).toMatchObject({ error: true, value: { code: "NoJudgeReceipt", hint: expect.stringContaining(tool("wallet_judge_work")) } });
+    const forged = await call(client, "wallet_attest", { ...release, approval: "0".repeat(16), send: true });
+    expect(forged).toMatchObject({ error: true, value: { code: "NoJudgeReceipt" } });
+    expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
+    await judgedBy([e.key.address], { owner: e.owner, nonce: 0n, intent: e.intent, specSha256: "07".repeat(32), deliveredSha256: WORK, announcement: e.announcement });
+    const shown = await call(client, "wallet_attest", release);
+    expect(shown.error, JSON.stringify(shown.value)).toBe(false);
+    expect(shown.value).not.toHaveProperty("unchecked");
+    const sent = await call(client, "wallet_attest", { ...release, approval: shown.value["approval"], send: true });
+    expect(sent.value).toMatchObject({ sent: true });
+    ledger.store.ensureQueueEmpty();
+    expect(ledger.signed.map(({ kind }) => kind)).toEqual([MESSAGE]);
+    expect(statusOf(e.intent)).toBe(IntentStatus.Filled);
+  });
+
   it("refuses a release without a fee payer, naming the option, and the option takes a key file with --wallet", async () => {
     const e = await escrow();
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger);
-    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", delivered_sha256: WORK });
+    const refused = await call(client, "wallet_attest", { ...UNJUDGED, owner: e.owner, nonce: "0", delivered_sha256: WORK });
     expect(refused).toMatchObject({ error: true, value: { code: "NoFeePayer", hint: NO_FEE_PAYER } });
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
     expect(() => parse(["mcp", "--url", "devnet", "--fee-payer", "payer.json"])).toThrow(FEE_PAYER_NEEDS_WALLET);
@@ -135,7 +158,7 @@ describe("an MCP wallet on a Ledger", () => {
     const e = await escrow();
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger, e.payer, false);
-    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", delivered_sha256: WORK });
+    const refused = await call(client, "wallet_attest", { ...UNJUDGED, owner: e.owner, nonce: "0", delivered_sha256: WORK });
     expect(refused).toMatchObject({ error: true, value: { code: "KeyNotGiven" } });
     expect(String(refused.value["hint"])).toContain(GIVE_KEY_SETTING);
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
@@ -151,8 +174,8 @@ describe("an MCP wallet on a Ledger", () => {
       const ledger = device(e.key, [...found(LEVELS, e.key), ...queue]);
       const client = await served(ledger, e.payer);
       const release = { owner: e.owner, nonce: "0", delivered_sha256: WORK };
-      const shown = await call(client, "wallet_attest", release);
-      const refused = await call(client, "wallet_attest", { ...release, approval: shown.value["approval"], send: true });
+      const shown = await call(client, "wallet_attest", { ...UNJUDGED, ...release });
+      const refused = await call(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown.value["approval"], send: true });
       expect(refused).toEqual({ error: true, value: { code: "Ledger", retryable: SERVER_PROBLEMS.Ledger.retryable, hint } });
       ledger.store.ensureQueueEmpty();
       expect(h.wires).toEqual([]);
@@ -165,17 +188,17 @@ describe("an MCP wallet on a Ledger", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger, e.payer);
     const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK };
-    const shown = await call(client, "wallet_attest_split", split);
+    const shown = await call(client, "wallet_attest_split", { ...UNJUDGED, ...split });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(ledger.signed).toEqual([]);
     const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown.value["envelope"])));
     expect(shown.value["digest"]).toBe(envelopeDigest(envelope));
     const signature = Buffer.from(await signBytes(e.workerKey.keyPair.privateKey, envelope)).toString("hex");
     const recipients = [{ wallet: e.worker, weight: 10_000, signature }];
-    const unpreviewed = await call(client, "wallet_attest_split", { ...split, recipients, send: true });
+    const unpreviewed = await call(client, "wallet_attest_split", { ...UNJUDGED, ...split, recipients, send: true });
     expect(unpreviewed).toMatchObject({ error: true, value: { code: "ReleaseChanged" } });
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
-    const sent = await call(client, "wallet_attest_split", { ...split, recipients, approval: shown.value["approval"], send: true });
+    const sent = await call(client, "wallet_attest_split", { ...UNJUDGED, ...split, recipients, approval: shown.value["approval"], send: true });
     expect(sent.error, JSON.stringify(sent.value)).toBe(false);
     ledger.store.ensureQueueEmpty();
     expect(kinds(ledger)).toEqual([MESSAGE]);
@@ -296,10 +319,10 @@ describe("an MCP wallet on a Ledger", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger);
     const ballot = { owner: e.owner, nonce: "0", result: "1", delivered_sha256: WORK };
-    const shown = await call(client, "wallet_committee_vote", ballot);
+    const shown = await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(ledger.signed).toEqual([]);
-    const voted = await call(client, "wallet_committee_vote", { ...ballot, approval: shown.value["approval"], send: true });
+    const voted = await call(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shown.value["approval"], send: true });
     expect(voted.error, JSON.stringify(voted.value)).toBe(false);
     ledger.store.ensureQueueEmpty();
     expect(kinds(ledger)).toEqual([MESSAGE]);

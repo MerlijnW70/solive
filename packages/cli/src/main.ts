@@ -153,6 +153,10 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (result !== null) {
       show(result);
     }
+    const unchecked = result !== null && "unchecked" in result ? (result as { unchecked?: { warning?: unknown } }).unchecked : undefined;
+    if (typeof unchecked?.warning === "string") {
+      io.err(`WARNING: ${unchecked.warning}`);
+    }
     if (PREVIEWED.has(command.name) && result !== null && "sent" in result && result.sent === false) {
       io.err(PREVIEW_ONLY);
     }

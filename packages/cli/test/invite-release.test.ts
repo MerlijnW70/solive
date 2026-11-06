@@ -17,7 +17,7 @@ import { notInvited } from "../src/invites.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced as made, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -114,11 +114,11 @@ describe("the shared invite check on every MCP release path", () => {
       { wallet: worker, weight: 5_000 },
       { wallet: stranger, weight: 5_000 },
     ];
-    expect(await call(s.client, "wallet_attest_split", { owner: s.w.owner.address, nonce: "0", recipients, delivered_sha256: WORK })).toEqual({
+    expect(await call(s.client, "wallet_attest_split", { ...UNJUDGED, owner: s.w.owner.address, nonce: "0", recipients, delivered_sha256: WORK })).toEqual({
       error: true,
       value: { code: "NotInvited", retryable: SERVER_PROBLEMS.NotInvited.retryable, hint: notInvited(stranger, intent) },
     });
-    const invited = await ok(s.client, "wallet_attest_split", { owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: worker, weight: 10_000 }], delivered_sha256: WORK });
+    const invited = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: worker, weight: 10_000 }], delivered_sha256: WORK });
     expect(invited).toMatchObject({ intent, sent: false });
   });
 
@@ -131,7 +131,7 @@ describe("the shared invite check on every MCP release path", () => {
     const intent = await post(s, committee, [...members, worker]);
     await announced(intent, strangerKey);
     const ballot = { owner: s.w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK };
-    expect(await call(s.client, "wallet_committee_vote", ballot)).toEqual({
+    expect(await call(s.client, "wallet_committee_vote", { ...UNJUDGED, ...ballot })).toEqual({
       error: true,
       value: { code: "NotInvited", retryable: SERVER_PROBLEMS.NotInvited.retryable, hint: notInvited(stranger, intent) },
     });
@@ -146,17 +146,17 @@ describe("the shared invite check on every MCP release path", () => {
     const intent = await post(s, s.wallet, [s.wallet, worker]);
     await announced(intent, strangerKey);
     const release = { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK };
-    expect(await call(s.client, "wallet_attest", release)).toMatchObject({ error: true, value: { code: "NotInvited" } });
+    expect(await call(s.client, "wallet_attest", { ...UNJUDGED, ...release })).toMatchObject({ error: true, value: { code: "NotInvited" } });
     h.specPages.delete(SPEC_URL);
-    const unread = await call(s.client, "wallet_attest", release);
+    const unread = await call(s.client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(unread).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true } });
     expect(unread.value["hint"]).toContain(UNCHECKED(intent));
     const split = { owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: stranger, weight: 10_000 }], delivered_sha256: WORK };
-    expect(await call(s.client, "wallet_attest_split", split)).toMatchObject({ error: true, value: { code: "SpecUnreadable" } });
+    expect(await call(s.client, "wallet_attest_split", { ...UNJUDGED, ...split })).toMatchObject({ error: true, value: { code: "SpecUnreadable" } });
     const big = await seal(encoded(`${SPEC}${"a".repeat(900_000)}`), [s.wallet, worker]);
     expect(big.length).toBeGreaterThan(1_048_576);
     h.specPages.set(SPEC_URL, big);
-    expect(await call(s.client, "wallet_attest", release)).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true } });
+    expect(await call(s.client, "wallet_attest", { ...UNJUDGED, ...release })).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true } });
   });
 
   it("refuses a committee vote while the sealed spec cannot be fetched", async () => {
@@ -167,7 +167,7 @@ describe("the shared invite check on every MCP release path", () => {
     const intent = await post(s, committee, [...members, worker.address]);
     await announced(intent, worker);
     h.specPages.clear();
-    const vote = await call(s.client, "wallet_committee_vote", { owner: s.w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK });
+    const vote = await call(s.client, "wallet_committee_vote", { ...UNJUDGED, owner: s.w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK });
     expect(vote).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true } });
   });
 });
@@ -179,10 +179,10 @@ describe("a release for work no announcement opens to", () => {
     const intent = await post(s, s.wallet, [s.wallet, worker.address]);
     await announced(intent, worker);
     const unbacked = "ab".repeat(32);
-    const refused = await call(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", delivered_sha256: unbacked });
+    const refused = await call(s.client, "wallet_attest", { ...UNJUDGED, owner: s.w.owner.address, nonce: "0", delivered_sha256: unbacked });
     expect(refused).toMatchObject({ error: true, value: { code: "NotAnnounced", retryable: false, hint: expect.stringContaining(`has no announcement that opens to the work ${unbacked}`) } });
     const split = { owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: worker.address, weight: 10_000 }], delivered_sha256: unbacked };
-    expect(await call(s.client, "wallet_attest_split", split)).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
+    expect(await call(s.client, "wallet_attest_split", { ...UNJUDGED, ...split })).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
     const members = sortMembers([s.wallet, address()]);
     const committee = await committeeOf(members);
     const escrow = await ok(s.client, "wallet_escrow", await approved(s.client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
@@ -190,7 +190,7 @@ describe("a release for work no announcement opens to", () => {
     h.engineLog = [{ ...creation(escrow["intent"] as Address), ...ownerSigned(escrow["intent"] as Address, [specMemo(SPEC_URL)]) }];
     await announced(escrow["intent"] as Address, worker);
     const ballot = { owner: s.wallet, nonce: escrow["nonce"], result: "1", delivered_sha256: unbacked };
-    expect(await call(s.client, "wallet_committee_vote", ballot)).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
+    expect(await call(s.client, "wallet_committee_vote", { ...UNJUDGED, ...ballot })).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
   });
 });
 
@@ -231,19 +231,20 @@ describe("the shared invite check on the command line", () => {
     await announced(intent, strangerKey, OTHER);
     await announced(intent, workerKey);
     const dir = await mkdtemp(join(tmpdir(), "invite-votes-"));
-    const base = ["committee", "vote", "--owner", w.owner.address, "--nonce", "0", "--result", "1"];
+    const base = ["committee", "vote", "--owner", w.owner.address, "--nonce", "0", "--result", "1", "--without-receipt", UNJUDGED.without_receipt];
     const outsider = await cli([...base, "--keypair", "m0.json", "--sha256", OTHER, "--yes"], keys);
     expect([outsider.code, outsider.err]).toEqual([EXIT_FAILED, notInvited(stranger, intent)]);
     const files = [join(dir, "a.json"), join(dir, "b.json")];
     for (const [member, file] of [["m0.json", files[0] ?? ""], ["m1.json", files[1] ?? ""]] as const) {
       const voted = await cli([...base, "--keypair", member, "--sha256", WORK, "--out", file, "--yes"], keys);
-      expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
+      expect([voted.code, voted.err]).toEqual([EXIT_OK, `WARNING: ${(voted.json()["unchecked"] as { warning: string }).warning}`]);
     }
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), members));
-    const release = await cli(["committee", "release", "--keypair", "solver.json", ...files.flatMap((file) => ["--vote", file]), "--yes"], keys);
+    const releasing = ["committee", "release", "--keypair", "solver.json", ...files.flatMap((file) => ["--vote", file]), "--yes"];
+    const release = await cli(releasing, keys);
     expect([release.code, release.err]).toEqual([EXIT_FAILED, notInvited(worker, intent)]);
     h.specPages.clear();
-    const unread = await cli(["committee", "release", "--keypair", "solver.json", ...files.flatMap((file) => ["--vote", file]), "--yes"], keys);
+    const unread = await cli(releasing, keys);
     expect(unread.code).toBe(EXIT_FAILED);
     expect(unread.err).toContain(UNCHECKED(intent));
   });

@@ -10,6 +10,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { ata, balance, cli, h, world } from "./harness.js";
+import { UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -80,7 +81,7 @@ describe("a single release's setup", () => {
   it("names the rent of every account it creates, the judge's own included", async () => {
     const s = await splitJob(["--judge-fee", "10"]);
     const worker = s.coauthor.address;
-    const shown = await ok(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK });
+    const shown = await ok(s.client, "wallet_attest", { ...UNJUDGED, owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK });
     const rent = `${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`;
     expect(shown["summary"]).toContain(`Setup: creates ${worker}'s ${s.w.inputMint} account, paid by this wallet: ${rent}`);
     expect(shown["summary"]).toContain(`Setup: creates this wallet's ${s.w.inputMint} account for the judge fee, paid by this wallet: ${rent}`);
@@ -91,13 +92,13 @@ describe("a split release's fees and setup", () => {
   it("covers a partner's fee in its bound, creates every missing account including the judge's, and says how many", async () => {
     const partner = (await generateKeyPairSigner()).address;
     const s = await splitJob(["--partner", partner, "--partner-bps", "50", "--judge-fee", "10"]);
-    const shown = await ok(s.client, "wallet_attest_split", s.split);
+    const shown = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split });
     expect(shown["summary"]).toContain(`Setup: creates 4 token account(s), paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent each, ${formatAmount(4n * h.svm.minimumBalanceForRentExemption(165n), 9)} SOL in all, in its own transaction before the release`);
     await ata(s.w.authority, s.coauthor.address, s.w.inputMint);
     await ata(s.w.authority, s.w.feeRecipient.address, s.w.inputMint);
-    const fewer = await ok(s.client, "wallet_attest_split", s.split);
+    const fewer = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split });
     expect(fewer["summary"]).toContain(`Setup: creates 2 token account(s), paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent each, ${formatAmount(2n * h.svm.minimumBalanceForRentExemption(165n), 9)} SOL in all, in its own transaction before the release`);
-    const sent = await ok(s.client, "wallet_attest_split", await s.signed(fewer));
+    const sent = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...(await s.signed(fewer)) });
     expect(sent).toMatchObject({ sent: true });
     expect(balance(await s.tokenOf(partner))).toBe(5n);
     expect(balance(await s.tokenOf(s.wallet))).toBe(10n);
@@ -110,9 +111,9 @@ describe("a split release's fees and setup", () => {
       expect([zero.code, zero.err]).toEqual([EXIT_OK, ""]);
     });
     await ata(s.w.authority, s.coauthor.address, s.w.inputMint);
-    const shown = await ok(s.client, "wallet_attest_split", s.split);
+    const shown = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split });
     expect((shown["summary"] as string[]).filter((line) => line.startsWith("Setup:"))).toEqual([]);
-    expect(await ok(s.client, "wallet_attest_split", await s.signed(shown))).toMatchObject({ sent: true });
+    expect(await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...(await s.signed(shown)) })).toMatchObject({ sent: true });
     expect(h.svm.getAccount(await s.tokenOf(s.w.feeRecipient.address)).exists).toBe(false);
     expect(h.svm.getAccount(await s.tokenOf(s.wallet)).exists).toBe(false);
   });

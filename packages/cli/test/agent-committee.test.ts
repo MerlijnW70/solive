@@ -12,7 +12,7 @@ import { announced, keyed } from "./announce.js";
 import { TOKEN_NAMES } from "../src/tokens.js";
 import { sol, tokenAccountRent } from "../src/agent/wallet/costs.js";
 import { ata, balance, cli, funded, h, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -97,15 +97,15 @@ describe("a wallet server on a committee", () => {
 
   it("votes after a preview, and releases once the threshold of votes is in", async () => {
     const e = await committeeEscrow(true);
-    expect((await call(client, "wallet_committee_vote", { ...e.ballot, delivered_sha256: "e8".repeat(32) })).value).toMatchObject({ code: "NotAnnounced" });
-    const preview = await ok(client, "wallet_committee_vote", e.ballot);
+    expect((await call(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot, delivered_sha256: "e8".repeat(32) })).value).toMatchObject({ code: "NotAnnounced" });
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot });
     expect(preview).toMatchObject({ intent: e.intent, committee: e.committee, announcement: e.made.announcement, worker: e.worker, signed: false });
     expect(preview).not.toHaveProperty("vote");
-    expect((await call(client, "wallet_committee_vote", { ...e.ballot, result: "1", send: true })).value).toMatchObject({
+    expect((await call(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot, result: "1", send: true })).value).toMatchObject({
       code: "ReleaseChanged",
       hint: VOTE_CHANGED,
     });
-    const voted = await ok(client, "wallet_committee_vote", { ...e.ballot, approval: preview["approval"], send: true });
+    const voted = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot, approval: preview["approval"], send: true });
     expect(voted).toMatchObject({ signed: true, vote: { member: e.wallet } });
     const own = voted["vote"] as { member: Address; signature: string };
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
@@ -135,8 +135,8 @@ describe("a wallet server on a committee", () => {
 
   it("previews the setup that creates the worker's token account and its rent, and refuses a send whose setup changed since", async () => {
     const e = await committeeEscrow(true);
-    const preview = await ok(client, "wallet_committee_vote", e.ballot);
-    const own = (await ok(client, "wallet_committee_vote", { ...e.ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
+    const preview = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot });
+    const own = (await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
       intent: { owner: e.wallet, nonce: BigInt(e.ballot.nonce) },
       announcement: e.made.announcement,
@@ -165,6 +165,6 @@ describe("a wallet server on a committee", () => {
 
   it("has no vote on a committee it does not sit on", async () => {
     const e = await committeeEscrow(false);
-    expect((await call(client, "wallet_committee_vote", e.ballot)).value).toMatchObject({ code: "Unauthorized", hint: NOT_A_MEMBER });
+    expect((await call(client, "wallet_committee_vote", { ...UNJUDGED, ...e.ballot })).value).toMatchObject({ code: "Unauthorized", hint: NOT_A_MEMBER });
   });
 });

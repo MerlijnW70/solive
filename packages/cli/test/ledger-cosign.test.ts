@@ -13,6 +13,7 @@ import { LEDGER_COMMANDS, signsOnDevice } from "../src/ledger-keys.js";
 import { parse } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
+import { judgedBy } from "./receipt-kit.js";
 import { balance, funded, h, NOW, runtime, send, transport, world } from "./harness.js";
 import { type Device, device, deviceKey as newKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen } from "./ledger-device.js";
 import { airdropped } from "./airdrop.js";
@@ -36,7 +37,7 @@ async function run(argv: string[], keys: Record<string, KeyPairSigner>, ledger: 
   return { code, err: err.join("\n"), out: out.join("\n"), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
 }
 
-async function panel(key: Key) {
+async function panel(key: Key, judged = true) {
   const w = await world();
   airdropped(h.svm, key.address, lamports(10_000_000_000n));
   const made = await run(["profile", "encryption-key", "new", "--out", "member.enc"], {}, device(key, []));
@@ -56,7 +57,8 @@ async function panel(key: Key) {
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   const worker = await keyed();
   const work = sha("work");
-  await announced(intent, worker, work);
+  const opened = await announced(intent, worker, work);
+  await judgedBy(judged ? members : [], { owner: w.owner.address, nonce: 0n, intent, specSha256: "07".repeat(32), deliveredSha256: work, announcement: opened.announcement });
   const dir = await mkdtemp(join(tmpdir(), "cosign-"));
   const vote = (path: string, out: string) => [
     "committee", "vote", "--keypair", path, "--owner", w.owner.address, "--nonce", "0", "--sha256", work, "--result", "1", "--out", join(dir, out), "--yes", ...(path.startsWith("usb:") ? ["--encryption-keypair", "member.enc"] : []),
@@ -102,6 +104,26 @@ describe("committee and split cosigners on a Ledger", () => {
     expect(releasing.signed.every((s) => s.kind === SIGN)).toBe(true);
     expect(p.status()).toBe(IntentStatus.Filled);
     expect(await p.paid()).toBeGreaterThan(0n);
+  });
+
+  it("asks the device nothing for a vote without a judge receipt, and votes with the override, which it prints and records", async () => {
+    const key = await deviceKey();
+    const p = await panel(key, false);
+    const untouched = device(key, found(LEVELS, key));
+    const refused = await run(p.vote("usb://ledger", "a.json"), p.keys, untouched);
+    expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
+    expect(refused.err).toContain("no judge receipt on this machine");
+    expect(refused.err).toContain("--without-receipt <reason>");
+    expect(untouched.signed).toEqual([]);
+    await expect(readFile(join(p.dir, "a.json"), "utf8")).rejects.toThrow();
+    const voting = device(key, [...found(LEVELS, key), ...messageThen()]);
+    const voted = await run([...p.vote("usb://ledger", "a.json"), "--without-receipt", "checked by hand on another machine"], p.keys, voting);
+    expect(voted.code).toBe(EXIT_OK);
+    const unchecked = voted.json()["unchecked"] as { reason: string; warning: string };
+    expect(unchecked.reason).toBe("checked by hand on another machine");
+    expect(unchecked.warning).toContain(p.work);
+    expect(voted.err).toBe(`WARNING: ${unchecked.warning}`);
+    expect(voting.signed.map((s) => s.kind)).toEqual([MESSAGE]);
   });
 
   it("a vote the device rejects writes nothing and the escrow stays open", async () => {

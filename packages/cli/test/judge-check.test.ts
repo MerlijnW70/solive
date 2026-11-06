@@ -11,7 +11,8 @@ import { NOT_SENT } from "../src/flows.js";
 import { resultOutside } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced as announce } from "./announce.js";
-import { cli, h, NOW, transport } from "./harness.js";
+import { cli, h, HOME, NOW, transport } from "./harness.js";
+import { readReceipt } from "../src/judge-receipt.js";
 import { job, type Job, judging, paidAnnouncement, paidTo, PROCESS_TEST, PROCESS_WAIT, releasedIn, SPEC, status, WORK_URL } from "./judge-kit.js";
 import { NO_ISOLATION } from "../src/sandbox.js";
 
@@ -58,6 +59,24 @@ describe("intent-engine judge", () => {
     expect(await paidTo(j, j.copier.address)).toBe(-1n);
     expect(status(j.intent)).toBe(IntentStatus.Filled);
     expect(paidAnnouncement(sent.json()["signature"])).toBe(j.first.announcement);
+  });
+
+  it("saves a receipt of a pass without --yes that binds the escrow, spec, work, announcement and route, and none of a fail", async () => {
+    const at = { cluster: await transport.genesisHash(), judge: j.judge.address, intent: j.intent, announcement: j.first.announcement, deliveredSha256: j.sha256 };
+    const failed = await cli(judging(j, "false"), keys);
+    expect(failed.code).toBe(EXIT_FAILED);
+    await expect(readReceipt(HOME, at)).rejects.toMatchObject({ problem: "missing" });
+    const passed = await cli(judging(j, "true"), keys);
+    expect([passed.code, passed.err]).toEqual([EXIT_OK, ""]);
+    expect(await readReceipt(HOME, at)).toEqual({
+      ...at,
+      outcome: "pass",
+      owner: j.w.owner.address,
+      nonce: 0n,
+      specSha256: createHash("sha256").update(SPEC).digest("hex"),
+      route: { sandbox: "none", command: "true" },
+    });
+    expect(await paidTo(j, j.worker.address)).toBe(-1n);
   });
 
   it("judge refuses a result outside the escrow bounds before running the check", async () => {

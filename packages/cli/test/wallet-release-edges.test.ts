@@ -22,7 +22,7 @@ import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, FEE_BPS, h, NOW, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -153,10 +153,10 @@ describe("a wallet release of a partner's escrow", () => {
     const made = await cli(["create", "attested", "--keypair", "owner.json", "--input-mint", w.inputMint, "--output-mint", w.outputMint, "--expires-in", "3600", ...terms, "--yes"], { "owner.json": w.owner });
     expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
     const release = { owner: w.owner.address, nonce: "0", pay_to: worker };
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown["summary"]).toContain(`Setup: creates the partner ${partner}'s ${w.inputMint} account for its fee, paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`);
     expect((shown["summary"] as string[]).filter((line) => line.startsWith("Records:"))).toEqual([]);
-    expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     expect(balance(await findAssociatedTokenAddress({ owner: partner, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBe(5n);
     expect(balance(await findAssociatedTokenAddress({ owner: worker, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBeGreaterThan(0n);
   });
@@ -171,10 +171,10 @@ describe("the announcements a release and a worker see", () => {
     const earlier = await announced(intent, other, "e2".repeat(32), URL_OF_WORK);
     const first = await announced(intent, worker, work, URL_OF_WORK);
     const release = { owner: wallet, nonce, delivered_sha256: work };
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown).toMatchObject({ pay_to: worker.address, announcement: first.announcement, seq: "2" });
     expect(shown).not.toHaveProperty("skipped");
-    const sent = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
+    const sent = await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true });
     expect(sent).toMatchObject({ sent: true });
     expect(sent).not.toHaveProperty("skipped");
     const listed = await ok(client, "wallet_check_delivery", { intent });

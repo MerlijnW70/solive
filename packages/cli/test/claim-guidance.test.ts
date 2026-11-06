@@ -14,7 +14,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { cli, DOMAIN, funded, h, HOME, NOW, send, setNow, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -105,9 +105,9 @@ describe("a worker without the claim on a job that takes claims", () => {
     const waiting = await announce(rival, plain["intent"] as Address);
     h.files.set(defaultWallet(HOME), payerKey);
     const release = { owner: payer, nonce: claimed["nonce"], delivered_sha256: WORK };
-    const shown = await ok(client, "wallet_attest", release);
+    const shown = await ok(client, "wallet_attest", { ...UNJUDGED, ...release });
     expect(shown).toMatchObject({ pay_to: holder.address });
-    expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    expect(await ok(client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
 
     useKey(rival);
     const receipt = await ok(client, "wallet_receipt", { owner: payer, nonce: claimed["nonce"], sha256: WORK });

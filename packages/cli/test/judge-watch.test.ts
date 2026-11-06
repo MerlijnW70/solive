@@ -17,7 +17,9 @@ import { JUDGE_WATCH_INTERVAL, WATCH_TAKES_NO_ARTIFACT } from "../src/job-args.j
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
 import type { Runtime } from "../src/runtime.js";
 import { announced, keyed } from "./announce.js";
-import { balance, cli, h, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
+import { balance, cli, h, HOME, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
+import { readReceipt } from "../src/judge-receipt.js";
+import { authorize } from "../src/receipt-gate.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -126,6 +128,23 @@ describe("intent-engine judge --watch", () => {
     expect(await paidTo(j, second.address)).toBeGreaterThan(0n);
     expect(await paidTo(j, first.address)).toBe(-1n);
     expect(status(j.intent)).toBe(IntentStatus.Filled);
+  }, 60_000);
+
+  it("saves a receipt for the pass it stops on without --yes, none for the fail before it, and sends nothing", async () => {
+    const j = await job();
+    const [first, second] = [await keyed(), await keyed()];
+    const wrong = await announce(j, first, WRONG);
+    const right = await announce(j, second, CORRECT);
+    const watched = await watch(j, judging(j));
+    expect(watched.code).toBe(EXIT_OK);
+    expect(watched.lines.at(-1)).toEqual({ stopped: "passed", intent: j.intent, judged: 2 });
+    const cluster = await transport.genesisHash();
+    const at = (announcement: Address, module: string) => ({ cluster, judge: j.judge.address, intent: j.intent, announcement, deliveredSha256: sha(module) });
+    await expect(readReceipt(HOME, at(wrong.announcement, WRONG))).rejects.toMatchObject({ problem: "missing" });
+    expect(await readReceipt(HOME, at(right.announcement, CORRECT))).toMatchObject({ outcome: "pass", owner: j.w.owner.address, nonce: 0n, specSha256: sha(SPEC), route: { sandbox: "viper" } });
+    const target = { cluster, owner: j.w.owner.address, nonce: 0n, intent: j.intent, specSha256: sha(SPEC), deliveredSha256: sha(CORRECT), announcement: right.announcement };
+    expect(await authorize(HOME, target, [j.judge.address], undefined)).toEqual({ by: "receipt", judge: j.judge.address });
+    expect(status(j.intent)).toBe(IntentStatus.Open);
   }, 60_000);
 
   it("judges deliveries in announcement order", async () => {

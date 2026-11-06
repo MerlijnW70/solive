@@ -19,6 +19,7 @@ import { connect, type Json, ok, preset } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
 import { ata22, keyOf } from "./held-kit.js";
 import { ata, balance, DOMAIN, FEE_BPS, funded, h, mint as plainMint, send, world } from "./harness.js";
+import { UNJUDGED } from "./approved.js";
 
 const WORK = "6c".repeat(32);
 const PAY = 1_000_000n;
@@ -127,7 +128,7 @@ const lines = (shown: Json) => shown["summary"] as string[];
 describe("release previews of a fee the program pays", () => {
   it("say the judge and partner fees are paid into normal accounts", async () => {
     const s = await job();
-    for (const shown of [await ok(s.client, "wallet_attest", s.release), await ok(s.client, "wallet_attest_split", s.split)]) {
+    for (const shown of [await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release }), await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split })]) {
       expect(lines(shown)).toContainEqual(`Pays the judge: ${whole(JUDGE_FEE)} of ${s.mint} to this wallet, carved out of the escrow`);
       expect(lines(shown)).toContainEqual(`Pays the partner: ${whole(SHARES.partner)} of ${s.mint} to ${s.partner}`);
       expect(lines(shown).filter((line) => line.startsWith("Withholds"))).toEqual([]);
@@ -150,7 +151,7 @@ describe("release previews of a fee the program withholds", () => {
       it(`list the ${role} fee as withheld when its account ${what}`, async () => {
         const s = await job({ [role]: block });
         const holder = role === "judge" ? s.wallet : s.partner;
-        for (const shown of [await ok(s.client, "wallet_attest", s.release), await ok(s.client, "wallet_attest_split", s.split)]) {
+        for (const shown of [await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release }), await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split })]) {
           expect(lines(shown).filter((line) => line.startsWith(PAYS[role]))).toEqual([]);
           expect(lines(shown)).toContainEqual(
             `Withholds the ${role} fee: ${whole(AMOUNT[role])} of ${s.mint} is not paid to the ${role} ${holder}, whose account ${await ata22(holder, s.mint)} ${reason}; it stays in the escrow and goes to its owner ${s.owner} when it closes`,
@@ -164,16 +165,16 @@ describe("release previews of a fee the program withholds", () => {
 
   it("is true to the send: a judge fee into a CPI-guarded account is withheld by the program", async () => {
     const s = await job({ judge: guard });
-    const shown = await ok(s.client, "wallet_attest_split", s.split);
-    expect(await ok(s.client, "wallet_attest_split", await s.signedSplit(shown))).toMatchObject({ sent: true });
+    const shown = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split });
+    expect(await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...(await s.signedSplit(shown)) })).toMatchObject({ sent: true });
     expect(balance(await ata22(s.wallet, s.mint))).toBe(0n);
     expect(balance(await ata22(s.partner, s.mint))).toBe(SHARES.partner);
   });
 
   it("is true to the send of a single release too", async () => {
     const s = await job({ partner: freeze });
-    const shown = await ok(s.client, "wallet_attest", s.release);
-    expect(await ok(s.client, "wallet_attest", { ...s.release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    const shown = await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release });
+    expect(await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     expect(balance(await ata22(s.partner, s.mint))).toBe(0n);
     expect(balance(await ata22(s.wallet, s.mint))).toBe(JUDGE_FEE);
   });
@@ -184,12 +185,12 @@ describe("the reason a release preview gives for a withheld fee", () => {
     const s = await job({ judge: reassigned }, true);
     const account = await findAssociatedTokenAddress({ owner: s.wallet, mint: s.mint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const expected = `Withholds the judge fee: ${whole(JUDGE_FEE)} of ${s.mint} is not paid to the judge ${s.wallet}, whose account ${account} now belongs to another owner; it stays in the escrow and goes to its owner ${s.owner} when it closes`;
-    for (const shown of [await ok(s.client, "wallet_attest", s.release), await ok(s.client, "wallet_attest_split", s.split)]) {
+    for (const shown of [await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release }), await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split })]) {
       expect(lines(shown)).toContainEqual(expected);
       expect(lines(shown).filter((line) => line.startsWith("Pays the judge"))).toEqual([]);
     }
-    const shown = await ok(s.client, "wallet_attest", s.release);
-    expect(await ok(s.client, "wallet_attest", { ...s.release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    const shown = await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release });
+    expect(await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     expect(balance(account)).toBe(0n);
   });
 });
@@ -197,8 +198,8 @@ describe("the reason a release preview gives for a withheld fee", () => {
 describe("the three release previews", () => {
   it("give identical figures for one escrow", async () => {
     const s = await job({ judge: guard });
-    const single = await ok(s.client, "wallet_attest", s.release);
-    const split = await ok(s.client, "wallet_attest_split", s.split);
+    const single = await ok(s.client, "wallet_attest", { ...UNJUDGED, ...s.release });
+    const split = await ok(s.client, "wallet_attest_split", { ...UNJUDGED, ...s.split });
     const sdk = await s.client22();
     const figures = (paid: unknown, shown: Json) => ({ paid, fee: shown["fee"], withheld: shown["withheld"], fees: shown["fees"] });
     const fromSdk = {

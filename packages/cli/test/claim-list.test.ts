@@ -30,6 +30,7 @@ import { limitsLine, listDiffers, listIncomplete, notListed } from "../src/claim
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, send, transport, world } from "./harness.js";
+import { UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -123,8 +124,8 @@ describe("a claim list on chain", () => {
     await expect(send(stranger, [await standBy(stranger, false)])).rejects.toThrow(onChain("ClaimListMissing"));
     await announced(intent, worker, WORK, WORK_URL);
     const release = { owner, nonce: "0", delivered_sha256: WORK };
-    const shown = await ok(s.client, "wallet_attest", release);
-    expect(await ok(s.client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    const shown = await ok(s.client, "wallet_attest", { ...UNJUDGED, ...release });
+    expect(await ok(s.client, "wallet_attest", { ...UNJUDGED, ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     const found = await createClient({ url: "http://cluster", transport }).intent({ owner, nonce: 0n });
     expect(found?.intent.status).toBe(IntentStatus.Filled);
   });

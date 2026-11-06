@@ -17,7 +17,25 @@ import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners, type WalletSigner } from "./guard.js";
 import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
-import { approvalOf, attestedEscrow, capturedSends, claimsOfRelease, DEVICE_RELEASE, feeFigures, feeLines, feeOutputs, invitedPayees, RELEASE_CHANGED, settleRefused, stakeReturned } from "./attest.js";
+import {
+  approvalOf,
+  attestedEscrow,
+  capturedSends,
+  claimsOfRelease,
+  DEVICE_RELEASE,
+  feeFigures,
+  feeLines,
+  feeOutputs,
+  invitedPayees,
+  NEEDS_RECEIPT,
+  RELEASE_CHANGED,
+  settleRefused,
+  stakeReturned,
+  uncheckedOutput,
+  walletAuthority,
+  withoutReceipt,
+} from "./attest.js";
+import { boundApproval, recorded } from "../../receipt-gate.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { confirmedRelease } from "./delivery.js";
 
@@ -139,7 +157,7 @@ export const heldWarnings = (release: ReleasePreview): string[] => {
 export const walletAttestSplit = define({
   name: tool("wallet_attest_split"),
   title: "Release a proof escrow split among co-authors",
-  description: `Pays co-authors by weight when this wallet is the escrow's attestor (judge); one must have made the first announcement that opens to delivered_sha256. The preview returns what each co-author signs; send with all their signatures. A release cannot be undone. ${PREVIEW_APPROVAL}`,
+  description: `Pays co-authors by weight when this wallet is the escrow's attestor (judge); one must have made the first announcement that opens to delivered_sha256. The preview returns what each co-author signs; send with all their signatures. A release cannot be undone. ${NEEDS_RECEIPT} ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     owner: account("the wallet that made the escrow"),
@@ -148,6 +166,7 @@ export const walletAttestSplit = define({
     delivered_sha256: text(`the sha256, as 64 hex digits, of the work this release pays for, as ${tool("wallet_fetch_work")} shows it`),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
     lookup_table: optional(lookupInput),
+    without_receipt: withoutReceipt,
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -165,6 +184,7 @@ export const walletAttestSplit = define({
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     delivered_sha256: text("the sha256 of the work the release pays for"),
     skipped: skippedOutput,
+    unchecked: uncheckedOutput,
     summary: list(text(), 22),
     warnings: list(text(), 8),
     sent: flag(),
@@ -191,6 +211,8 @@ export const walletAttestSplit = define({
     if (!wallets.includes(opening.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(opening.worker, delivered));
     }
+    const at = { owner: input.owner, nonce: input.nonce, intent, deliveredSha256: delivered, announcement: opening.announcement };
+    const authority = await walletAuthority(ctx, at, [signer.address], input.without_receipt);
     await invitedPayees(ctx, intent, wallets);
     const claimed = await claimsOfRelease(ctx, intent, held.claims, wallets);
     const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
@@ -199,7 +221,7 @@ export const walletAttestSplit = define({
     const { ballot, preview: release, settle } = await splitPreview(releaseReads(ctx.transport), target, payer).catch(settleRefused);
     const token = await mintOf(ctx.transport, held.inputMint);
     const digestHex = getBase16Decoder().decode(ballot.digest).toLowerCase();
-    const approval = approvalOf(ballot.message);
+    const approval = boundApproval(approvalOf(ballot.message), authority);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
@@ -230,6 +252,7 @@ export const walletAttestSplit = define({
       approval,
       delivered_sha256: delivered,
       ...skippedField(skipped),
+      ...recorded(authority),
       summary: [
         `Splits: ${formatAmount(release.net, token.decimals)} of ${name} among ${shares.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         ...shareLines(release, shares, name, token.decimals),

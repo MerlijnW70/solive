@@ -16,7 +16,7 @@ import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { cli, DOMAIN, FEE_BPS, funded, h, HOME, NOW, transport, world } from "./harness.js";
-import { approved } from "./approved.js";
+import { approved, UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -89,7 +89,7 @@ describe("wallet_history of a worker paid for announced work", () => {
     const unpaid = await ok(client, "wallet_deliver", await approved(client, "wallet_deliver", { intent: other, sha256: "c5".repeat(32), url: URL_OF_WORK, send: true }));
 
     h.files.set(defaultWallet(HOME), payerKey);
-    const attested = await sent(client, "wallet_attest", { owner: payer, nonce: paidJob["nonce"], delivered_sha256: work });
+    const attested = await sent(client, "wallet_attest", { ...UNJUDGED, owner: payer, nonce: paidJob["nonce"], delivered_sha256: work });
     expect(attested).toMatchObject({ sent: true, pay_to: worker.address });
     const payee = await findAssociatedTokenAddress({ owner: worker.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const { net } = splitFee(ESCROWED, FEE_BPS);
@@ -126,7 +126,7 @@ describe("wallet_history of a worker paid for announced work", () => {
     const rival = await keyed();
     await announced(intent, rival, "d2".repeat(32), URL_OF_WORK, h.through ?? undefined);
     h.files.set(defaultWallet(HOME), payerKey);
-    expect(await sent(client, "wallet_attest", { owner: payer, nonce: job["nonce"], delivered_sha256: "d2".repeat(32) })).toMatchObject({ sent: true, pay_to: rival.address });
+    expect(await sent(client, "wallet_attest", { ...UNJUDGED, owner: payer, nonce: job["nonce"], delivered_sha256: "d2".repeat(32) })).toMatchObject({ sent: true, pay_to: rival.address });
     useKey(worker);
     const seen = await ok(client, "wallet_history");
     expect(seen["work"]).toEqual([

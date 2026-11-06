@@ -17,6 +17,7 @@ export const SMOKE_WAIT = 40;
 export const SMOKE_USAGE = "usage: bash scripts/mcp-smoke.sh <url> <hirer key> <worker key> <spec url>";
 export const SMOKE_NOT_MAINNET = "mcp-smoke runs on devnet, testnet or localnet only, never mainnet";
 export const SMOKE_SAME_KEY = "mcp-smoke needs two different keys: one for the hirer and one for the worker";
+export const SMOKE_UNCHECKED = "the smoke pays its own worker for a fixed text that no spec check runs over";
 export const SMOKE_SPEC_HTTPS = "the spec url must be an https url";
 
 const SOL_DECIMALS = 9;
@@ -179,7 +180,7 @@ export async function smoke(parties: SmokeParties, run: SmokeRun, report: (line:
   }
   done("check delivery", `${work} by ${worker}`);
 
-  const attested = await send("attest", parties.hirer, "wallet_attest", { owner: hirer, nonce, delivered_sha256: work });
+  const attested = await send("attest", parties.hirer, "wallet_attest", { owner: hirer, nonce, delivered_sha256: work, without_receipt: SMOKE_UNCHECKED });
   const release = String(attested["signature"]);
   done("attest", `paid ${String(attested["paid"])} in ${release}`);
 

@@ -32,6 +32,8 @@ import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { TOKEN_NAMES } from "./tokens.js";
+import { ReceiptRefused } from "./judge-receipt.js";
+import { type Authority, authorizeEscrow, cliRefusal, recorded, type Target } from "./receipt-gate.js";
 
 export const VOTE_KIND = "committee-vote";
 
@@ -83,6 +85,14 @@ async function invitedPayee(runtime: Runtime, transport: Transport, url: string,
   await checkInvited(transport, runtime.specFetch, intent, payTo, { lookup: runtime.lookup, rpcUrl: url }).catch((error: unknown) => {
     throw error instanceof InviteRefused ? new FlowRefused(error.message) : error;
   });
+}
+
+async function cliAuthority(runtime: Runtime, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined): Promise<Authority> {
+  try {
+    return await authorizeEscrow(runtime.home, transport, at, judges, override);
+  } catch (error) {
+    throw error instanceof ReceiptRefused ? new FlowRefused(cliRefusal(error)) : error;
+  }
 }
 
 async function workerOf(transport: Transport, announcement: Address): Promise<Address> {
@@ -226,12 +236,12 @@ async function splitView(transport: Transport, target: Ballot, recipients: reado
   return { ...found, committee, lines, paid, tokenProgram };
 }
 
-async function splitVoteCommand(member: MessagePartialSigner, transport: Transport, target: Ballot, recipients: readonly SplitShare[], command: { yes: boolean; out: string | undefined }) {
+async function splitVoteCommand(member: MessagePartialSigner, transport: Transport, target: Ballot, recipients: readonly SplitShare[], command: { yes: boolean; out: string | undefined }, authority: Authority) {
   const { ballot, committee, lines, paid } = await splitView(transport, target, recipients, createNoopSigner(member.address));
   if (!committee.members.includes(member.address)) {
     throw new FlowRefused(`${member.address} is not a member of committee ${committee.address}; nothing was signed`);
   }
-  const shown = { intent: ballot.intent, announcement: target.announcement, digest: hex(ballot.digest), envelope: hex(ballot.message), paid, summary: lines };
+  const shown = { intent: ballot.intent, announcement: target.announcement, digest: hex(ballot.digest), envelope: hex(ballot.message), paid, summary: lines, ...recorded(authority) };
   if (!command.yes) {
     return { ...shown, signed: false, next: SPLIT_VOTE_NOT_SIGNED };
   }
@@ -258,11 +268,13 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
   }
   const target: Ballot = { owner: command.owner, nonce: command.nonce, announcement: opening.announcement, sha256: opening.sha256, salt: opening.salt, result: command.result };
   const skipped = opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) };
+  const at = { owner: command.owner, nonce: command.nonce, intent, deliveredSha256: opening.sha256, announcement: opening.announcement };
+  const authority = await cliAuthority(runtime, transport, at, [member.address], command.withoutReceipt);
   if (command.split !== undefined) {
     const { recipients, weights } = command.split;
     const shares = recipients.map((wallet, i) => ({ wallet, weight: weights[i] ?? 0 }));
     await invitedPayee(runtime, transport, command.url, intent, recipients);
-    return { ...(await splitVoteCommand(member, transport, target, shares, command)), seq: opening.seq, ...skipped };
+    return { ...(await splitVoteCommand(member, transport, target, shares, command, authority)), seq: opening.seq, ...skipped };
   }
   const ballot = await client.committeeBallot(ballotInput(target));
   if (!ballot.committee.members.includes(member.address)) {
@@ -271,13 +283,13 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
   await invitedPayee(runtime, transport, command.url, ballot.intent, [opening.worker]);
   const summary = ballotLines(ballot, target, opening.worker);
   if (!command.yes) {
-    return { intent: ballot.intent, announcement: opening.announcement, seq: opening.seq, digest: hex(ballot.digest), summary, ...skipped, signed: false, next: VOTE_NOT_SIGNED };
+    return { intent: ballot.intent, announcement: opening.announcement, seq: opening.seq, digest: hex(ballot.digest), summary, ...skipped, ...recorded(authority), signed: false, next: VOTE_NOT_SIGNED };
   }
   const vote = await memberVote(member, ballot, target);
   if (command.out !== undefined) {
     await writeFile(command.out, `${JSON.stringify(vote, null, 2)}\n`);
   }
-  return { summary, ...skipped, signed: true, vote, ...(command.out === undefined ? {} : { written: command.out }) };
+  return { summary, ...skipped, ...recorded(authority), signed: true, vote, ...(command.out === undefined ? {} : { written: command.out }) };
 }
 
 async function sentWith(transport: Transport, instructions: Instruction[], solver: TransactionPartialSigner, tables: Record<Address, Address[]> | undefined, shown: object, yes: boolean): Promise<object> {
