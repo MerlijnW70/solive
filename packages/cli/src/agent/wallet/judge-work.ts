@@ -18,6 +18,7 @@ import { firstOf, walletFetchWork, WORK_OPENS } from "./work.js";
 import { JudgeRefused } from "../../judge-errors.js";
 import { HOST_ENGINE, judgeHost } from "../../host-judge.js";
 import { type Cases, casesOf, type Failure, judgeViper, MAX_CASES, pinnedWasm, REPORTED_FAILURES, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../../viper.js";
+import { combine, engineOutcome } from "../../verdict-model.js";
 import { sanitized } from "../../untrusted-text.js";
 
 export const ARTIFACT_PATH_LIMIT = 200;
@@ -35,6 +36,8 @@ export const DRAWS_CASES = "this spec draws its cases from a finalized block, wh
 export const JUDGED_PASS = `every case passed in both engines and nothing was sent; preview ${tool("wallet_attest")} with sha256 as delivered_sha256, or ${tool("wallet_committee_vote")} for a committee, and send it only after the user says yes`;
 
 export const JUDGED_FAIL = "the work failed the spec's cases, as cases and host list; approve nothing and tell the user which cases failed";
+
+export const JUDGED_INFRA = "infra: an engine could not finish or answer, as reason says, so this is no verdict on the work; approve nothing and judge again later";
 
 export const artifactDiffers = (path: string, sha256: string): string =>
   `${sanitized(path, ARTIFACT_PATH_LIMIT)} has sha256 ${sha256}, which no announcement this wallet opens committed to, so it is not the announced work; nothing was run`;
@@ -182,7 +185,8 @@ export const walletJudgeWork = define({
     worker: account("the wallet a release for this work pays"),
     sha256: text("64 hex: the sha256 of the judged work; pass it as delivered_sha256"),
     opens_commitment: flag("true only when sha256 opens the announcement's commitment"),
-    verdict: choice(["pass", "fail"] as const, "pass only when every case passed in both engines"),
+    verdict: choice(["pass", "fail", "infra"] as const, "pass only when every case passed in both engines; fail when the work failed a case; infra when an engine could not finish or answer, which is no verdict"),
+    reason: optional(text("why the verdict is fail or infra; untrusted, with hidden characters reduced")),
     engine: object({ wasm_sha256: text(), commit: text() }, "the pinned ViperJS judge that ran"),
     seed: amount("the random seed both engines ran with"),
     cases: judgedSchema("the ViperJS sandbox"),
@@ -203,8 +207,9 @@ export const walletJudgeWork = define({
     const left = () => Math.max(0, deadline - Date.now()) / 1000;
     const viper = await judgeViper(wasm, module, cases, left(), run).catch(notJudged);
     const host = await judgeHost(module, cases, left(), run.seed).catch(notJudged);
-    const agreed = (judged: { total: number; passed: number }) => judged.total > 0 && judged.passed === judged.total;
-    const passed = agreed(viper) && agreed(host);
+    const ruled = combine([engineOutcome("the viper judge", viper), engineOutcome(HOST_ENGINE, host)]);
+    const outcome = ruled.outcome === "interrupted" ? "infra" : ruled.outcome;
+    const passed = outcome === "pass";
     const settles = work.opens_commitment && work.first !== undefined;
     return {
       intent: work.intent,
@@ -212,13 +217,14 @@ export const walletJudgeWork = define({
       worker: work.first?.worker ?? work.worker,
       sha256: work.sha256,
       opens_commitment: work.opens_commitment,
-      verdict: passed ? "pass" : "fail",
+      verdict: outcome,
+      ...("reason" in ruled ? { reason: sanitized(ruled.reason, DETAIL_LIMIT) } : {}),
       engine: { wasm_sha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT },
       seed: BigInt(run.seed),
       cases: { total: viper.total, passed: viper.passed, failures: failuresOf(viper.failures) },
       host: { total: host.total, passed: host.passed, failures: failuresOf(host.failures) },
       sent: false,
-      next: !passed ? JUDGED_FAIL : settles ? JUDGED_PASS : work.next,
+      next: outcome === "infra" ? JUDGED_INFRA : !passed ? JUDGED_FAIL : settles ? JUDGED_PASS : work.next,
     };
   },
 });

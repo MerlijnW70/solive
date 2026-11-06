@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { JudgeRefused } from "./judge-errors.js";
+import { deadlineOf, ENGINE_FAULT, EngineStopped, faultOf, type Stop } from "./verdict-model.js";
 import { Wtf8Refused, wtf8Decode, wtf8Encode } from "./wtf8.js";
 
 export const VIPER_WASM_SHA256 = "7e698ca9c14f2ea6a030bdd5f18dd7615795531bd6082157f4c3a4fa44eebf5e";
@@ -31,7 +32,8 @@ export type Run = { seed: number; clock: number };
 export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine" | "crashed";
 export type CaseResult = { verdict: CaseVerdict; detail?: Primitive };
 export type Failure = { case: number; verdict: CaseVerdict; detail?: Primitive };
-export type Judged = { total: number; passed: number; failures: Failure[]; seed: number; clock: number };
+export type Tallied = { total: number; passed: number; failures: Failure[]; faults?: number; stop?: Stop };
+export type Judged = Tallied & { seed: number; clock: number };
 
 const VERDICTS: readonly CaseVerdict[] = ["pass", "wrong", "not-primitive", "threw", "stopped", "no-module", "engine"];
 const WIRE_VERSION = 1;
@@ -215,10 +217,14 @@ export function encodeInput(source: string, cases: Cases, run: Run): Buffer {
   return writer.bytes();
 }
 
+const unreadable = (why: string, expected: number): never => {
+  throw new EngineStopped(faultOf(`the viper judge ${why}`, expected));
+};
+
 export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
   let at = 0;
   const need = (count: number) => {
-    if (at + count > bytes.length) throw new JudgeRefused("the viper judge answered a truncated verdict; nothing was paid");
+    if (at + count > bytes.length) unreadable("answered a truncated verdict", expected);
   };
   const u8 = () => (need(1), bytes.readUInt8(at++));
   const u32 = () => (need(4), (at += 4), bytes.readUInt32LE(at - 4));
@@ -233,7 +239,7 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
     try {
       return wtf8Decode(sized());
     } catch (error) {
-      throw new JudgeRefused(`the viper judge answered a string that is not WTF-8, with ${(error as Wtf8Refused).message}; nothing was paid`);
+      return unreadable(`answered a string that is not WTF-8, with ${(error as Wtf8Refused).message}`, expected);
     }
   };
   const value = (): Primitive | undefined => {
@@ -244,40 +250,63 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
       return bytes.readDoubleLE(at - 8);
     }
     if (tag === 5) return exact();
-    if (tag > 5) throw new JudgeRefused("the viper judge answered a value it does not have; nothing was paid");
+    if (tag > 5) unreadable("answered a value it does not have", expected);
     return [undefined, null, false, true][tag];
   };
   if (u32() !== WIRE_VERSION || u8() !== 0) {
-    throw new JudgeRefused("the viper judge refused its own input; nothing was paid");
+    unreadable("refused its own input", expected);
   }
   const count = u32();
   if (count !== expected) {
-    throw new JudgeRefused(`the viper judge answered ${count} verdicts for ${expected} cases; nothing was paid`);
+    unreadable(`answered ${count} verdicts for ${expected} cases`, expected);
   }
   const results: CaseResult[] = [];
   for (let n = 0; n < count; n += 1) {
     const verdict = VERDICTS[u8()];
-    if (verdict === undefined) throw new JudgeRefused("the viper judge answered a verdict it does not have; nothing was paid");
+    if (verdict === undefined) return unreadable("answered a verdict it does not have", expected);
     const detail = verdict === "wrong" ? value() : verdict === "threw" || verdict === "no-module" ? string() : undefined;
     results.push(detail === undefined ? { verdict } : { verdict, detail });
   }
   if (at !== bytes.length) {
-    throw new JudgeRefused("the viper judge answered more than its verdicts; nothing was paid");
+    unreadable("answered more than its verdicts", expected);
   }
   return results;
 }
 
-export function stoppedAll(total: number, detail: string): { total: number; passed: number; failures: Failure[] } {
-  const failures = Array.from({ length: Math.min(total, REPORTED_FAILURES) }, (_, index): Failure => (index === 0 ? { case: index, verdict: "stopped", detail } : { case: index, verdict: "stopped" }));
-  return { total, passed: 0, failures };
-}
+export const stoppedTally = (total: number, stop: Stop): Tallied => ({ total, passed: 0, failures: [], stop });
 
 export const deadlineMissed = (engine: string, timeoutSeconds: number): string =>
   `${engine} did not finish within the ${Math.round(timeoutSeconds * 1000)} ms left of the judgement's --timeout`;
 
-export function summarize(results: CaseResult[], run: Run): Judged {
-  const failures = results.flatMap((result, index) => (result.verdict === "pass" ? [] : [{ case: index, ...result }]));
-  return { total: results.length, passed: results.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES), ...run };
+export function tallied(results: readonly CaseResult[], total: number = results.length, stop?: Stop): Tallied {
+  const failures = results.flatMap((result, index) => (result.verdict === "pass" || result.verdict === ENGINE_FAULT ? [] : [{ case: index, ...result }]));
+  const faults = results.filter((result) => result.verdict === ENGINE_FAULT).length;
+  return {
+    total,
+    passed: results.length - failures.length - faults,
+    failures: failures.slice(0, REPORTED_FAILURES),
+    ...(faults === 0 ? {} : { faults }),
+    ...(stop === undefined ? {} : { stop }),
+  };
+}
+
+export const summarize = (results: CaseResult[], run: Run): Judged => ({ ...tallied(results), ...run });
+
+export function caseResults(ran: Ran, count: number, timeoutSeconds: number, engine = "the viper judge"): CaseResult[] | Stop {
+  if (ran.timedOut) {
+    return deadlineOf(deadlineMissed(engine, timeoutSeconds), count);
+  }
+  if (ran.exitCode !== 0) {
+    return faultOf(`${engine} process ended with exit code ${ran.exitCode} and no readable verdict: ${ran.diagnostic.trim().slice(0, 256)}`, count);
+  }
+  try {
+    return decodeOutput(ran.output, count);
+  } catch (error) {
+    if (error instanceof EngineStopped) {
+      return error.stop;
+    }
+    throw error;
+  }
 }
 
 export function wasmPath(): string {
@@ -367,15 +396,10 @@ export function moduleText(source: Uint8Array): string {
 
 export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases, timeoutSeconds: number, run: Run = runOf(cases)): Promise<Judged> {
   const text = moduleText(source);
+  const total = cases.cases.length;
   if (timeoutSeconds <= 0) {
-    return { ...stoppedAll(cases.cases.length, deadlineMissed("the viper judge", timeoutSeconds)), ...run };
+    return { ...stoppedTally(total, deadlineOf(deadlineMissed("the viper judge", timeoutSeconds), total)), ...run };
   }
-  const ran = await runViper(wasm, encodeInput(text, cases, run), timeoutSeconds);
-  if (ran.timedOut) {
-    return { ...stoppedAll(cases.cases.length, deadlineMissed("the viper judge", timeoutSeconds)), ...run };
-  }
-  if (ran.exitCode !== 0) {
-    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "crashed", detail: `the judge process ended with exit code ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}` }], ...run };
-  }
-  return summarize(decodeOutput(ran.output, cases.cases.length), run);
+  const results = caseResults(await runViper(wasm, encodeInput(text, cases, run), timeoutSeconds), total, timeoutSeconds);
+  return Array.isArray(results) ? summarize(results, run) : { ...stoppedTally(total, results), ...run };
 }

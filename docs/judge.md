@@ -152,7 +152,9 @@ The release pays the announcement the verdict names and records its sha256 and s
 
 `judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it lists the announcements to its judge from accounts, opens each new one, downloads the work from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
-A failed check is final: that work is not judged again. A refusal that can change, because another wallet holds the escrow's claim, the node lists the announcements incompletely, an earlier announcement is sealed to a key not given, or the RPC node failed, prints a line with `retry: true` and is tried again next round; the same refusal prints once. Each escrow is still paid at most once.
+A failed check is final: that work is not judged again. An infra outcome prints a line with `retry: true` and is tried again, until the watch gives that work up as `skipped`.
+
+A refusal that can change, because another wallet holds the escrow's claim, the node lists the announcements incompletely, an earlier announcement is sealed to a key not given, or the RPC node failed, prints a line with `retry: true` and is tried again next round; the same refusal prints once. Each escrow is still paid at most once.
 
 On devnet, testnet and mainnet it refuses a work link that points to a private or local network address.
 
@@ -215,7 +217,7 @@ intent-engine sandbox doctor --sandbox-image $env:IMAGE
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --run "$env:CHECK" --sandbox docker --sandbox-image $env:IMAGE --timeout 1800 --verdict verdict.json --yes
 ```
 
-`$IMAGE` is `<name>@sha256:<digest>`; `judge` refuses a tag alone. `sandbox doctor` must print `"ready": true` on the machine before it judges. Never pass `--sandbox none` for such work. Exit code 75 is an infrastructure error, such as a timeout or Docker down: nothing was signed, so run it again.
+`$IMAGE` is `<name>@sha256:<digest>`; `judge` refuses a tag alone. `sandbox doctor` must print `"ready": true` on the machine before it judges. Never pass `--sandbox none` for such work. Exit code 1 is a fail of the work. Exit code 75 is infra, no verdict on the work, such as a timeout, Docker down or an engine that crashed: nothing was signed, so run it again. [How the judge works](maintainers/judge-internals.md#outcomes) lists every outcome.
 
 ## Judge without Docker
 
@@ -247,7 +249,7 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/w
 
 `--sandbox viper` needs neither WSL nor Docker on Windows: a demo job is judged from PowerShell as is. Save the spec and the work byte for byte, such as with `curl.exe -o`; `Set-Content` adds a byte-order mark or line ends that change the sha256, and `judge` then says so.
 
-An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, each engine's failed cases and the work's sha256, and sends nothing. On a pass, `solive_wallet_attest` with that sha256 pays.
+An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, `pass`, `fail` or `infra`, each engine's failed cases and the work's sha256, and sends nothing. `infra` is no verdict: approve nothing and judge again later. On a pass, `solive_wallet_attest` with that sha256 pays.
 
 `solive_wallet_judge_work` refuses a spec without a `judge-cases` block: judge that with `--sandbox docker`. It does not wait for drawn cases, so it refuses a spec with a `draw`.
 

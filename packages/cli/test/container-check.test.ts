@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { containerLeft, docker, removeContainer, runContainer } from "../src/check-process.js";
 import { dockerTimedOut, startFailed } from "../src/container-check.js";
-import { JudgeInfraError } from "../src/judge-errors.js";
+import { JudgeInfraError, oomInfra, timedOutInfra } from "../src/judge-errors.js";
 import { dockerMissing, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
+import { containerOutcome, exitedWith, inspectFailed, NEVER_STARTED } from "../src/verdict-model.js";
 
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
@@ -29,7 +30,10 @@ case "$1" in
   rm) exit 0 ;;
   container)
     if [ "$3" = "--format" ]; then
-      if [ -n "$FAKE_STATE" ]; then echo "$FAKE_STATE"; else echo '{"OOMKilled":false,"Error":""}'; fi
+      if [ "$FAKE_INSPECT_FAIL" = 1 ]; then echo "Error: No such container: $5" >&2; exit 1; fi
+      if [ "$FAKE_INSPECT_HANG" = 1 ]; then sleep 10; fi
+      code=$(cat "$FAKE_DIR/$5.code" 2>/dev/null || echo 0)
+      if [ -n "$FAKE_STATE" ]; then echo "$FAKE_STATE"; else echo "{\\"Running\\":false,\\"ExitCode\\":$code,\\"OOMKilled\\":false,\\"Error\\":\\"\\",\\"StartedAt\\":\\"2026-01-01T00:00:00Z\\"}"; fi
       exit 0
     fi
     exit "\${FAKE_INSPECT:-1}" ;;
@@ -39,9 +43,10 @@ case "$1" in
   run)
     echo $$ > "$FAKE_DIR/$3.pid"
     case "$FAKE_RUN" in
-      exit) exit 3 ;;
+      exit) echo 3 > "$FAKE_DIR/$3.code"; exit 3 ;;
+      own125) echo "docker: Error response from daemon: forged by the check" >&2; echo 125 > "$FAKE_DIR/$3.code"; exit 125 ;;
       start) echo "docker: Error response from daemon: no such image" >&2; exit 125 ;;
-      oom) exit 137 ;;
+      oom) echo 137 > "$FAKE_DIR/$3.code"; exit 137 ;;
       noisy) printf 'line\\033[2J\\r\\342\\200\\256end\\n'; exit 0 ;;
       slow) sleep 0.3; exit 0 ;;
       hang)
@@ -61,6 +66,10 @@ const envFor = (fake: Record<string, string>): NodeJS.ProcessEnv => ({ PATH: `${
 const calls = async (): Promise<string[]> => (await readFile(join(dir, "calls"), "utf8")).trim().split("\n");
 
 const spawned = () => vi.mocked(spawn).mock.calls.map(([file, args, options]) => ({ file, args, options }));
+
+const ended = (exitCode: number, more: Partial<{ started: boolean; oomKilled: boolean; error: string }> = {}) => ({ started: true, exitCode, oomKilled: false, error: "", ...more });
+
+const limits = { seconds: 30, memory: "1g" };
 
 describe.skipIf(process.platform === "win32")("the docker client the sandbox drives", () => {
   let warned: string[] = [];
@@ -96,8 +105,10 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     expect(await calls()).toEqual(["rm -f -v left-1", "container inspect left-1", "rm -f -v gone-1", "container inspect gone-1"]);
   });
 
-  it("reports the exit code of a container that ends by itself, then removes it", async () => {
-    expect(await runContainer(["image"], "ends-1", envFor({ FAKE_RUN: "exit" }), 30)).toStrictEqual({ exitCode: 3, timedOut: false });
+  it("reports the container's own exit code, read with inspect before it is removed", async () => {
+    const ran = await runContainer(["image"], "ends-1", envFor({ FAKE_RUN: "exit" }), 30);
+    expect(ran).toStrictEqual({ exitCode: 3, timedOut: false, deadline: false, state: ended(3) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "fail", reason: exitedWith(3) });
     expect(spawned()[0]).toEqual({
       file: "docker",
       args: ["run", "--name", "ends-1", "image"],
@@ -108,60 +119,92 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
   });
 
   it("counts --timeout in seconds, so a container that ends within it is not stopped", async () => {
-    expect(await runContainer(["image"], "slow-1", envFor({ FAKE_RUN: "slow" }), 5)).toStrictEqual({ exitCode: 0, timedOut: false });
+    const ran = await runContainer(["image"], "slow-1", envFor({ FAKE_RUN: "slow" }), 5);
+    expect(ran).toStrictEqual({ exitCode: 0, timedOut: false, deadline: false, state: ended(0) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "pass" });
     expect(await calls()).toEqual(["run --name slow-1 image", "container inspect --format {{json .State}} slow-1", "rm -f -v slow-1", "container inspect slow-1"]);
   });
 
   it("stops a container at the timeout and reports no exit code, even when docker kill ends it with one", async () => {
-    expect(await runContainer(["image"], "late-1", envFor({ FAKE_RUN: "hang", FAKE_KILL: "stops" }), 0.2)).toStrictEqual({ exitCode: null, timedOut: true });
+    const ran = await runContainer(["image"], "late-1", envFor({ FAKE_RUN: "hang", FAKE_KILL: "stops" }), 0.2);
+    expect(ran).toStrictEqual({ exitCode: null, timedOut: true, deadline: true, state: null });
+    expect(containerOutcome(ran, { ...limits, seconds: 0.2 })).toEqual({ outcome: "infra", reason: timedOutInfra(0.2) });
     expect(await calls()).toEqual(["run --name late-1 image", "kill late-1", "rm -f -v late-1", "rm -f -v late-1", "container inspect late-1"]);
   });
 
   it("kills the docker client itself when docker kill does not end it", async () => {
     const started = Date.now();
-    expect(await runContainer(["image"], "stuck-1", envFor({ FAKE_RUN: "hang" }), 0.2)).toStrictEqual({ exitCode: null, timedOut: true });
+    expect(await runContainer(["image"], "stuck-1", envFor({ FAKE_RUN: "hang" }), 0.2)).toStrictEqual({ exitCode: null, timedOut: true, deadline: true, state: null });
     expect(Date.now() - started).toBeLessThan(10_000);
     expect(await calls()).toEqual(["run --name stuck-1 image", "kill stuck-1", "rm -f -v stuck-1", "rm -f -v stuck-1", "container inspect stuck-1"]);
   }, 30_000);
 
-  it("reports a container docker could not start as an infrastructure error, not an exit code to judge", async () => {
-    expect(await runContainer(["image"], "start-1", envFor({ FAKE_RUN: "start" }), 30)).toStrictEqual({ exitCode: 125, timedOut: false, infra: startFailed(125, "") });
-    const failing = '{"OOMKilled":false,"Error":"OCI runtime create failed"}';
-    expect(await runContainer(["image"], "start-2", envFor({ FAKE_RUN: "exit", FAKE_STATE: failing }), 30)).toStrictEqual({
-      exitCode: 3,
-      timedOut: false,
-      infra: startFailed(3, "OCI runtime create failed"),
-    });
+  it("reports a container docker could not create or start as an infrastructure error, not an exit code to judge", async () => {
+    const missing = await runContainer(["image"], "start-1", envFor({ FAKE_RUN: "start", FAKE_INSPECT_FAIL: "1" }), 30);
+    expect(missing).toStrictEqual({ exitCode: null, timedOut: false, deadline: false, state: null, inspect: "Error: No such container: start-1" });
+    expect(containerOutcome(missing, limits)).toEqual({ outcome: "infra", reason: inspectFailed("Error: No such container: start-1") });
+    const failing = '{"Running":false,"ExitCode":127,"OOMKilled":false,"Error":"OCI runtime create failed","StartedAt":"0001-01-01T00:00:00Z"}';
+    const refused = await runContainer(["image"], "start-2", envFor({ FAKE_RUN: "exit", FAKE_STATE: failing }), 30);
+    expect(refused).toStrictEqual({ exitCode: 127, timedOut: false, deadline: false, state: ended(127, { started: false, error: "OCI runtime create failed" }) });
+    expect(containerOutcome(refused, limits)).toEqual({ outcome: "infra", reason: startFailed(127, "OCI runtime create failed") });
+    const idle = '{"Running":false,"ExitCode":0,"OOMKilled":false,"Error":"","StartedAt":"0001-01-01T00:00:00Z"}';
+    const never = await runContainer(["image"], "start-3", envFor({ FAKE_RUN: "slow", FAKE_STATE: idle }), 30);
+    expect(containerOutcome(never, limits)).toEqual({ outcome: "infra", reason: NEVER_STARTED });
+  });
+
+  it("judges exit 125 from inside a started container as the check's own fail, whatever it prints", async () => {
+    const ran = await runContainer(["image"], "own-1", envFor({ FAKE_RUN: "own125" }), 30);
+    expect(ran).toStrictEqual({ exitCode: 125, timedOut: false, deadline: false, state: ended(125) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "fail", reason: exitedWith(125) });
+  });
+
+  it("treats an inspect that fails, hangs, answers unreadably or finds the container still running as an infrastructure error", async () => {
+    const started = Date.now();
+    const hung = await runContainer(["image"], "hang-1", envFor({ FAKE_RUN: "exit", FAKE_INSPECT_HANG: "1" }), 30, 0.3);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(hung).toStrictEqual({ exitCode: null, timedOut: false, deadline: false, state: null, inspect: dockerTimedOut(0.3) });
+    expect(containerOutcome(hung, limits)).toEqual({ outcome: "infra", reason: inspectFailed(dockerTimedOut(0.3)) });
+    for (const state of ["not json", "[1]", '{"Running":true,"ExitCode":0,"OOMKilled":false,"Error":"","StartedAt":"2026-01-01T00:00:00Z"}', '{"Running":false,"OOMKilled":false,"Error":""}']) {
+      const ran = await runContainer(["image"], "odd-1", envFor({ FAKE_RUN: "slow", FAKE_STATE: state }), 30);
+      expect(ran.state, state).toBeNull();
+      expect(containerOutcome(ran, limits).outcome, state).toBe("infra");
+    }
   });
 
   it("treats docker being down, a failed pull and a pull that hangs as infrastructure errors, each within its time limit", async () => {
     const box = { kind: "docker", image: SANDBOX_IMAGE, memory: "1g", cpus: "1", tmp: "256m", gpu: false } as const;
-    const limits = { ask: 2, pull: 0.3 };
-    await expect(sandboxReady(box, envFor({ FAKE_VERSION: "fail" }), limits)).rejects.toThrow(new JudgeInfraError(dockerMissing("Cannot connect to the Docker daemon")));
-    await expect(sandboxReady(box, envFor({ FAKE_IMAGE: "0" }), limits)).resolves.toBeUndefined();
-    await expect(sandboxReady(box, envFor({ FAKE_PULL: "fail" }), limits)).rejects.toBeInstanceOf(JudgeInfraError);
+    const limitsOf = { ask: 2, pull: 0.3 };
+    await expect(sandboxReady(box, envFor({ FAKE_VERSION: "fail" }), limitsOf)).rejects.toThrow(new JudgeInfraError(dockerMissing("Cannot connect to the Docker daemon")));
+    await expect(sandboxReady(box, envFor({ FAKE_IMAGE: "0" }), limitsOf)).resolves.toBeUndefined();
+    await expect(sandboxReady(box, envFor({ FAKE_PULL: "fail" }), limitsOf)).rejects.toBeInstanceOf(JudgeInfraError);
     const started = Date.now();
-    await expect(sandboxReady(box, envFor({ FAKE_PULL: "hang" }), limits)).rejects.toThrow(new JudgeInfraError(imageMissing(SANDBOX_IMAGE, dockerTimedOut(0.3))));
+    await expect(sandboxReady(box, envFor({ FAKE_PULL: "hang" }), limitsOf)).rejects.toThrow(new JudgeInfraError(imageMissing(SANDBOX_IMAGE, dockerTimedOut(0.3))));
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it("reports a container the kernel killed for memory as out of memory", async () => {
-    const killed = '{"OOMKilled":true,"Error":""}';
-    expect(await runContainer(["image"], "oom-1", envFor({ FAKE_RUN: "oom", FAKE_STATE: killed }), 30)).toStrictEqual({ exitCode: 137, timedOut: false, oom: true });
+    const killed = '{"Running":false,"ExitCode":137,"OOMKilled":true,"Error":"","StartedAt":"2026-01-01T00:00:00Z"}';
+    const ran = await runContainer(["image"], "oom-1", envFor({ FAKE_RUN: "oom", FAKE_STATE: killed }), 30);
+    expect(ran).toStrictEqual({ exitCode: 137, timedOut: false, deadline: false, state: ended(137, { oomKilled: true }) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "infra", reason: oomInfra("1g") });
     expect(await calls()).toEqual(["run --name oom-1 image", "container inspect --format {{json .State}} oom-1", "rm -f -v oom-1", "container inspect oom-1"]);
   });
 
-  it("counts a kill with signal 9 as out of memory even when docker has not flagged it yet", async () => {
-    expect(await runContainer(["image"], "oom-2", envFor({ FAKE_RUN: "oom" }), 30)).toStrictEqual({ exitCode: 137, timedOut: false, oom: true });
+  it("judges a kill with signal 9 that docker did not flag as out of memory as the check's own fail", async () => {
+    const ran = await runContainer(["image"], "oom-2", envFor({ FAKE_RUN: "oom" }), 30);
+    expect(ran).toStrictEqual({ exitCode: 137, timedOut: false, deadline: false, state: ended(137) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "fail", reason: exitedWith(137) });
   });
 
   it("counts docker's out-of-memory flag even when the container's shell survives and exits otherwise", async () => {
-    const killed = '{"OOMKilled":true,"Error":""}';
-    expect(await runContainer(["image"], "oom-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: killed }), 30)).toStrictEqual({ exitCode: 3, timedOut: false, oom: true });
+    const killed = '{"Running":false,"ExitCode":3,"OOMKilled":true,"Error":"","StartedAt":"2026-01-01T00:00:00Z"}';
+    const ran = await runContainer(["image"], "oom-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: killed }), 30);
+    expect(ran).toStrictEqual({ exitCode: 3, timedOut: false, deadline: false, state: ended(3, { oomKilled: true }) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "infra", reason: oomInfra("1g") });
   });
 
   it("shows what the container prints only with its control characters escaped", async () => {
-    expect(await runContainer(["image"], "noisy-1", envFor({ FAKE_RUN: "noisy" }), 30)).toStrictEqual({ exitCode: 0, timedOut: false });
+    expect(await runContainer(["image"], "noisy-1", envFor({ FAKE_RUN: "noisy" }), 30)).toStrictEqual({ exitCode: 0, timedOut: false, deadline: false, state: ended(0) });
     const shown = warned.join("");
     expect(shown).toContain("line\\u001b[2J\\u000d\\u202eend\n");
     expect(shown).not.toMatch(/[\u001b\r‮]/u);

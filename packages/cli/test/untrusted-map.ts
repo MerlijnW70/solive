@@ -24,7 +24,7 @@ export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>
   [tool("get_spec")]: { url: payer("sanitized"), text: payer("untrusted"), sha256: payer("hashed") },
   [tool("wallet_setup")]: { "faucet.refused": faucet("sanitized") },
   [tool("wallet_fetch_work")]: { url: worker("sanitized"), untrusted_text: worker("untrusted"), sha256: worker("hashed"), "first.commitment": worker("hashed") },
-  [tool("wallet_judge_work")]: { sha256: worker("hashed"), "cases.failures[].detail": worker("sanitized"), "host.failures[].detail": worker("sanitized") },
+  [tool("wallet_judge_work")]: { sha256: worker("hashed"), "cases.failures[].detail": worker("sanitized"), "host.failures[].detail": worker("sanitized"), reason: worker("sanitized") },
   [tool("wallet_worker")]: { brief: payer("sanitized") },
   [tool("find_jobs")]: { "jobs[].spec_url": payer("sanitized"), "jobs[].spec_hash": payer("hashed") },
   [tool("get_profile")]: { "skills[]": profileOwner("sanitized"), endpoint: profileOwner("sanitized"), doc_url: profileOwner("sanitized"), doc_sha256: profileOwner("hashed") },

@@ -6,6 +6,7 @@ import { MOUNT_BASE, MOUNT_DIR } from "../src/artifact.js";
 import { JudgeInfraError } from "../src/judge-errors.js";
 import { type Doctor, DOCTOR_NOT_READY, type Mounts, mountsNear, sandboxDoctor } from "../src/sandbox-doctor.js";
 import { type Box, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
+import { exitedWith } from "../src/verdict-model.js";
 
 type Answer = { code: number; out?: string };
 
@@ -14,7 +15,7 @@ type Plan = {
   imageId?: Answer;
   imageEnv?: Answer;
   pull?: Answer;
-  runs?: { match: string; code: number }[];
+  runs?: { match: string; code: number; oom?: boolean }[];
   unlink?: boolean;
 };
 
@@ -41,7 +42,15 @@ else if (args[0] === "run") {
     }
   }
   const run = (plan.runs ?? []).find(({ match }) => joined.includes(match));
-  answer({ code: run === undefined ? 0 : run.code });
+  const code = run === undefined ? 0 : run.code;
+  const state = { Running: false, ExitCode: code, OOMKilled: run?.oom === true, Error: "", StartedAt: "2026-01-01T00:00:00Z" };
+  fs.writeFileSync(path.join(path.dirname(${JSON.stringify(log)}), "state-" + args[args.indexOf("--name") + 1]), JSON.stringify(state));
+  answer({ code });
+}
+else if (args[0] === "container" && args[2] === "--format") {
+  let state = null;
+  try { state = fs.readFileSync(path.join(path.dirname(${JSON.stringify(log)}), "state-" + args[4]), "utf8"); } catch {}
+  answer(state === null ? { code: 1 } : { code: 0, out: state });
 }
 else if (args[0] === "container") answer({ code: 1 });
 else answer({ code: 0 });
@@ -117,7 +126,7 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
         imageEnv: { code: 0, out: '["PATH=/usr/bin","IMAGE_OWN=1"]' },
         runs: [
           { match: "ls /sys/class/net", code: 1 },
-          { match: "/dev/zero", code: 137 },
+          { match: "/dev/zero", code: 137, oom: true },
         ],
       },
       join(dir, "judge.json"),
@@ -125,7 +134,7 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
     expect(found.checks[0]).toStrictEqual({ check: "docker is usable", ok: true, detail: "27.0.0" });
     expect(found.checks[1]).toStrictEqual({ check: "image present and pinned by digest", ok: true });
     expect(checkNamed(found, "the image's own environment can be read")).toBeUndefined();
-    expect(checkNamed(found, "no network: only the loopback interface")).toStrictEqual({ check: "no network: only the loopback interface", ok: false, detail: "exit 1" });
+    expect(checkNamed(found, "no network: only the loopback interface")).toStrictEqual({ check: "no network: only the loopback interface", ok: false, detail: exitedWith(1) });
     expect(checkNamed(found, "read-only root filesystem")).toStrictEqual({ check: "read-only root filesystem", ok: true });
     expect(checkNamed(found, "a memory bomb is killed at the memory limit and reported as out of memory")?.ok).toBe(true);
     expect(checkNamed(found, "a check past its time limit is stopped and its container removed")?.ok).toBe(false);
@@ -142,7 +151,7 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
   });
 
   it("warns when the host's mounts are near the limit, and the warning alone changes no check", { timeout: 60_000 }, async () => {
-    const plan = { runs: [{ match: "/dev/zero", code: 137 }] };
+    const plan = { runs: [{ match: "/dev/zero", code: 137, oom: true }] };
     const keypair = join(dir, "judge.json");
     const full = { count: 99_968, limit: 100_000 };
     const near = await doctor(plan, keypair, async () => full);
@@ -159,6 +168,8 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
     const { found, calls } = await doctor({ imageEnv: { code: 1 } }, join(dir, "judge.json"));
     expect(checkNamed(found, "the image's own environment can be read")).toStrictEqual({ check: "the image's own environment can be read", ok: false });
     expect(checkNamed(found, "a memory bomb is killed at the memory limit and reported as out of memory")?.ok).toBe(false);
+    const unflagged = await doctor({ runs: [{ match: "/dev/zero", code: 137 }] }, join(dir, "judge.json"));
+    expect(checkNamed(unflagged.found, "a memory bomb is killed at the memory limit and reported as out of memory")?.ok).toBe(false);
     expect(checkNamed(found, "read-only root filesystem")?.ok).toBe(true);
     expect(scriptOf(calls, "allowed=")).not.toContain(" IMAGE_OWN ");
     expect(found.ready).toBe(false);

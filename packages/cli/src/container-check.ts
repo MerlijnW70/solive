@@ -3,6 +3,9 @@ import type { Check } from "./check-process.js";
 import { relayOutput, toStderr } from "./check-output.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { quietly, warn } from "./process-reap.js";
+import { type ContainerFacts, type ContainerState } from "./verdict-model.js";
+
+export { startFailed } from "./verdict-model.js";
 
 export type Docker = { status: number | null; out: string };
 
@@ -38,26 +41,33 @@ export function docker(args: readonly string[], env: NodeJS.ProcessEnv, shown = 
 
 export const containerLeft = (name: string): string => `warning: the check's container ${name} could not be removed; remove it with docker rm -f ${name}`;
 
-export const DOCKER_RUN_FAILED = 125;
-export const KILLED_EXIT = 137;
+export const INSPECT_SECONDS = 30;
 
-export type Ended = { oom: boolean; error: string };
+const NEVER = "0001-01-01T00:00:00Z";
 
-export async function endedState(name: string, env: NodeJS.ProcessEnv): Promise<Ended | null> {
-  const inspected = await docker(["container", "inspect", "--format", "{{json .State}}", name], env);
+export type Inspected = { state: ContainerState } | { state: null; problem: string };
+
+export async function endedState(name: string, env: NodeJS.ProcessEnv, timeoutSeconds: number = INSPECT_SECONDS): Promise<Inspected> {
+  const inspected = await docker(["container", "inspect", "--format", "{{json .State}}", name], env, false, timeoutSeconds);
   if (inspected.status !== 0) {
-    return null;
+    return { state: null, problem: inspected.out.slice(0, 300) };
   }
+  let state: Record<string, unknown>;
   try {
-    const state = JSON.parse(inspected.out) as { OOMKilled?: unknown; Error?: unknown };
-    return { oom: state.OOMKilled === true, error: typeof state.Error === "string" ? state.Error : "" };
+    const parsed = JSON.parse(inspected.out) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { state: null, problem: "its state is not a JSON object" };
+    }
+    state = parsed as Record<string, unknown>;
   } catch {
-    return null;
+    return { state: null, problem: "its state is not JSON" };
   }
+  const { ExitCode: exitCode, OOMKilled: oomKilled, Error: error, StartedAt: startedAt, Running: running } = state;
+  if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode) || typeof oomKilled !== "boolean" || typeof error !== "string" || typeof startedAt !== "string" || running !== false) {
+    return { state: null, problem: "its state lacks an ended container's exit code, out-of-memory flag, error or start time" };
+  }
+  return { state: { started: startedAt !== "" && startedAt !== NEVER, exitCode, oomKilled, error } };
 }
-
-export const startFailed = (code: number, error: string): string =>
-  `docker could not start the check's container (exit ${code}${error === "" ? "" : `: ${error.slice(0, 300)}`})`;
 
 export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {
   await docker(["rm", "-f", "-v", name], env);
@@ -66,7 +76,9 @@ export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Pro
   }
 }
 
-export function runContainer(args: readonly string[], name: string, env: NodeJS.ProcessEnv, timeoutSeconds: number): Promise<Check> {
+export type ContainerRun = Check & ContainerFacts;
+
+export function runContainer(args: readonly string[], name: string, env: NodeJS.ProcessEnv, timeoutSeconds: number, inspectSeconds: number = INSPECT_SECONDS): Promise<ContainerRun> {
   return new Promise((done, failed) => {
     const child = spawn("docker", ["run", "--name", name, ...args], {
       env,
@@ -110,20 +122,20 @@ export function runContainer(args: readonly string[], name: string, env: NodeJS.
         failed(error);
       });
     });
-    child.once("exit", (code) => {
+    child.once("exit", () => {
       clearTimeout(timer);
       void killing.finally(async () => {
-        const ended = timedOut || interrupted !== undefined ? null : await endedState(name, env);
+        const stopped = timedOut || interrupted !== undefined;
+        const inspected: Inspected = stopped ? { state: null, problem: "" } : await endedState(name, env, inspectSeconds);
         await removeContainer(name, env);
         settle();
-        const failedToStart = code === DOCKER_RUN_FAILED || (ended !== null && ended.error !== "");
-        const killed = !timedOut && interrupted === undefined && (ended?.oom === true || code === KILLED_EXIT);
         done({
-          exitCode: timedOut || interrupted !== undefined ? null : code,
+          exitCode: stopped || inspected.state === null ? null : inspected.state.exitCode,
           timedOut,
+          deadline: timedOut,
+          state: inspected.state,
           ...(interrupted === undefined ? {} : { interrupted }),
-          ...(killed ? { oom: true as const } : {}),
-          ...(failedToStart && !killed ? { infra: startFailed(code ?? DOCKER_RUN_FAILED, ended?.error ?? "") } : {}),
+          ...(inspected.state === null && !stopped ? { inspect: inspected.problem } : {}),
         });
       });
     });

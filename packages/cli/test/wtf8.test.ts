@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JudgeRefused } from "../src/judge-errors.js";
+import { EngineStopped } from "../src/verdict-model.js";
 import { decodeOutput, encodeInput } from "../src/viper.js";
 import { Wtf8Refused, wtf8Decode, wtf8Encode } from "../src/wtf8.js";
 
@@ -92,14 +92,14 @@ describe("the viper judge's string values", () => {
     expect(decodeOutput(answered([0xf0, 0x9f, 0x98, 0x80]), 1)).toStrictEqual([{ verdict: "wrong", detail: "\u{1f600}" }]);
   });
 
-  it("refuses an answer that is not WTF-8 as a broken output", () => {
+  it("treats an answer that is not WTF-8 as a broken engine output, no verdict on the work", () => {
     for (const [value, why] of [
       [[0xff], "a byte UTF-8 never uses at byte 0"],
       [[0x61, 0x80], "a continuation byte that starts no character at byte 1"],
       [[0xed, 0xa0, 0x80, 0xed, 0xb0, 0x80], "a surrogate pair written as two triples at byte 0"],
     ] as const) {
-      expect(() => decodeOutput(answered([...value]), 1)).toThrow(JudgeRefused);
-      expect(() => decodeOutput(answered([...value]), 1)).toThrow(`the viper judge answered a string that is not WTF-8, with ${why}; nothing was paid`);
+      expect(() => decodeOutput(answered([...value]), 1)).toThrow(EngineStopped);
+      expect(() => decodeOutput(answered([...value]), 1)).toThrow(`the viper judge answered a string that is not WTF-8, with ${why}`);
     }
   });
 

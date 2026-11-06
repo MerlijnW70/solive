@@ -2,15 +2,16 @@ import { createHash } from "node:crypto";
 import { type Address, getAddressEncoder, getBase58Encoder } from "@solana/kit";
 import type { FinalizedBlock, Transport } from "@intent-engine/client";
 import { JudgeRefused } from "./judge-errors.js";
+import { deadlineOf, ENGINE_FAULT, EngineStopped, faultOf, type Stop } from "./verdict-model.js";
 import {
   type Case,
   type CaseResult,
   type Cases,
+  caseResults,
   CASES_FENCE,
   CLOCK_FROM,
   CLOCK_TO,
   deadlineMissed,
-  decodeOutput,
   type Draw,
   encodeInput,
   type Failure,
@@ -24,7 +25,6 @@ import {
   type Run,
   runViper,
   SEED_LIMIT,
-  stoppedAll,
   utf8Exact,
 } from "./viper.js";
 
@@ -33,7 +33,7 @@ export const DRAW_POLL_SECONDS = 2;
 export const DETAIL_BYTES = 256;
 
 export type Beacon = FinalizedBlock & { seed: string; draw: Draw };
-export type DrawJudged = { slot: number; blockhash: string; seed: string; total: number; passed: number; failures: Failure[] };
+export type DrawJudged = { slot: number; blockhash: string; seed: string; total: number; passed: number; failures: Failure[]; faults?: number; stop?: Stop };
 
 const ENTRY = "judgeDrawEntry";
 const DEFAULT_EXPORT = /\bexport\s+default\b/g;
@@ -120,23 +120,26 @@ function wrapped(source: string, part: "generator" | "checker", tail: string): s
   return `${source.replace(DEFAULT_EXPORT, `const ${ENTRY} =`)}\n;${tail}\n`;
 }
 
-type Unfinished = { verdict: "stopped" | "crashed"; detail: string };
+const ENGINE = "the viper judge";
 
-async function ranCases(wasm: Buffer, source: string, budget: Cases, cases: Case[], run: Run, timeoutSeconds: number): Promise<CaseResult[] | Unfinished> {
+async function ranCases(wasm: Buffer, source: string, budget: Cases, cases: Case[], run: Run, timeoutSeconds: number): Promise<CaseResult[] | Stop> {
   if (timeoutSeconds <= 0) {
-    return { verdict: "stopped", detail: deadlineMissed("the viper judge", timeoutSeconds) };
+    return deadlineOf(deadlineMissed(ENGINE, timeoutSeconds), cases.length);
   }
   const ran = await runViper(wasm, encodeInput(source, { steps: budget.steps, heap: budget.heap, seed: undefined, clock: undefined, cases }, run), timeoutSeconds);
-  if (ran.timedOut) {
-    return { verdict: "stopped", detail: deadlineMissed("the viper judge", timeoutSeconds) };
-  }
-  if (ran.exitCode !== 0) {
-    return { verdict: "crashed", detail: `the judge process ended with exit code ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}` };
-  }
-  return decodeOutput(ran.output, cases.length);
+  return caseResults(ran, cases.length, timeoutSeconds, ENGINE);
 }
 
-const unfinished = (ran: CaseResult[] | Unfinished): ran is Unfinished => !Array.isArray(ran);
+const unfinished = (ran: CaseResult[] | Stop): ran is Stop => !Array.isArray(ran);
+
+export const engineFaultIn = (part: string): string => `${ENGINE} reported a fault of its own in ${part}, which neither the spec nor a delivery can cause`;
+
+const faulted = (part: "generator" | "checker", results: readonly CaseResult[], unfinishedCount: number): void => {
+  const faults = results.filter((result) => result.verdict === ENGINE_FAULT).length;
+  if (faults > 0) {
+    throw new EngineStopped(faultOf(engineFaultIn(`${faults} runs of the spec's draw ${part}`), unfinishedCount));
+  }
+};
 
 function parsed(text: string): unknown {
   try {
@@ -158,8 +161,9 @@ export async function drawnArguments(wasm: Buffer, budget: Cases, draw: Draw, se
   const read = async (at: number[]): Promise<Primitive[]> => {
     const results = await ranCases(wasm, source, budget, at.map((from) => ({ args: [seed, draw.count, from], expected: null })), run, left());
     if (unfinished(results)) {
-      return refuseDraw("generator", `did not finish: ${results.detail}`);
+      throw new EngineStopped({ ...results, unfinished: draw.count });
     }
+    faulted("generator", results, draw.count);
     return results.map((result) => (result.verdict === "wrong" && result.detail !== undefined ? result.detail : refuseDraw("generator", told(result))));
   };
   const [length] = await read([-1]);
@@ -189,23 +193,42 @@ export async function judgeDraw(
 ): Promise<DrawJudged> {
   const text = moduleText(source);
   const { draw } = beacon;
-  const drawn = await drawnArguments(wasm, cases, draw, beacon.seed, left());
   const recorded = { slot: Number(beacon.slot), blockhash: beacon.blockhash, seed: beacon.seed };
-  const answered = await ranCases(wasm, text, cases, drawn.map((args) => ({ args, expected: null })), run, left());
-  const unanswered = (ran: Unfinished): DrawJudged => ({
-    ...recorded,
-    ...(ran.verdict === "stopped" ? stoppedAll(drawn.length, ran.detail) : { total: drawn.length, passed: 0, failures: [{ case: 0, ...ran }] }),
-  });
-  if (unfinished(answered)) {
-    return unanswered(answered);
-  }
   const failures: Failure[] = [];
+  let faults = 0;
+  const ended = (total: number, stop?: Stop): DrawJudged => {
+    failures.sort((a, b) => a.case - b.case);
+    const finished = total - (stop?.unfinished ?? 0);
+    return {
+      ...recorded,
+      total,
+      passed: finished - failures.length - faults,
+      failures: failures.slice(0, REPORTED_FAILURES),
+      ...(faults === 0 ? {} : { faults }),
+      ...(stop === undefined ? {} : { stop }),
+    };
+  };
+  let drawn: Primitive[][];
+  try {
+    drawn = await drawnArguments(wasm, cases, draw, beacon.seed, left());
+  } catch (error) {
+    if (error instanceof EngineStopped) {
+      return ended(draw.count, { ...error.stop, unfinished: draw.count });
+    }
+    throw error;
+  }
+  const answered = await ranCases(wasm, text, cases, drawn.map((args) => ({ args, expected: null })), run, left());
+  if (unfinished(answered)) {
+    return ended(drawn.length, { ...answered, unfinished: drawn.length });
+  }
   const answers: { case: number; answer: Primitive }[] = [];
   answered.forEach((result, index) => {
     if (result.verdict === "pass") {
       answers.push({ case: index, answer: null });
     } else if (result.verdict === "wrong" && result.detail !== undefined) {
       answers.push({ case: index, answer: result.detail });
+    } else if (result.verdict === ENGINE_FAULT) {
+      faults += 1;
     } else {
       failures.push({ case: index, ...result });
     }
@@ -214,7 +237,10 @@ export async function judgeDraw(
   if (long.length > 0) {
     const confirmed = await ranCases(wasm, text, cases, long.map(({ case: index, answer }) => ({ args: drawn[index] ?? [], expected: answer })), run, left());
     if (unfinished(confirmed)) {
-      return unanswered(confirmed);
+      return ended(drawn.length, { ...confirmed, unfinished: answers.length });
+    }
+    if (confirmed.some((result) => result.verdict === ENGINE_FAULT)) {
+      return ended(drawn.length, faultOf(engineFaultIn("a confirmation run of long answers"), answers.length));
     }
     if (confirmed.some((result) => result.verdict !== "pass")) {
       throw new JudgeRefused(answerTooLong);
@@ -237,7 +263,10 @@ export async function judgeDraw(
       left(),
     );
     if (unfinished(checked)) {
-      return refuseDraw("checker", `did not finish: ${checked.detail}`);
+      return ended(drawn.length, { ...checked, unfinished: accepted.length });
+    }
+    if (checked.some((result) => result.verdict === ENGINE_FAULT)) {
+      return ended(drawn.length, faultOf(engineFaultIn("the spec's draw checker"), accepted.length));
     }
     checked.forEach((result, at) => {
       const { case: index, answer } = accepted[at] as { case: number; answer: Primitive };
@@ -248,6 +277,5 @@ export async function judgeDraw(
       }
     });
   }
-  failures.sort((a, b) => a.case - b.case);
-  return { ...recorded, total: drawn.length, passed: drawn.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES) };
+  return ended(drawn.length);
 }

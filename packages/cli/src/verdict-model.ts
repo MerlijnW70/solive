@@ -1,0 +1,149 @@
+import { EXIT_RETRY, type InterruptSignal, JudgeInfraError, JudgeInterrupted, oomInfra, timedOutInfra } from "./judge-errors.js";
+
+export type Outcome = { outcome: "pass" } | { outcome: "fail"; reason: string } | { outcome: "infra"; reason: string };
+
+export type Ruling = Outcome | { outcome: "interrupted"; signal: InterruptSignal };
+
+export const EXIT_OF = { pass: 0, fail: 1, infra: EXIT_RETRY } as const;
+
+export const exitOfVerdict = (verdict: unknown): number => (verdict === "pass" ? EXIT_OF.pass : EXIT_OF.fail);
+
+export type ContainerState = { started: boolean; exitCode: number; oomKilled: boolean; error: string };
+
+export type ContainerFacts = { interrupted?: InterruptSignal; deadline: boolean; state: ContainerState | null; problem?: string; inspect?: string };
+
+export type ShellFacts = { interrupted?: InterruptSignal; deadline: boolean; exitCode: number | null; signal?: string; problem?: string };
+
+export type Stop = { cause: "deadline" | "fault"; reason: string; unfinished: number };
+
+export type Tally = { total: number; passed: number; faults?: number; stop?: Stop };
+
+export type Limits = { seconds: number; memory: string };
+
+export const ENGINE_FAULT = "engine";
+
+export class EngineStopped extends Error {
+  constructor(readonly stop: Stop) {
+    super(stop.reason);
+    this.name = "EngineStopped";
+  }
+}
+
+export const faultOf = (reason: string, unfinished: number): Stop => ({ cause: "fault", reason, unfinished });
+
+export const deadlineOf = (reason: string, unfinished: number): Stop => ({ cause: "deadline", reason, unfinished });
+
+const PASS: Outcome = { outcome: "pass" };
+
+const fail = (reason: string): Outcome => ({ outcome: "fail", reason });
+
+const infra = (reason: string): Outcome => ({ outcome: "infra", reason });
+
+export const notStarted = (what: string, problem: string): string => `${what} could not start the check (${problem})`;
+
+export const inspectFailed = (problem: string): string => `docker could not report how the check's container ended (${problem || "no answer"}), so its exit code cannot be trusted`;
+
+export const NEVER_STARTED = "docker created the check's container but never started it";
+
+export const startFailed = (code: number, error: string): string =>
+  `docker could not start the check's container (exit ${code}${error === "" ? "" : `: ${error.slice(0, 300)}`})`;
+
+export const exitedWith = (code: number): string => `the check exited with code ${code}`;
+
+export const endedBy = (signal: string): string => `the check was ended by ${signal}, not by the judge`;
+
+export const engineFaults = (engine: string, count: number): string =>
+  `${engine} reported a fault of its own in ${count} case${count === 1 ? "" : "s"}, which a delivery cannot cause`;
+
+export const failedCases = (engine: string, failed: number, total: number): string => `the work failed ${failed} of ${total} cases in ${engine}`;
+
+export const nothingJudged = (engine: string): string => `${engine} judged no case`;
+
+export const NO_RULING = "no engine or check ran";
+
+export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling {
+  if (facts.interrupted !== undefined) {
+    return { outcome: "interrupted", signal: facts.interrupted };
+  }
+  if (facts.deadline) {
+    return infra(timedOutInfra(limits.seconds));
+  }
+  if (facts.problem !== undefined) {
+    return infra(notStarted("docker", facts.problem));
+  }
+  const { state } = facts;
+  if (state === null) {
+    return infra(inspectFailed(facts.inspect ?? ""));
+  }
+  if (state.error !== "") {
+    return infra(startFailed(state.exitCode, state.error));
+  }
+  if (!state.started) {
+    return infra(NEVER_STARTED);
+  }
+  if (state.oomKilled) {
+    return infra(oomInfra(limits.memory));
+  }
+  return state.exitCode === 0 ? PASS : fail(exitedWith(state.exitCode));
+}
+
+export function shellOutcome(facts: ShellFacts, limits: Limits): Ruling {
+  if (facts.interrupted !== undefined) {
+    return { outcome: "interrupted", signal: facts.interrupted };
+  }
+  if (facts.deadline) {
+    return infra(timedOutInfra(limits.seconds));
+  }
+  if (facts.problem !== undefined) {
+    return infra(notStarted("the shell", facts.problem));
+  }
+  if (facts.exitCode === 0) {
+    return PASS;
+  }
+  return fail(facts.exitCode === null ? endedBy(facts.signal ?? "a signal") : exitedWith(facts.exitCode));
+}
+
+export function engineOutcome(engine: string, tally: Tally | undefined): Outcome {
+  if (tally === undefined || tally.total <= 0) {
+    return infra(nothingJudged(engine));
+  }
+  const faults = tally.faults ?? 0;
+  const unfinished = tally.stop?.unfinished ?? 0;
+  const failed = tally.total - tally.passed - faults - unfinished;
+  if (failed > 0) {
+    return fail(failedCases(engine, failed, tally.total));
+  }
+  if (tally.stop !== undefined) {
+    return infra(tally.stop.reason);
+  }
+  if (faults > 0) {
+    return infra(engineFaults(engine, faults));
+  }
+  return tally.passed === tally.total ? PASS : infra(nothingJudged(engine));
+}
+
+export function combine(rulings: readonly Ruling[]): Ruling {
+  const interrupted = rulings.find((ruling) => ruling.outcome === "interrupted");
+  if (interrupted !== undefined) {
+    return interrupted;
+  }
+  const failed = rulings.find((ruling) => ruling.outcome === "fail");
+  if (failed !== undefined) {
+    return failed;
+  }
+  const stalled = rulings.find((ruling) => ruling.outcome === "infra");
+  if (stalled !== undefined) {
+    return stalled;
+  }
+  return rulings.length === 0 ? infra(NO_RULING) : PASS;
+}
+
+export function decided(ruling: Ruling): Exclude<Outcome, { outcome: "infra" }> {
+  if (ruling.outcome === "interrupted") {
+    throw new JudgeInterrupted(ruling.signal);
+  }
+  if (ruling.outcome === "infra") {
+    throw new JudgeInfraError(ruling.reason);
+  }
+  return ruling;
+}

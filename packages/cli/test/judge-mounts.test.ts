@@ -148,7 +148,7 @@ describe("the judge sandbox mounts", () => {
         ["true", EXIT_OK, []],
         ["exit 4", EXIT_FAILED, []],
         ["sh -c 'kill -SEGV $$'; exit $?", EXIT_FAILED, []],
-        ["sh -c 'kill -KILL $$'; exit $?", EXIT_RETRY, []],
+        ["sh -c 'kill -KILL $$'; exit $?", EXIT_FAILED, []],
         ["sleep 600", EXIT_RETRY, ["--timeout", String(STARTUP_SECONDS)]],
       ] as const) {
         expect((await cli(boxed(j, run, ...more), keys)).code, run).toBe(code);
@@ -161,11 +161,11 @@ describe("the judge sandbox mounts", () => {
       expect((await judgeNode(BOX, bytes("export default () => 1;"), "one.mjs", one, 1, 60)).judged).toMatchObject({ total: 1, passed: 1 });
       expect((await judgeNode(BOX, bytes("export default () => 2;"), "one.mjs", one, 1, 60)).judged.failures).toMatchObject([{ verdict: "wrong" }]);
       expect((await judgeNode(BOX, bytes("process.abort();"), "one.mjs", one, 1, 60)).judged.passed).toBe(0);
-      expect((await judgeNode(BOX, bytes("export default () => { for (;;) {} };"), "one.mjs", one, 1, STARTUP_SECONDS)).judged.failures).toMatchObject([{ verdict: "stopped" }]);
+      expect((await judgeNode(BOX, bytes("export default () => { for (;;) {} };"), "one.mjs", one, 1, STARTUP_SECONDS)).judged).toMatchObject({ failures: [], stop: { cause: "deadline", unfinished: 1 } });
       const many = casesOf(Array.from({ length: 10 }, () => ({ args: [], expected: 1 })));
       const halted = await interrupting(() => judgeNode(BOX, bytes("export default () => { for (;;) {} };"), "one.mjs", many, 1, 120));
       expect(halted.judged.passed).toBe(0);
-      expect(halted.judged.failures.at(-1)).toMatchObject({ verdict: "stopped", detail: "SIGINT stopped the judge" });
+      expect(halted.judged.stop).toMatchObject({ reason: "SIGINT stopped the judge" });
 
       const grown = added(before, await sources());
       expect(grown, `mount sources this batch added on the host:\n${grown.join("\n")}`).toEqual([]);

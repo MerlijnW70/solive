@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { answerFault, type Beacon, DETAIL_BYTES, drawnArguments, engineRun, judgeDraw } from "../src/draw.js";
 import { type CaseResult, type Cases, CASES_FENCE, CLOCK_FROM, deadlineMissed, type Draw, MAX_ARGUMENTS, notUtf8, OUTPUT_BYTES, type Primitive, type Ran, runViper } from "../src/viper.js";
+import { engineOutcome } from "../src/verdict-model.js";
 import { wtf8Decode, wtf8Encode } from "../src/wtf8.js";
 
 vi.mock("../src/viper.js", async (original) => {
@@ -152,10 +153,23 @@ describe("drawing cases with the generator", () => {
     vi.mocked(runViper).mockClear();
   });
 
-  it("runs no engine once the time is up", async () => {
+  it("runs no engine once the time is up, and blames neither the spec nor the work", async () => {
     engine(() => ({ output: Buffer.alloc(0), exitCode: null, timedOut: true, diagnostic: "" }));
-    await expect(drawn(DRAW, 0)).rejects.toMatchObject({ message: generatorRefused(`did not finish: ${deadlineMissed("the viper judge", 0)}`) });
+    await expect(drawn(DRAW, 0)).rejects.toMatchObject({ name: "EngineStopped", stop: { cause: "deadline", reason: deadlineMissed("the viper judge", 0), unfinished: 2 } });
     expect(roles).toEqual([]);
+  });
+
+  it("treats a generator run that crashes or reports an engine fault as no verdict, not as the spec's fault", async () => {
+    engine(() => ({ output: Buffer.alloc(0), exitCode: 1, timedOut: false, diagnostic: "broke" }));
+    await expect(drawn()).rejects.toMatchObject({ name: "EngineStopped", stop: { cause: "fault", unfinished: 2 } });
+    engine(() => [{ verdict: "engine" }]);
+    await expect(drawn()).rejects.toMatchObject({ name: "EngineStopped", stop: { cause: "fault", unfinished: 2 } });
+    roles = [];
+    engine(() => ({ output: Buffer.alloc(0), exitCode: 1, timedOut: false, diagnostic: "broke" }));
+    const stopped = await judged();
+    expect(stopped).toMatchObject({ ...recorded, total: 2, passed: 0, failures: [], stop: { cause: "fault", unfinished: 2 } });
+    expect(engineOutcome("drawn", stopped).outcome).toBe("infra");
+    expect(roles).toEqual(["generator"]);
   });
 
   it("names the verdict a broken generator gave, with its detail when it has one", async () => {
@@ -220,12 +234,34 @@ describe("judging a drawn delivery", () => {
 
   const LISTS: Primitive[][] = [[0], [1]];
 
-  it("names a crashed answer run once, and a stopped one on every case it reports", async () => {
+  it("names a crashed or timed out answer run as unfinished, no verdict on the work", async () => {
     judging({ lists: LISTS, answer: () => ({ verdict: "pass" }), answerRun: { output: Buffer.alloc(0), exitCode: 1, timedOut: false, diagnostic: " broke \n" } });
-    expect(await judged()).toStrictEqual({ ...recorded, total: 2, passed: 0, failures: [{ case: 0, verdict: "crashed", detail: "the judge process ended with exit code 1: broke" }] });
+    const crashed = await judged();
+    expect(crashed).toStrictEqual({
+      ...recorded,
+      total: 2,
+      passed: 0,
+      failures: [],
+      stop: { cause: "fault", reason: "the viper judge process ended with exit code 1 and no readable verdict: broke", unfinished: 2 },
+    });
+    expect(engineOutcome("drawn", crashed).outcome).toBe("infra");
     judging({ lists: LISTS, answer: () => ({ verdict: "pass" }), answerRun: { output: Buffer.alloc(0), exitCode: null, timedOut: true, diagnostic: "" } });
-    const detail = deadlineMissed("the viper judge", LEFT);
-    expect(await judged()).toStrictEqual({ ...recorded, total: 2, passed: 0, failures: [{ case: 0, verdict: "stopped", detail }, { case: 1, verdict: "stopped" }] });
+    const late = await judged();
+    expect(late).toStrictEqual({ ...recorded, total: 2, passed: 0, failures: [], stop: { cause: "deadline", reason: deadlineMissed("the viper judge", LEFT), unfinished: 2 } });
+    expect(engineOutcome("drawn", late).outcome).toBe("infra");
+  });
+
+  it("counts an engine fault on a drawn case or in the checker as no verdict, and a real failure beside it as a fail", async () => {
+    judging({ lists: LISTS, answer: ([n]) => (n === 0 ? { verdict: "engine" } : { verdict: "wrong", detail: 1 }) });
+    const faulty = await judged();
+    expect(faulty).toStrictEqual({ ...recorded, total: 2, passed: 1, failures: [], faults: 1 });
+    expect(engineOutcome("drawn", faulty).outcome).toBe("infra");
+    judging({ lists: LISTS, answer: ([n]) => (n === 0 ? { verdict: "engine" } : { verdict: "threw", detail: "Error: no" }) });
+    expect(engineOutcome("drawn", await judged()).outcome).toBe("fail");
+    engine((asked) => (asked.role === "generator" ? generating(LISTS, asked) : asked.role === "answer" ? asked.cases.map(() => ({ verdict: "wrong", detail: 1 })) : asked.cases.map(() => ({ verdict: "engine" }))));
+    const unchecked = await judged();
+    expect(unchecked).toMatchObject({ total: 2, passed: 0, failures: [], stop: { cause: "fault", unfinished: 2 } });
+    expect(engineOutcome("drawn", unchecked).outcome).toBe("infra");
   });
 
   it("confirms only answers longer than the engine reports whole", async () => {

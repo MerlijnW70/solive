@@ -5,7 +5,7 @@ import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { claim, processTable, statOf } from "./process-table.js";
 import { sweep, taskkill, type Watch } from "./process-reap.js";
 
-export { containerLeft, type Docker, docker, removeContainer, runContainer } from "./container-check.js";
+export { containerLeft, type ContainerRun, type Docker, docker, removeContainer, runContainer } from "./container-check.js";
 export { leftRunning, stillRunning } from "./process-reap.js";
 export { claim, type Recorded, type Running } from "./process-table.js";
 
@@ -17,7 +17,7 @@ const SCAN_MS = 250;
 
 export const CHECK_ENV = ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "TERM"] as const;
 
-export type Check = { exitCode: number | null; timedOut: boolean; interrupted?: InterruptSignal; escaped?: number[]; oom?: true; infra?: string };
+export type Check = { exitCode: number | null; timedOut: boolean; interrupted?: InterruptSignal; escaped?: number[]; signal?: string };
 
 export type CheckOptions = { cwd?: string };
 
@@ -104,7 +104,7 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
         failed(error);
       });
     });
-    child.once("exit", (code) => {
+    child.once("exit", (code, signal) => {
       clearTimeout(timer);
       void killing.finally(async () => {
         stopScanning();
@@ -119,6 +119,7 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
           timedOut,
           ...(interrupted === undefined ? {} : { interrupted }),
           ...(escaped.length === 0 ? {} : { escaped }),
+          ...(code === null && signal !== null && !timedOut && interrupted === undefined ? { signal } : {}),
         });
       });
     });

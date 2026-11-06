@@ -12,12 +12,13 @@ import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
-import { type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, oomInfra, SIGNAL_EXIT, timedOutInfra } from "./judge-errors.js";
+import { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+import { combine, containerOutcome, decided, engineOutcome, type Ruling, shellOutcome } from "./verdict-model.js";
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
 import { containerArgs, containerName, dockerEnv, GPU_SHARED, NO_ISOLATION, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
-import { type HostJudged, judgeHost } from "./host-judge.js";
-import { judgeNode, type NodeJudged } from "./node-judge.js";
+import { HOST_ENGINE, type HostJudged, judgeHost } from "./host-judge.js";
+import { judgeNode, NODE_ENGINE, type NodeJudged } from "./node-judge.js";
 import { checkInvited } from "./invites.js";
 import { inviteRefusal } from "./fetch-failure.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
@@ -46,12 +47,6 @@ export {
 } from "./check-process.js";
 
 const FORCED_EXIT_MS = 200;
-
-const notStarted =
-  (what: string) =>
-  (error: unknown): never => {
-    throw new JudgeInfraError(`${what} could not start the check (${reasonOf(error)})`);
-  };
 
 export type JudgeCommand = Extract<Command, { name: "judge" }>;
 
@@ -357,7 +352,9 @@ async function checkAndSettle(
   let host: HostJudged | undefined;
   let node: NodeJudged | undefined;
   let cleanup: string | undefined;
+  let ruled: Ruling | undefined;
   const plainNode = sandbox.kind === "viper" ? sandbox.node : undefined;
+  const limits = { seconds: command.timeout, memory: sandbox.kind === "docker" ? sandbox.memory : "allowed" };
   if (viper !== undefined) {
     const [entry] = read.entries;
     const module = entry?.bytes ?? new Uint8Array();
@@ -378,38 +375,38 @@ async function checkAndSettle(
       node = ran.judged;
       cleanup = ran.cleanup;
     }
+    const engines = [
+      engineOutcome("the viper judge", cases),
+      engineOutcome(HOST_ENGINE, host),
+      ...(beacon === undefined ? [] : [engineOutcome("the viper judge's drawn cases", drawn)]),
+      ...(plainNode === undefined ? [] : [engineOutcome(NODE_ENGINE, node)]),
+    ];
+    ruled = combine(engines);
   } else {
     const copy = await copyOf(read, specBytes, checkFiles, sandbox.kind === "docker");
     const run = command.run ?? "";
+    const unstarted = (error: unknown) => ({ exitCode: null, timedOut: false, deadline: false, state: null, problem: reasonOf(error) });
     try {
       if (signals.caught() === undefined) {
         if (sandbox.kind === "docker") {
           await shareable(copy.root);
-          check = await runContainer(containerArgs(sandbox, copy, sha256, run), containerName(), dockerEnv(process.env), command.timeout).catch(notStarted("docker"));
+          const ran = await runContainer(containerArgs(sandbox, copy, sha256, run), containerName(), dockerEnv(process.env), command.timeout).catch(unstarted);
+          check = ran;
+          ruled = containerOutcome(ran, limits);
         } else {
-          check = await runCheck(run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root }).catch(notStarted("the shell"));
-          process.stderr.write(`${NO_SANDBOX}\n`);
+          const ran = await runCheck(run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root }).catch(unstarted);
+          process.stderr.write(`${NO_SANDBOX}
+`);
+          check = ran;
+          ruled = shellOutcome({ ...ran, deadline: ran.timedOut }, limits);
         }
       }
     } finally {
       cleanup = await removeCopy(copy.root);
     }
   }
-  const interrupted = check.interrupted ?? signals.caught();
-  if (interrupted !== undefined) {
-    throw new JudgeInterrupted(interrupted);
-  }
-  if (check.timedOut) {
-    throw new JudgeInfraError(timedOutInfra(command.timeout));
-  }
-  if (check.oom === true) {
-    throw new JudgeInfraError(oomInfra(sandbox.kind === "docker" ? sandbox.memory : "allowed"));
-  }
-  if (check.infra !== undefined) {
-    throw new JudgeInfraError(check.infra);
-  }
-  const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
-  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
+  const caught = signals.caught();
+  const passed = decided(combine([...(caught === undefined ? [] : [{ outcome: "interrupted", signal: caught } as const]), ...(ruled === undefined ? [] : [ruled])])).outcome === "pass";
   if (passed && confirm !== undefined) {
     await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, payees: [payTo], keypair });
   }

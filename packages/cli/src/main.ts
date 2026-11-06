@@ -12,6 +12,7 @@ import { type Command, DEFAULT_URL, ENV_URL, outputOf, parse, UsageError } from 
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInfraError, JudgeInterrupted } from "./judge.js";
+import { exitOfVerdict } from "./verdict-model.js";
 import { watchJudge } from "./judge-watch.js";
 import { addToLines, printable, printableLines, redactUrl, render, renderText } from "./render.js";
 import { withSettings } from "./wallet.js";
@@ -161,7 +162,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (command.name === "sandbox-doctor" && result !== null && "ready" in result && result.ready !== true) {
       return EXIT_FAILED;
     }
-    return command.name === "judge" && result !== null && "verdict" in result && result.verdict !== "pass" ? EXIT_FAILED : EXIT_OK;
+    return command.name === "judge" && result !== null && "verdict" in result ? exitOfVerdict(result.verdict) : EXIT_OK;
   } catch (error) {
     io.err(message(error, url, unset));
     if (error instanceof JudgeInterrupted || error instanceof JudgeInfraError) {

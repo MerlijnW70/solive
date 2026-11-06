@@ -3,7 +3,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { copyOf, readArtifact, removeCopy } from "./artifact.js";
-import { type Check, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, holdSignals, runContainer } from "./check-process.js";
+import { type ContainerRun, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, holdSignals, runContainer } from "./check-process.js";
+import { containerOutcome, type Ruling } from "./verdict-model.js";
 import { JudgeInterrupted } from "./judge-errors.js";
 import { type Box, containerArgs, containerName, dockerEnv, SANDBOX_PIDS, sandboxReady } from "./sandbox.js";
 import { defaultWallet, expandHome } from "./wallet.js";
@@ -112,12 +113,12 @@ async function allowedEnvOf(image: string, env: NodeJS.ProcessEnv): Promise<stri
   }
 }
 
-async function contained(box: Box, root: { copy: Awaited<ReturnType<typeof copyOf>>; sha256: string }, script: string, timeout: number): Promise<Check & { gone: boolean }> {
+async function contained(box: Box, root: { copy: Awaited<ReturnType<typeof copyOf>>; sha256: string }, script: string, timeout: number): Promise<ContainerRun & { gone: boolean; ruled: Ruling }> {
   const name = containerName();
   const env = dockerEnv(process.env);
   const ran = await runContainer(containerArgs({ kind: "docker", ...box }, root.copy, root.sha256, script), name, env, timeout);
   const gone = (await docker(["container", "inspect", name], env)).status !== 0;
-  return { ...ran, gone };
+  return { ...ran, gone, ruled: containerOutcome(ran, { seconds: timeout, memory: box.memory }) };
 }
 
 export async function sandboxDoctor(box: Box, keypair: string | undefined, measure: () => Promise<Mounts | null> = hostMounts): Promise<Doctor> {
@@ -168,19 +169,19 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
         break;
       }
       const ran = await contained(box, root, probe.script, PROBE_SECONDS);
-      const ok = ran.exitCode === 0 && ran.gone && ran.infra === undefined;
-      checks.push({ check: probe.check, ok, ...(ok ? {} : { detail: ran.infra ?? (ran.gone ? `exit ${ran.exitCode ?? "none"}` : "the container was left behind") }) });
+      const ok = ran.ruled.outcome === "pass" && ran.gone;
+      checks.push({ check: probe.check, ok, ...(ok ? {} : { detail: !ran.gone ? "the container was left behind" : "reason" in ran.ruled ? ran.ruled.reason : ran.ruled.outcome }) });
       if (probe.check.startsWith("no host file")) {
         keyHidden = ok;
       }
     }
     if (signals.caught() === undefined) {
       const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), PROBE_SECONDS);
-      checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.oom === true && memory.gone });
+      checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.state?.oomKilled === true && memory.ruled.outcome === "infra" && memory.gone });
     }
     if (signals.caught() === undefined) {
       const slow = await contained(box, root, "sleep 600", TIMEOUT_PROBE_SECONDS);
-      checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.timedOut && slow.gone });
+      checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.deadline && slow.ruled.outcome === "infra" && slow.gone });
     }
   } finally {
     await removeCopy(copy.root);

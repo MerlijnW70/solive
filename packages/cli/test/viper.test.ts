@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { JudgeRefused } from "../src/judge-errors.js";
+import { engineOutcome, EngineStopped } from "../src/verdict-model.js";
 import {
   CLOCK_FROM,
   CLOCK_TO,
@@ -21,6 +22,7 @@ import {
   permissionFlag,
   pinnedWasm,
   REPORTED_FAILURES,
+  summarize,
   VIPER_WASM_SHA256,
   wasmPath,
 } from "../src/viper.js";
@@ -40,6 +42,17 @@ const refusal = (run: () => unknown): string => {
     return (error as Error).message;
   }
   throw new Error("it was not refused");
+};
+
+const unreadable = (run: () => unknown): string => {
+  try {
+    run();
+  } catch (error) {
+    expect(error).toBeInstanceOf(EngineStopped);
+    expect((error as EngineStopped).stop).toMatchObject({ cause: "fault" });
+    return (error as Error).message;
+  }
+  throw new Error("it was read");
 };
 
 const judged = async (source: string, list: Cases["cases"], over: Partial<Cases> = {}, timeout = 30) =>
@@ -189,10 +202,11 @@ describe("a delivery judged by the module", () => {
     expect(many.failures).toHaveLength(REPORTED_FAILURES);
   });
 
-  it("stops the whole process at the wall clock", async () => {
+  it("stops the whole process at the wall clock, which is no verdict on the work", async () => {
     const slow = await judged("export default () => { for (;;) {} };", [{ args: [], expected: 0 }], { steps: 1e9 }, 0.5);
-    expect(slow.failures[0]).toMatchObject({ verdict: "stopped" });
-    expect(String(slow.failures[0]?.detail)).toContain("did not finish");
+    expect(slow).toMatchObject({ total: 1, passed: 0, failures: [], stop: { cause: "deadline", unfinished: 1 } });
+    expect(String(slow.stop?.reason)).toContain("did not finish");
+    expect(engineOutcome("the viper judge", slow)).toEqual({ outcome: "infra", reason: slow.stop?.reason });
   });
 
   it("draws a fresh seed and clock for a spec that pins neither, and records them", async () => {
@@ -212,27 +226,39 @@ describe("a delivery judged by the module", () => {
     expect(again).toEqual(runs[0]);
   });
 
-  it("names a judge process that ends without a verdict crashed", async () => {
+  it("names a judge process that ends without a verdict an engine fault, never a fail of the work", async () => {
     const importing = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x02, 0x07, 0x01, 0x01, 0x61, 0x01, 0x62, 0x00, 0x00]);
     const crashed = await judgeViper(importing, new TextEncoder().encode(WORD_COUNT), cases([{ args: [], expected: 0 }]), 30);
-    expect(crashed).toMatchObject({ passed: 0, failures: [{ case: 0, verdict: "crashed" }] });
-    expect(String(crashed.failures[0]?.detail)).toContain("exit code 3");
+    expect(crashed).toMatchObject({ passed: 0, failures: [], stop: { cause: "fault", unfinished: 1 } });
+    expect(String(crashed.stop?.reason)).toContain("exit code 3");
+    expect(engineOutcome("the viper judge", crashed).outcome).toBe("infra");
   });
 
   it("refuses a delivery that is not UTF-8 text", async () => {
     await expect(judgeViper(await pinnedWasm(), Uint8Array.from([0xff, 0xfe]), cases([{ args: [], expected: 0 }]), 30)).rejects.toThrow("not UTF-8");
   });
 
-  it("refuses an answer that is not exactly the verdicts it asked for", () => {
+  it("treats an answer that is not exactly the verdicts it asked for as an engine fault", () => {
     const head = Buffer.from([1, 0, 0, 0, 0, 1, 0, 0, 0]);
     expect(decodeOutput(Buffer.concat([head, Buffer.from([0])]), 1)).toEqual([{ verdict: "pass" }]);
-    expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([0, 0])]), 1))).toContain("more than");
-    expect(refusal(() => decodeOutput(head, 1))).toContain("truncated");
-    expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([9])]), 1))).toContain("does not have");
+    expect(unreadable(() => decodeOutput(Buffer.concat([head, Buffer.from([0, 0])]), 1))).toContain("more than");
+    expect(unreadable(() => decodeOutput(head, 1))).toContain("truncated");
+    expect(unreadable(() => decodeOutput(Buffer.concat([head, Buffer.from([9])]), 1))).toContain("does not have");
     expect(decodeOutput(Buffer.concat([head, Buffer.from([1, 0])]), 1)).toStrictEqual([{ verdict: "wrong" }]);
     expect(decodeOutput(Buffer.concat([head, Buffer.from([1, 1])]), 1)).toStrictEqual([{ verdict: "wrong", detail: null }]);
-    expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([1, 6])]), 1))).toContain("a value it does not have");
-    expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([0])]), 2))).toContain("1 verdicts for 2");
-    expect(refusal(() => decodeOutput(Buffer.from([1, 0, 0, 0, 1, 0, 0, 0, 0]), 0))).toContain("refused its own input");
+    expect(unreadable(() => decodeOutput(Buffer.concat([head, Buffer.from([1, 6])]), 1))).toContain("a value it does not have");
+    expect(unreadable(() => decodeOutput(Buffer.concat([head, Buffer.from([0])]), 2))).toContain("1 verdicts for 2");
+    expect(unreadable(() => decodeOutput(Buffer.from([1, 0, 0, 0, 1, 0, 0, 0, 0]), 0))).toContain("refused its own input");
+  });
+
+  it("counts a case the engine reports as its own fault apart from the work's failures", () => {
+    const head = Buffer.from([1, 0, 0, 0, 0, 3, 0, 0, 0]);
+    const results = decodeOutput(Buffer.concat([head, Buffer.from([0, 6, 0])]), 3);
+    expect(results).toStrictEqual([{ verdict: "pass" }, { verdict: "engine" }, { verdict: "pass" }]);
+    const faulty = summarize(results, { seed: 1, clock: 0 });
+    expect(faulty).toStrictEqual({ total: 3, passed: 2, failures: [], faults: 1, seed: 1, clock: 0 });
+    expect(engineOutcome("the viper judge", faulty).outcome).toBe("infra");
+    const mixed = summarize([{ verdict: "engine" }, { verdict: "wrong", detail: 1 }], { seed: 1, clock: 0 });
+    expect(engineOutcome("the viper judge", mixed).outcome).toBe("fail");
   });
 });

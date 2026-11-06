@@ -37,10 +37,10 @@ const runCase = (token, json, zeros) =>
       code = exitCode;
       sweep();
     });
-    child.once("error", () => {
+    child.once("error", (error) => {
       clearTimeout(timer);
       sweep();
-      done({ token, out: "", code: null, timedOut, over });
+      done({ token, out: "", code: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });
     child.once("close", () => {
       done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, timedOut, over });

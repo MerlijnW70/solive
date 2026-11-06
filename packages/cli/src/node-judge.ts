@@ -8,14 +8,15 @@ import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { NODE_CASE, NODE_LAUNCHER } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, type Failure, OUTPUT_BYTES, type Primitive, REPORTED_FAILURES, stoppedAll } from "./viper.js";
+import { deadlineOf, faultOf, type Stop } from "./verdict-model.js";
+import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
 export const NODE_ROOT = "/judge";
 export const NODE_RUNNER = "runner";
 export const NODE_CASE_MS = 5_000;
 
-export type NodeJudged = { engine: typeof NODE_ENGINE; image: string; path: string; total: number; passed: number; failures: Failure[] };
+export type NodeJudged = { engine: typeof NODE_ENGINE; image: string; path: string } & Tallied;
 export type NodeRun = { judged: NodeJudged; cleanup: string | undefined };
 
 const SEARCHABLE = 0o755;
@@ -70,7 +71,17 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
   ];
 }
 
-type Answer = { token: string; out: string; code: number | null; timedOut: boolean; over: boolean };
+type Answer = { token: string; out: string; code: number | null; timedOut: boolean; over: boolean; failed?: string };
+
+const ENGINE = "the plain Node engine";
+
+export const OUT_OF_TURN = "the case wrote into the plain Node engine's own channel, out of turn";
+
+export const TOO_LONG = "the case wrote into the plain Node engine's own channel more than it can read";
+
+export const PROTOCOL_BROKEN = "a case broke the plain Node engine's channel, so the cases after it were not run";
+
+export const NODE_DEADLINE = "the judgement's --timeout ran out before the plain Node engine finished every case";
 
 const same = (a: Primitive, b: Primitive) => a === b || (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b));
 
@@ -104,11 +115,6 @@ export function caseVerdict(answer: Answer, token: string, expected: Primitive):
   return same(got.value, expected) ? { verdict: "pass" } : { verdict: "wrong", detail: got.value };
 }
 
-function summarized(results: CaseResult[], image: string, path: string): NodeJudged {
-  const failures = results.flatMap((result, index) => (result.verdict === "pass" ? [] : [{ case: index, ...result }]));
-  return { engine: NODE_ENGINE, image, path, total: results.length, passed: results.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES) };
-}
-
 type Staged = { root: string; mount: string; directory: string; path: string };
 
 async function stage(source: Uint8Array, name: string): Promise<Staged> {
@@ -131,7 +137,9 @@ async function stage(source: Uint8Array, name: string): Promise<Staged> {
   return { root, mount, directory: posix.join(NODE_ROOT, random), path: posix.join(NODE_ROOT, random, file) };
 }
 
-function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, timeoutSeconds: number): Promise<CaseResult[]> {
+type Conversed = { results: CaseResult[]; stop?: Stop };
+
+function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, timeoutSeconds: number): Promise<Conversed> {
   return new Promise((done) => {
     const env = dockerEnv(process.env);
     const child = spawn("docker", args, { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -139,9 +147,10 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     let buffered = "";
     let diagnostic = "";
     let token = "";
-    let ended: CaseResult | undefined;
+    let ended: Stop | undefined;
     let killing: Promise<void> = Promise.resolve();
-    const kill = (why: CaseResult) => {
+    const left = () => cases.cases.length - results.length;
+    const kill = (why: Stop) => {
       ended ??= why;
       killing = removeContainer(name, env).then(() => {
         if (child.exitCode === null) child.kill("SIGKILL");
@@ -149,12 +158,17 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     };
     const handlers = (Object.keys(SIGNAL_EXIT) as InterruptSignal[]).map((signal) => {
       const handler = () => {
-        kill({ verdict: "stopped", detail: `${signal} stopped the judge` });
+        kill(faultOf(`${signal} stopped the judge`, left()));
       };
       process.on(signal, handler);
       return [signal, handler] as const;
     });
-    const timer = setTimeout(() => kill({ verdict: "stopped", detail: "the judgement's --timeout ran out before this case finished" }), timeoutSeconds * 1000);
+    const timer = setTimeout(() => kill(deadlineOf(NODE_DEADLINE, left())), timeoutSeconds * 1000);
+    const tampered = (detail: string) => {
+      if (left() > 0) results.push({ verdict: "crashed", detail });
+      token = "";
+      kill(faultOf(PROTOCOL_BROKEN, left()));
+    };
     const send = (message: unknown) => {
       child.stdin.write(`${JSON.stringify(message)}\n`);
     };
@@ -174,7 +188,11 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         answer = undefined;
       }
       if (token === "" || answer === undefined || answer.token !== token) {
-        kill({ verdict: "crashed", detail: "the plain Node engine answered out of turn" });
+        tampered(OUT_OF_TURN);
+        return;
+      }
+      if (typeof answer.failed === "string") {
+        kill(faultOf(`${ENGINE} could not start a case: ${answer.failed.slice(0, 256)}`, left()));
         return;
       }
       results.push(caseVerdict(answer, token, cases.cases[results.length]?.expected ?? null));
@@ -191,7 +209,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         answered(line);
         at = buffered.indexOf("\n");
       }
-      if (buffered.length > LINE_BYTES) kill({ verdict: "crashed", detail: "the plain Node engine wrote an answer too long to read" });
+      if (buffered.length > LINE_BYTES && ended === undefined) tampered(TOO_LONG);
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
@@ -202,9 +220,8 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       clearTimeout(timer);
       void killing.finally(() => {
         for (const [signal, handler] of handlers) process.removeListener(signal, handler);
-        const rest = ended ?? { verdict: "crashed", detail: `the plain Node engine ended with exit code ${exitCode}: ${diagnostic.trim().slice(0, 256)}` };
-        while (results.length < cases.cases.length) results.push(rest);
-        done(results);
+        const stop = left() === 0 ? undefined : (ended ?? faultOf(`${ENGINE} ended with exit code ${exitCode} before it answered every case: ${diagnostic.trim().slice(0, 256)}`, left()));
+        done(stop === undefined ? { results } : { results, stop: { ...stop, unfinished: left() } });
       });
     };
     child.once("error", (error) => {
@@ -218,19 +235,25 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
 }
 
 export async function judgeNode(box: Box, source: Uint8Array, name: string, cases: Cases, seed: number, timeoutSeconds: number): Promise<NodeRun> {
+  const total = cases.cases.length;
+  const stopped = (path: string, stop: Stop): NodeRun => ({ judged: { engine: NODE_ENGINE, image: box.image, path, ...stoppedTally(total, stop) }, cleanup: undefined });
   if (timeoutSeconds <= 0) {
-    const stopped = stoppedAll(cases.cases.length, "the judgement's --timeout ran out before the plain Node engine started");
-    return { judged: { engine: NODE_ENGINE, image: box.image, path: "", ...stopped }, cleanup: undefined };
+    return stopped("", deadlineOf(NODE_DEADLINE, total));
   }
-  const staged = await stage(source, name);
+  let staged: Staged;
+  try {
+    staged = await stage(source, name);
+  } catch (error) {
+    return stopped("", faultOf(`${ENGINE} could not stage the delivery: ${error instanceof Error ? error.message : String(error)}`, total));
+  }
   const container = containerName();
-  let results: CaseResult[] = [];
+  let conversed: Conversed = { results: [] };
   let cleanup: string | undefined;
   try {
-    results = await converse(nodeArgs(box, container, staged.mount, staged.directory), container, staged, cases, seed, timeoutSeconds);
+    conversed = await converse(nodeArgs(box, container, staged.mount, staged.directory), container, staged, cases, seed, timeoutSeconds);
   } finally {
     await removeContainer(container, dockerEnv(process.env));
     cleanup = await removeCopy(staged.root);
   }
-  return { judged: summarized(results, box.image, staged.path), cleanup };
+  return { judged: { engine: NODE_ENGINE, image: box.image, path: staged.path, ...tallied(conversed.results, total, conversed.stop) }, cleanup };
 }

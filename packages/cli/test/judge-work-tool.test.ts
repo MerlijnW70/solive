@@ -6,7 +6,7 @@ import { type Address, getBase58Decoder, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { getIntentDecoder } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
@@ -14,14 +14,31 @@ import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { servedActions } from "../src/agent/everyday.js";
 import { JOB_PROMPTS } from "../src/agent/mcp.js";
-import { DRAWS_CASES, JUDGED_FAIL, JUDGED_PASS, NO_CASES, walletJudgeWork } from "../src/agent/wallet/judge-work.js";
-import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
+import { DRAWS_CASES, JUDGED_FAIL, JUDGED_INFRA, JUDGED_PASS, NO_CASES, walletJudgeWork } from "../src/agent/wallet/judge-work.js";
+import { HOST_RUNNER } from "../src/host-judge.js";
+import { RUNNER, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { DOMAIN, h, runtime, world } from "./harness.js";
 import { approved } from "./approved.js";
 import { guideOf } from "./served-texts.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
+
+const faults = vi.hoisted(() => ({ marks: [] as string[] }));
+
+vi.mock("node:child_process", async (original) => {
+  const actual = await original<typeof import("node:child_process")>();
+  const spawn = (...all: Parameters<typeof actual.spawn>) => {
+    const [, args, options] = all as unknown as [string, unknown, object | undefined];
+    const broken = Array.isArray(args) && faults.marks.some((mark) => args.includes(mark));
+    return broken ? actual.spawn(process.execPath, ["-e", "process.exit(9)"], options ?? {}) : actual.spawn(...all);
+  };
+  return { ...actual, spawn: vi.fn(spawn) };
+});
+
+afterEach(() => {
+  faults.marks.length = 0;
+});
 
 const DEMO = join(process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo", "fizzbuzz");
 const SPEC = readFileSync(join(DEMO, "SPEC.md"));
@@ -142,6 +159,27 @@ describe("wallet_judge_work", () => {
     expect(status(intent)).toBe(IntentStatus.Open);
   }, 120_000);
 
+  it("returns infra, never pass or fail, when an engine crashes, never tells the caller to attest, and sends nothing", async () => {
+    const { intent } = await delivered(SPEC, SOLUTION);
+    for (const mark of [RUNNER, HOST_RUNNER]) {
+      faults.marks.splice(0, faults.marks.length, mark);
+      const judged = await ok(judge, "wallet_judge_work", { intent });
+      expect(judged, mark.slice(0, 40)).toMatchObject({ verdict: "infra", sent: false, next: JUDGED_INFRA });
+      expect(String(judged["reason"])).toContain("ended with exit code 9");
+      expect(judged["next"]).not.toContain(tool("wallet_attest"));
+    }
+    faults.marks.length = 0;
+    const pending = new TextEncoder().encode(`if (typeof Intl !== "undefined") await new Promise(() => {});\n${new TextDecoder().decode(SOLUTION)}`);
+    const { intent: unsettled } = await delivered(SPEC, pending);
+    const loaded = await ok(judge, "wallet_judge_work", { intent: unsettled });
+    expect(loaded).toMatchObject({ verdict: "fail", next: JUDGED_FAIL, host: { passed: 0 } });
+    expect(loaded["host"]["failures"][0]).toMatchObject({ case: 0, verdict: "no-module" });
+    const { intent: wrong } = await delivered(SPEC, WRONG);
+    faults.marks.push(HOST_RUNNER);
+    expect(await ok(judge, "wallet_judge_work", { intent: wrong })).toMatchObject({ verdict: "fail", next: JUDGED_FAIL });
+    expect(status(intent)).toBe(IntentStatus.Open);
+  }, 120_000);
+
   it("refuses a spec without judge cases and says to use judge --sandbox docker, running and sending nothing", async () => {
     const { intent } = await delivered(NO_CASES_SPEC, SOLUTION);
     const result = await judge.callTool({ name: tool("wallet_judge_work"), arguments: { intent } });
@@ -166,7 +204,7 @@ describe("wallet_judge_work", () => {
     const listed = (await judge.listTools()).tools.map((one) => one.name);
     expect(listed).toContain(tool("wallet_judge_work"));
     const served = new Set(servedActions({ wallet: true, allTools: false, relay: false, agent: false }).map((action) => action.name));
-    const texts = [walletJudgeWork.description, JUDGED_PASS, JUDGED_FAIL, NO_CASES, DRAWS_CASES, guideOf(), ...JOB_PROMPTS.map((prompt) => prompt.text)];
+    const texts = [walletJudgeWork.description, JUDGED_PASS, JUDGED_FAIL, JUDGED_INFRA, NO_CASES, DRAWS_CASES, guideOf(), ...JOB_PROMPTS.map((prompt) => prompt.text)];
     for (const text of texts) {
       expect([...text.matchAll(NAMES)].map(([name]) => name).filter((name) => !served.has(name))).toEqual([]);
     }

@@ -14,7 +14,8 @@ import { createClient } from "@intent-engine/client/node";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { EXIT_RETRY } from "../src/judge-errors.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
-import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
+import { judgeNode, NODE_CASE_MS, NODE_DEADLINE, NODE_ENGINE } from "../src/node-judge.js";
+import { engineOutcome } from "../src/verdict-model.js";
 import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
 import { DOCKER_TEST } from "./docker-switch.js";
@@ -63,7 +64,7 @@ const paidTo = async (j: Job) => balance(await findAssociatedTokenAddress({ owne
 const casesOf = (list: Cases["cases"], seed = 1): Cases => ({ steps: 1_000_000, heap: 1 << 24, seed, clock: 0, cases: list });
 const bytes = (source: string) => new TextEncoder().encode(source);
 
-type Engine = { total: number; passed: number; failures: { case: number; verdict: string; detail?: unknown }[] };
+type Engine = { total: number; passed: number; failures: { case: number; verdict: string; detail?: unknown }[]; stop?: unknown };
 
 describe("judge --sandbox viper --plain-node", () => {
   it("J-3: a module that answers wrongly once import.meta.url is defined passes viper and host but fails judge --plain-node and pays nothing", DOCKER_TEST, async () => {
@@ -157,6 +158,7 @@ describe("judge --sandbox viper --plain-node", () => {
       const { judged } = await judgeNode(BOX, bytes(module), "count.mjs", cases, 7, 60);
       expect(judged.passed, module).toBe(0);
       expect(judged.failures.map((failure) => failure.verdict).includes("pass" as never), module).toBe(false);
+      expect([judged.stop, engineOutcome(NODE_ENGINE, judged).outcome], module).toEqual([undefined, "fail"]);
     }
     const noisy = "process.stdout.write('[\"answer\",\"number\",\"9\"]'); console.error('noise'); export default (text) => { const n = text.split(' ').length; JSON.stringify = () => '9'; return n; };";
     const { judged } = await judgeNode(BOX, bytes(noisy), "count.mjs", cases, 7, 60);
@@ -261,9 +263,9 @@ describe("judge --sandbox viper --plain-node", () => {
     const took = Date.now() - started;
     expect(slow.code).toBe(EXIT_FAILED);
     expect(slow.json()).toMatchObject({ verdict: "fail", signature: null, cases: { passed: 4 }, host: { passed: 4 }, node: { total: 4, passed: 0 } });
-    const node = (slow.json()["node"] as Engine).failures;
-    expect(node.map((failure) => failure.verdict)).toEqual(["stopped", "stopped", "stopped", "stopped"]);
-    expect(String(node[1]?.detail)).toContain("--timeout");
+    const node = slow.json()["node"] as Engine;
+    expect(node.failures).toEqual([{ case: 0, verdict: "stopped", detail: `the case gave no answer within ${NODE_CASE_MS} ms` }]);
+    expect(node.stop).toEqual({ cause: "deadline", reason: NODE_DEADLINE, unfinished: 3 });
     expect(took).toBeLessThan((timeout + 4) * 1000);
     expect(status(j.intent)).toBe(IntentStatus.Open);
 
@@ -271,14 +273,13 @@ describe("judge --sandbox viper --plain-node", () => {
     const k = await job(everywhere, specOf(`{"steps": 1000000000, "cases": [{"args": [], "expected": 1}, {"args": [], "expected": 1}, {"args": [], "expected": 1}]}`), "spin.mjs");
     const short = 3;
     const begun = Date.now();
-    const stuck = await cli(judging(k, "--plain-node", "--timeout", String(short)), { "judge.json": k.judge });
+    const verdictFile = join(k.dir, "verdict.json");
+    const stuck = await cli(judging(k, "--plain-node", "--timeout", String(short), "--verdict", verdictFile, "--yes"), { "judge.json": k.judge });
     const spent = Date.now() - begun;
-    expect(stuck.code).toBe(EXIT_FAILED);
-    const verdict = stuck.json() as { cases: Engine; host: Engine; node: Engine };
-    for (const engine of [verdict.cases, verdict.host, verdict.node]) {
-      expect(engine.passed).toBe(0);
-      expect(engine.failures.every((failure) => failure.verdict === "stopped")).toBe(true);
-    }
+    expect([stuck.code, stuck.out]).toEqual([EXIT_RETRY, ""]);
+    expect(stuck.err).toContain("infrastructure error, not a verdict: the viper judge did not finish within");
+    expect(existsSync(verdictFile)).toBe(false);
+    expect(status(k.intent)).toBe(IntentStatus.Open);
     expect(spent).toBeLessThan((short + 4) * 1000);
   });
 });

@@ -212,7 +212,7 @@ async function proofTarget(ctx: AgentContext, escrow: Escrow, input: { owner: Ad
 export const walletAttest = define({
   name: tool("wallet_attest"),
   title: "Release an escrow as its attestor",
-  description: `Pays approved work when this wallet is the escrow's attestor (judge): a proof escrow pays the first announcement opening to delivered_sha256, other attested escrows pay pay_to. Irreversible; the approval binds the send to the preview. Approve only a judge docker or viper pass, never exit 75. ${PREVIEW_APPROVAL}`,
+  description: `Pays approved work when this wallet is the escrow's attestor (judge): a proof escrow pays the first announcement opening to delivered_sha256, other attested escrows pay pay_to. Irreversible; the approval binds the send to the preview. Approve only a judge pass, never a fail or infra. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     owner: account("the wallet that made the escrow"),
