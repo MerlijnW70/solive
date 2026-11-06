@@ -43,6 +43,37 @@ idl="idl/intent_engine.json"
 program="$(node -p "require('./$idl').address")"
 authority="${UPGRADE_AUTHORITY:-$HOME/.config/solana/id.json}"
 pmp=(env NO_COLOR=1 npx -y @solana-program/program-metadata@0.10.0 --keypair "$authority" --rpc "$url")
+json_equal() {
+  node -e "
+const fs = require('fs');
+try {
+  const same = JSON.stringify(JSON.parse(fs.readFileSync(process.argv[1], 'utf8'))) === JSON.stringify(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')));
+  process.exit(same ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+" "$1" "$2"
+}
+checked_buffer() {
+  local created staged owner
+  created="$("${pmp[@]}" create-buffer "$idl" --format json)"
+  buffer="$(printf '%s\n' "$created" | sed -n 's/.*buffer: *\([1-9A-HJ-NP-Za-km-z]\{32,44\}\).*/\1/p' | head -1)"
+  if [[ -z "$buffer" ]]; then
+    echo "refusing: no buffer address in the create-buffer output: $created" >&2
+    exit 1
+  fi
+  make_temp staged
+  if "${pmp[@]}" fetch-buffer "$buffer" --output "$staged" >/dev/null && json_equal "$staged" "$idl"; then
+    return 0
+  fi
+  owner="$(solana-keygen pubkey "$authority")"
+  if "${pmp[@]}" close-buffer "$buffer" --recipient "$owner" >/dev/null; then
+    echo "refusing: buffer $buffer does not hold $idl; it stayed under the local key and was closed" >&2
+  else
+    echo "refusing: buffer $buffer does not hold $idl; it stays under the local key, close it with: npx @solana-program/program-metadata@0.10.0 --keypair $authority --rpc $url close-buffer $buffer --recipient $owner" >&2
+  fi
+  exit 1
+}
 if [[ "$served" == "$mainnet_genesis" && "$mode" != check ]]; then
   read -r -p "type the program id $program to publish its IDL on mainnet-beta: " typed
   if [[ "$typed" != "$program" ]]; then
@@ -58,12 +89,7 @@ if [[ "$mode" == multisig ]]; then
   idl_hash="$(sha256sum "$idl" | cut -c1-64)"
   echo "idl      $idl hashes to $idl_hash"
   vault="$("${squads[@]}" vault --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
-  created="$("${pmp[@]}" create-buffer "$idl" --format json)"
-  buffer="$(printf '%s\n' "$created" | sed -n 's/.*buffer: *\([1-9A-HJ-NP-Za-km-z]\{32,44\}\).*/\1/p' | head -1)"
-  if [[ -z "$buffer" ]]; then
-    echo "refusing: no buffer address in the create-buffer output: $created" >&2
-    exit 1
-  fi
+  checked_buffer
   "${pmp[@]}" set-buffer-authority "$buffer" --new-authority "$vault" >/dev/null
   exported="$("${pmp[@]}" update idl "$program" --buffer "$buffer" --close-buffer "$(solana-keygen pubkey "$authority")" --format json --export "$vault" --export-encoding instruction-list)"
   make_temp proposal
@@ -73,17 +99,20 @@ if [[ "$mode" == multisig ]]; then
   echo "next: two members approve the proposal above with packages/multisig/dist/bin.js approve, which prints the buffer's decoded IDL sha256 as buffer_hash and has to print $idl_hash; one runs execute --expect-buffer-hash $idl_hash, then run bash scripts/idl.sh $1 --check"
   exit 0
 fi
-if [[ "$mode" == write ]] && ! "${pmp[@]}" write idl "$program" "$idl" --format json; then
+if [[ "$mode" == write ]]; then
+  checked_buffer
+fi
+if [[ "$mode" == write ]] && ! "${pmp[@]}" write idl "$program" --buffer "$buffer" --close-buffer "$(solana-keygen pubkey "$authority")" --format json; then
   echo "the write did not finish; list what it left with: npx @solana-program/program-metadata@0.10.0 --rpc $url list-buffers" >&2
   echo "a half-written IDL account can only be removed with: npx @solana-program/program-metadata@0.10.0 --keypair $authority --rpc $url close idl $program" >&2
   exit 1
 fi
 make_temp fetched
 "${pmp[@]}" fetch idl "$program" --output "$fetched" >/dev/null
-node -e "
-const fs = require('fs');
-const same = JSON.stringify(JSON.parse(fs.readFileSync(process.argv[1], 'utf8'))) === JSON.stringify(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')));
-console.log('program  ' + process.argv[3]);
-console.log('on chain ' + (same ? 'matches' : 'DIFFERS FROM') + ' ' + process.argv[2]);
-process.exit(same ? 0 : 1);
-" "$fetched" "$idl" "$program"
+echo "program  $program"
+if json_equal "$fetched" "$idl"; then
+  echo "on chain matches $idl"
+else
+  echo "on chain DIFFERS FROM $idl"
+  exit 1
+fi
