@@ -24,6 +24,7 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { announced as announce } from "./announce.js";
 import { cli, h, transport } from "./harness.js";
 import { job, type Job, judging, SPEC, status, STOLEN_URL, WORK_URL } from "./judge-kit.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 describe("intent-engine judge", () => {
   let j: Job;
@@ -169,7 +170,7 @@ describe("intent-engine judge", () => {
     const hiding: Transport = { ...transport, engineAccounts: async (filter) => ((await transport.engineAccounts?.(filter)) ?? []).filter(({ address }) => address !== j.first.announcement) };
     h.through = hiding;
     const refused = await cli(judging(j, `touch "${marker}"`, "--yes"), keys);
-    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.code).toBe(EXIT_REFUSED);
     expect(refused.err).toContain("lists its announcements with seq 1 missing");
     expect(refused.err).toContain(WAIT_FOR_NODE);
     expect(existsSync(marker)).toBe(false);

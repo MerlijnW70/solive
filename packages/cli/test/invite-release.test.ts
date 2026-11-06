@@ -18,6 +18,7 @@ import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced as made, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 import { approved, UNJUDGED } from "./approved.js";
+import { EXIT_RETRY } from "../src/judge-errors.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -211,7 +212,7 @@ describe("the shared invite check on the command line", () => {
     await announced(intent, workerKey, sha(COUNT));
     const judging = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper"];
     const refused = await cli(judging, { "judge.json": judge });
-    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.code).toBe(EXIT_RETRY);
     expect(refused.err).toContain(UNCHECKED(intent));
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [judge.address, worker]));
     const judged = await cli(judging, { "judge.json": judge });

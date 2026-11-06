@@ -16,6 +16,7 @@ import { griefed, keyed } from "./announce.js";
 import { announce, ENDPOINT, job, judging, KEY_FILE, kinds, LEVELS, logged, NEW_KEY_FILE, PATH, payeeOf, profileEntry, publish, run, sealedKind, sha, statusOf, WORK } from "./encryption-job.js";
 import { balance, funded, h, transport } from "./harness.js";
 import { device, found, MESSAGE, messageThen, signing } from "./ledger-device.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 describe("a judge's encryption key", () => {
   it("is made by profile encryption-key new, published from a Ledger by profile set, kept by a later set, and removed with none or close only once no open escrow names the judge", async () => {
@@ -60,7 +61,7 @@ describe("a judge's encryption key", () => {
     expect(announced.sealedTo.map(sealedKind)).toEqual(["profile"]);
     const refusing = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j), "--yes"], refusing, { "payer.json": j.payer });
-    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.code).toBe(EXIT_REFUSED);
     expect(refused.err).toContain(`the earlier announcement ${announced.announcement} (seq 1) by ${worker.address} sealed to the encryption key of ${j.key.address}'s profile`);
     expect(refused.err).toContain(GIVE_KEY_FLAG);
     expect(refusing.signed).toEqual([]);
@@ -82,7 +83,7 @@ describe("a judge's encryption key", () => {
     expect(announced.sealedTo.map(sealedKind)).toEqual(["wallet"]);
     const refusing = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j, "--encryption-keypair", KEY_FILE), "--yes"], refusing, { "payer.json": j.payer });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, sealedOnDevice(PATH, j.intent)]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, sealedOnDevice(PATH, j.intent)]);
     expect(refusing.signed).toEqual([]);
     expect(statusOf(j.intent)).toBe(IntentStatus.Open);
   });
@@ -94,7 +95,7 @@ describe("a judge's encryption key", () => {
     await announce(j, await keyed());
     const refusing = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j, "--encryption-keypair", KEY_FILE), "--yes"], refusing, { "payer.json": j.payer });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, noKeyAtCreation(j.key.address, j.intent)]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, noKeyAtCreation(j.key.address, j.intent)]);
     expect(refused.err).toContain("name a judge whose profile publishes an encryption key before the escrow is made");
     expect(refusing.signed).toEqual([]);
     expect(statusOf(j.intent)).toBe(IntentStatus.Open);
@@ -121,7 +122,7 @@ describe("a judge's encryption key", () => {
     h.firstSlot = 1n;
     const ledger = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j, "--encryption-keypair", KEY_FILE), "--yes"], ledger, { "payer.json": j.payer });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, new ProfileHistoryIncomplete(j.key.address).message]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, new ProfileHistoryIncomplete(j.key.address).message]);
     expect(ledger.signed).toEqual([]);
     expect(statusOf(j.intent)).toBe(IntentStatus.Open);
   });
@@ -154,7 +155,7 @@ describe("a judge's encryption key", () => {
     logged(j, [created, rotation]);
     const refusing = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j, "--encryption-keypair", NEW_KEY_FILE), "--yes"], refusing, { "payer.json": j.payer });
-    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.code).toBe(EXIT_REFUSED);
     expect(refused.err).toContain(`the earlier announcement ${old.announcement} (seq 1) by ${first.address} sealed to an earlier encryption key of ${j.key.address}'s profile`);
     expect(refusing.signed).toEqual([]);
     expect(statusOf(j.intent)).toBe(IntentStatus.Open);
@@ -198,7 +199,7 @@ describe("a judge's encryption key", () => {
     await keyed("wallet.json");
     const ledger = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j, "--encryption-keypair", "wallet.json"), "--yes"], ledger, { "payer.json": j.payer });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, `--encryption-keypair wallet.json: ${WALLET_KEY_GIVEN}`]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, `--encryption-keypair wallet.json: ${WALLET_KEY_GIVEN}`]);
     expect(ledger.signed).toEqual([]);
     expect(() => parse(judging(j, "--encryption-keypair", PATH))).toThrow(ENCRYPTION_KEY_FILE);
     expect(() => parse(["mcp", "--encryption-keypair", KEY_FILE])).toThrow(ENCRYPTION_KEY_NEEDS_WALLET);

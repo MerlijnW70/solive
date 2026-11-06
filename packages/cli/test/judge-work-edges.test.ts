@@ -12,7 +12,7 @@ import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
 import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
-import { artifactDiffers, JUDGED_FAIL, JUDGED_PASS } from "../src/agent/wallet/judge-work.js";
+import { artifactDiffers, JUDGED_FAIL, JUDGED_PASS, NOT_TEXT_WORK } from "../src/agent/wallet/judge-work.js";
 import { WORK_DIFFERS } from "../src/agent/wallet/work.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { DOMAIN, h, runtime, world } from "./harness.js";
@@ -128,10 +128,10 @@ describe("wallet_judge_work at its edges", () => {
     expect((await call(judge, "wallet_judge_work", { intent, artifact, announcement: other })).value).toMatchObject({ code: "NotAnnounced", hint: artifactDiffers(artifact, sha(SOLUTION)) });
   }, 120_000);
 
-  it("refuses a local file that is not UTF-8 text before running anything", async () => {
+  it("refuses announced work that is not UTF-8 text before running anything, and keeps no receipt", async () => {
     const intent = await delivered(NOT_UTF8);
     const refused = await call(judge, "wallet_judge_work", { intent, artifact: saved(NOT_UTF8) });
-    expect(refused.value).toMatchObject({ code: "NotJudged", hint: "the work is not UTF-8 text, so it is not a module the ViperJS judge can run; nothing was run" });
+    expect(refused.value).toMatchObject({ code: "NotJudged", hint: NOT_TEXT_WORK });
   });
 
   it("fails work that passes in the host engine only", async () => {

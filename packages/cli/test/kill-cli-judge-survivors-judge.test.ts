@@ -9,10 +9,11 @@ import { getAnnouncementDecoder, getAnnouncementEncoder } from "@intent-engine/c
 import type { Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { NOBODY_ANNOUNCED } from "../src/announcement-views.js";
-import { EXIT_FAILED, main } from "../src/main.js";
+import { main } from "../src/main.js";
 import type { Runtime } from "../src/runtime.js";
 import { announced, keyed } from "./announce.js";
 import { cli, h, NOW, runtime, transport, type World, world } from "./harness.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -91,7 +92,7 @@ describe("judge refusing an artifact no announcement opens to", () => {
       ["judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--artifact", artifact, "--run", "true", "--sandbox", "none", "--i-trust-this-work", "--yes"],
       { "judge.json": j.judge },
     );
-    expect(run.code).toBe(EXIT_FAILED);
+    expect(run.code).toBe(EXIT_REFUSED);
     expect(run.err).toContain("no announcement opens to this work; its worker announces it first with deliver");
     expect(run.err).not.toContain(NOBODY_ANNOUNCED);
   });

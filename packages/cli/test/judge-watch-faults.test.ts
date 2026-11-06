@@ -7,9 +7,9 @@ import { FetchFailed, type SpecFetch } from "@intent-engine/client";
 import { parse } from "../src/args.js";
 import { DeliveryUnfit, DeliveryUnreadable, fetchBytes, fetchDelivery } from "../src/delivery-fetch.js";
 import { judge, type JudgeCommand } from "../src/judge.js";
-import { infraSkipped, JudgeInfraError, timedOutInfra } from "../src/judge-errors.js";
+import { EXIT_REFUSED, infraSkipped, JudgeInfraError, timedOutInfra } from "../src/judge-errors.js";
 import { INFRA_RUNS } from "../src/judge-watch.js";
-import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { EXIT_OK } from "../src/main.js";
 import { RESAVED } from "../src/resaved.js";
 import { keyed } from "./announce.js";
 import { h, runtime, transport, world } from "./harness.js";
@@ -60,7 +60,7 @@ describe("judge --watch on temporary failures", () => {
     const watched = await run(viperWatch(j));
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "infra", verdict: "retry", retry: true, reason: `the work at ${j.url} answered 503; it is fetched again later` }),
+      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "deferred", verdict: "retry", retry: true, reason: `the work at ${j.url} answered 503; it is fetched again later` }),
       expect.objectContaining({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) }),
       { stopped: "paid", intent: j.intent, judged: 1 },
     ]);
@@ -82,7 +82,7 @@ describe("judge --watch on temporary failures", () => {
     const watched = await run(viperWatch(j));
     expect([watched.code, watched.err, asked]).toEqual([EXIT_OK, "", 2]);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "infra", verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
+      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "deferred", verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
       expect.objectContaining({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) }),
       { stopped: "paid", intent: j.intent, judged: 1 },
     ]);
@@ -147,7 +147,7 @@ describe("the judge's preview and spec check", () => {
     const judged = await run([...once(j, "--sandbox", "viper", "--artifact", j.work)]);
     const watched = await run(viperWatch(j));
     for (const refused of [judged, watched]) {
-      expect([refused.code, refused.lines]).toEqual([EXIT_FAILED, []]);
+      expect([refused.code, refused.lines]).toEqual([EXIT_REFUSED, []]);
       expect(refused.err).toContain(`but intent ${j.intent} commits ${sha(SPEC)}; ${RESAVED}`);
     }
   }, 60_000);

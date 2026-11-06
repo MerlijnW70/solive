@@ -5,8 +5,8 @@ import { join, posix } from "node:path";
 import { judgeRoot, removeCopy } from "./artifact.js";
 import { endedState, MEMORY_EVENTS, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
-import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
-import { NODE_CASE, NODE_LAUNCHER, NODE_READY } from "./node-runner.js";
+import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+import { NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
 import { caseOomPinned, caseOutcome, containerOutcome, deadlineOf, faultOf, KILLED_EXIT, type Limits, pinnedFill, type Stop } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
@@ -96,6 +96,9 @@ export const SIGUSR1_FLAG = "--disable-sigusr1";
 export const sigusr1Unsupported = (diagnostic: string): string =>
   `the Node in the plain Node image does not accept ${SIGUSR1_FLAG}, which keeps a case from opening the launcher's debugger, so no case was run; pass a --sandbox-image with Node 22.14 or later (${diagnostic})`;
 
+export const memoryUncounted = (memory: string): string =>
+  `the spec's judge-cases block pins node_memory ${memory}, and the plain Node launcher cannot read the out-of-memory count in ${MEMORY_EVENTS} that a cgroup v2 host gives each container, so a case killed for memory could not fail as the pin says; judge it on a host where sandbox doctor reports memory_pin true; no plain Node case was run and nothing was paid`;
+
 export const NODE_DEADLINE = "the judgement's --timeout ran out before the plain Node engine finished every case";
 
 const same = (a: Primitive, b: Primitive) => a === b || (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b));
@@ -152,7 +155,7 @@ async function stage(source: Uint8Array, name: string): Promise<Staged> {
   return { root, mount, directory: posix.join(NODE_ROOT, random), path: posix.join(NODE_ROOT, random, file) };
 }
 
-type Conversed = { results: CaseResult[]; stop?: Stop };
+type Conversed = { results: CaseResult[]; stop?: Stop; uncounted?: true };
 
 function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, limits: Limits): Promise<Conversed> {
   return new Promise((done) => {
@@ -168,6 +171,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     let last: number | null | undefined;
     let memoryKilled = false;
     let ready = false;
+    let uncounted = false;
     const left = () => cases.cases.length - results.length;
     const kill = (why: Stop) => {
       ended ??= why;
@@ -204,6 +208,9 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         if (line === NODE_READY) {
           ready = true;
           next();
+        } else if (line === NODE_UNCOUNTED && limits.pinned?.memory !== undefined) {
+          uncounted = true;
+          kill(faultOf(memoryUncounted(limits.pinned.memory), left()));
         } else {
           kill(faultOf(`${ENGINE} wrote ${JSON.stringify(line.slice(0, 64))} before it was ready`, left()));
         }
@@ -281,7 +288,8 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       void killing.finally(async () => {
         for (const [signal, handler] of handlers) process.removeListener(signal, handler);
         const stop = left() === 0 ? undefined : (ended ?? (await ranOut(exitCode)));
-        done(stop === undefined ? { results } : { results, stop: { ...stop, unfinished: left() } });
+        const counted = uncounted ? { uncounted: true as const } : {};
+        done(stop === undefined ? { results, ...counted } : { results, stop: { ...stop, unfinished: left() }, ...counted });
       });
     };
     child.once("error", (error) => {
@@ -289,7 +297,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: NODE_CASE_MS, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: NODE_CASE_MS, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 
@@ -315,5 +323,18 @@ export async function judgeNode(given: Box, source: Uint8Array, name: string, ca
     await removeContainer(container, dockerEnv(process.env));
     cleanup = await removeCopy(staged.root);
   }
+  if (conversed.uncounted === true && cases.nodeMemory !== undefined) {
+    throw new JudgeRefused(cleanup === undefined ? memoryUncounted(cases.nodeMemory) : `${memoryUncounted(cases.nodeMemory)}; ${cleanup}`);
+  }
   return { judged: { engine: NODE_ENGINE, image: box.image, path: staged.path, ...tallied(conversed.results, total, conversed.stop) }, cleanup };
+}
+
+export async function memoryPinHeld(given: Box, memory: string | undefined, timeoutSeconds: number): Promise<void> {
+  if (memory === undefined) {
+    return;
+  }
+  const { cleanup } = await judgeNode(given, new Uint8Array(), "probe.mjs", { steps: 0, heap: 0, seed: undefined, clock: undefined, cases: [], nodeMemory: memory }, 0, timeoutSeconds);
+  if (cleanup !== undefined) {
+    process.stderr.write(`warning: ${cleanup}\n`);
+  }
 }

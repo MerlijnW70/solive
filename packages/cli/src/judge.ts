@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { open, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
 import { type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
@@ -12,7 +12,7 @@ import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
-import { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+import { failedSend, type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, ReleaseUncertain, sendFailure, SIGNAL_EXIT, verdictUnwritten } from "./judge-errors.js";
 import { combine, decided, engineOutcome, type Ruling } from "./verdict-model.js";
 import { type Artifact, type CheckFiles, readArtifact } from "./artifact.js";
 import { type Check, type HeldSignals, holdSignals } from "./check-process.js";
@@ -21,7 +21,7 @@ import { type PinnedRun, RUN_FENCE, runProblem } from "./judge-run.js";
 import { checkFilesOf, type Plan, runPlan, runPlanned } from "./run-plan.js";
 import { fenceMentions, specText } from "./spec-blocks.js";
 import { HOST_ENGINE, type HostJudged, judgeHost } from "./host-judge.js";
-import { judgeNode, NODE_ENGINE, type NodeJudged } from "./node-judge.js";
+import { judgeNode, memoryPinHeld, NODE_ENGINE, type NodeJudged } from "./node-judge.js";
 import { checkInvited } from "./invites.js";
 import { inviteRefusal } from "./fetch-failure.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
@@ -190,9 +190,11 @@ async function resavedWork(transport: Transport, intent: Address, read: Artifact
   }
 }
 
-export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport, stop?: AbortSignal): Promise<Verdict> {
+export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport, stop?: AbortSignal, pinChecked = false): Promise<Verdict> {
   if (command.verdict !== undefined) {
     await rm(command.verdict, { force: true });
+    await (await open(command.verdict, "w")).close();
+    await rm(command.verdict);
   }
   if (!(await mentionsRun(command.spec))) {
     await sandboxReady(command.sandbox, dockerEnv(process.env));
@@ -228,6 +230,9 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const check = await checkFilesOf(command.check, plan);
   if (plan.pinned !== undefined || viper?.cases.nodeMemory !== undefined) {
     await sandboxReady(plan.sandbox, dockerEnv(process.env));
+  }
+  if (viper !== undefined && plan.sandbox.kind === "viper" && plan.sandbox.node !== undefined && !pinChecked) {
+    await memoryPinHeld(plan.sandbox.node, viper.cases.nodeMemory, plan.timeout);
   }
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
@@ -295,6 +300,7 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
   const payer = release.feePayer ?? signer;
   return new Promise((done, failed) => {
     let sent = false;
+    let signed = false;
     let signature: Signature | undefined;
     let after = 0;
     const signTransactions: TransactionPartialSigner["signTransactions"] = async (transactions, config) => {
@@ -303,10 +309,11 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
         throw new JudgeInterrupted(caught, notSent(caught));
       }
       sent = true;
-      const signed = await payer.signTransactions(transactions, config);
-      const own = signed[0]?.[payer.address];
+      const ready = await payer.signTransactions(transactions, config);
+      signed = true;
+      const own = ready[0]?.[payer.address];
       signature = own === undefined ? signature : (getBase58Decoder().decode(own) as Signature);
-      return signed;
+      return ready;
     };
     signals.listen((signal) => {
       if (!sent) {
@@ -332,7 +339,7 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
       .then((confirmed) => {
         signals.listen(() => undefined);
         done(confirmed);
-      }, failed);
+      }, (error: unknown) => failed(sendFailure(signed, release.address, signature, error)));
   });
 }
 
@@ -437,7 +444,7 @@ async function checkAndSettle(
       if (during !== undefined) {
         throw new JudgeInterrupted(
           during,
-          `the check passed and ${during} arrived while the release was being sent; the send failed, but the release may have landed: ${reasonOf(error)}. Read intent ${address} before judging it again; no verdict was written`,
+          `the check passed and ${during} arrived while the release was being sent; the send failed, but the release may have landed: ${failedSend(error)}. Read intent ${address} before judging it again; no verdict was written`,
         );
       }
       throw error;
@@ -475,8 +482,11 @@ async function checkAndSettle(
     ...(cleanup !== undefined ? { cleanup } : {}),
     ...(skipped.length === 0 ? {} : { skipped }),
   };
-  if (command.verdict !== undefined) {
-    await writeFile(command.verdict, `${JSON.stringify(verdict, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value), 2)}\n`);
+  const written = command.verdict;
+  if (written !== undefined) {
+    await writeFile(written, `${JSON.stringify(verdict, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value), 2)}\n`).catch((error: unknown) => {
+      throw signature === null ? error : new ReleaseUncertain(verdictUnwritten(address, signature, written, reasonOf(error)));
+    });
   }
   const during = signals.caught();
   if (signature !== null && during !== undefined) {

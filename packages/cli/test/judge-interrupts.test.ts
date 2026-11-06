@@ -10,8 +10,8 @@ import { createClient } from "@intent-engine/client/node";
 import { NOBODY_ANNOUNCED } from "../src/announcement-views.js";
 import { NOT_SENT } from "../src/flows.js";
 import { artifactSha256, EXIT_RETRY, notSent } from "../src/judge.js";
-import { INFRA_NEXT, timedOutInfra } from "../src/judge-errors.js";
-import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { EXIT_REFUSED, INFRA_NEXT, timedOutInfra } from "../src/judge-errors.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { cli, funded, h, NOW, transport } from "./harness.js";
 import { gone, job, type Job, judging, paidTo, PROCESS_TEST, PROCESS_WAIT, ROOT, SPEC, STARTUP_SECONDS, status } from "./judge-kit.js";
 
@@ -89,10 +89,10 @@ describe("intent-engine judge", () => {
       [...judging(j, run, "--verdict", verdict).slice(0, 10), join(j.dir, "missing"), ...judging(j, run, "--verdict", verdict).slice(11)],
       judging(j, run, "--verdict", verdict, "--result", "7"),
     ];
-    for (const argv of refusals) {
+    for (const [at, argv] of refusals.entries()) {
       await writeFile(verdict, stale);
       const refused = await cli(argv, keys);
-      expect(refused.code).toBe(EXIT_FAILED);
+      expect(refused.code).toBe(at === 1 ? EXIT_USAGE : EXIT_REFUSED);
       expect(existsSync(verdict)).toBe(false);
     }
     await writeFile(verdict, stale);
@@ -205,7 +205,7 @@ describe("intent-engine judge", () => {
     const run = `touch "${marker}"`;
     await writeFile(join(j.dir, "other.md"), "a different spec\n");
     const mismatch = await cli([...judging(j, run).slice(0, 7), "--spec", join(j.dir, "other.md"), ...judging(j, run).slice(9)], keys);
-    expect(mismatch.code).toBe(EXIT_FAILED);
+    expect(mismatch.code).toBe(EXIT_REFUSED);
     expect(mismatch.err).toContain(`but intent ${j.intent} commits ${createHash("sha256").update(SPEC).digest("hex")}`);
 
     const stranger = await funded();
@@ -214,7 +214,7 @@ describe("intent-engine judge", () => {
 
     await writeFile(join(j.artifact, "extra.txt"), "unannounced\n");
     const nobody = await cli(judging(j, run, "--yes"), keys);
-    expect(nobody.code).toBe(EXIT_FAILED);
+    expect(nobody.code).toBe(EXIT_REFUSED);
     expect(nobody.err).toContain(`has no announcement that opens to the work ${await artifactSha256(j.artifact)}`);
     expect(existsSync(marker)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
@@ -235,7 +235,7 @@ describe("intent-engine judge", () => {
     const args = judging(j, "true", "--yes");
     args[args.indexOf("--nonce") + 1] = "3";
     const refused = await cli(args, keys);
-    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.code).toBe(EXIT_REFUSED);
     expect(refused.err).toContain(NOBODY_ANNOUNCED);
   });
 });

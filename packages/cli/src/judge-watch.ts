@@ -12,7 +12,10 @@ import { infraSkipped, type InterruptSignal, JudgeDeferred, JudgeInfraError, Jud
 import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, pinnedSpec, type Verdict } from "./judge.js";
 import { messageSigner } from "./ledger-keys.js";
 import { rpcFailed } from "./rpc-failure.js";
+import { memoryPinHeld } from "./node-judge.js";
 import { checkFilesOf, runPlan } from "./run-plan.js";
+import { dockerEnv, sandboxReady } from "./sandbox.js";
+import { nodeMemoryRead } from "./viper.js";
 import type { Runtime } from "./runtime.js";
 import { escapedJson } from "./untrusted-text.js";
 
@@ -20,14 +23,14 @@ export type Stopped = "paid" | "passed" | "closed" | "ended" | InterruptSignal;
 
 type Seen = { announcement: Address; seq: bigint; worker: Address; url: string | null };
 
-type Infra = { outcome?: "infra" };
+type Held = { outcome?: "infra" | "deferred" };
 
 export type Watched =
   | (Seen & Verdict)
   | (Seen & { artifactSha256: string | null; verdict: "fail"; reason: string })
   | (Seen & { artifactSha256: string | null; verdict: "refused"; reason: string })
-  | (Seen & Infra & { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true })
-  | (Seen & Infra & { artifactSha256: string | null; verdict: "skipped"; reason: string });
+  | (Seen & Held & { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true })
+  | (Seen & Held & { artifactSha256: string | null; verdict: "skipped"; reason: string });
 
 export const INFRA_RUNS = 3;
 
@@ -69,8 +72,8 @@ async function judgeAnnounced(
     const tries = (work.missed.get(announcement.address)?.tries ?? 0) + 1;
     work.missed.set(announcement.address, { tries, due: work.round + 2 ** (tries - 1) });
     return tries >= UNREADABLE_TRIES
-      ? { ...seen, outcome: "infra", artifactSha256: sha256, verdict: "skipped", reason: unreadableSkipped(tries, error.message) }
-      : { ...seen, outcome: "infra", artifactSha256: sha256, verdict: "retry", reason: error.message, retry: true };
+      ? { ...seen, outcome: "deferred", artifactSha256: sha256, verdict: "skipped", reason: unreadableSkipped(tries, error.message) }
+      : { ...seen, outcome: "deferred", artifactSha256: sha256, verdict: "retry", reason: error.message, retry: true };
   };
   let fetched: Fetched;
   try {
@@ -94,7 +97,7 @@ async function judgeAnnounced(
     if (work.deferred.has(fetched.sha256)) {
       return "later";
     }
-    const verdict = await judge({ ...command, artifact: fetched.path }, runtime, transport, work.stop);
+    const verdict = await judge({ ...command, artifact: fetched.path }, runtime, transport, work.stop, true);
     work.judged.add(fetched.sha256);
     return { ...seen, ...verdict };
   } catch (error) {
@@ -104,6 +107,8 @@ async function judgeAnnounced(
       if (runs >= INFRA_RUNS) {
         return { ...seen, outcome: "infra", artifactSha256: fetched.sha256, verdict: "skipped", reason: infraSkipped(runs, error.message) };
       }
+      work.deferred.add(fetched.sha256);
+      return { ...seen, outcome: "infra", artifactSha256: fetched.sha256, verdict: "retry", reason: error.message, retry: true };
     }
     if (error instanceof JudgeUnreadable) {
       work.deferred.add(fetched.sha256);
@@ -111,7 +116,7 @@ async function judgeAnnounced(
     }
     if (error instanceof JudgeDeferred || rpcFailed(error)) {
       work.deferred.add(fetched.sha256);
-      return { ...seen, outcome: "infra", artifactSha256: fetched.sha256, verdict: "retry", reason: reasonOf(error), retry: true };
+      return { ...seen, outcome: "deferred", artifactSha256: fetched.sha256, verdict: "retry", reason: reasonOf(error), retry: true };
     }
     if (error instanceof JudgeRefused) {
       work.judged.add(fetched.sha256);
@@ -130,9 +135,16 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
   if (isDevice(signer)) {
     await deviceJudgeReady(transport, signer.address, address).catch(historyRefused);
   }
-  const plan = runPlan(await pinnedSpec(command.spec, address, specHash), command);
+  const specBytes = await pinnedSpec(command.spec, address, specHash);
+  const plan = runPlan(specBytes, command);
   if (plan.pinned !== undefined) {
     await checkFilesOf(command.check, plan);
+  }
+  const node = plan.sandbox.kind === "viper" ? plan.sandbox.node : undefined;
+  const pinned = node === undefined ? undefined : nodeMemoryRead(specBytes).memory;
+  if (node !== undefined && pinned !== undefined) {
+    await sandboxReady(plan.sandbox, dockerEnv(process.env));
+    await memoryPinHeld(node, pinned, command.timeout);
   }
   const client = createClient({ url: command.url, transport });
   const seen = new Set<Address>();
@@ -222,7 +234,7 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
         }
         if (failing !== reasonOf(error)) {
           failing = reasonOf(error);
-          out(line({ intent: address, reason: failing, retry: true }));
+          out(line({ intent: address, outcome: "deferred", reason: failing, retry: true }));
         }
       }
       if (ended !== undefined) {

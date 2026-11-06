@@ -34,6 +34,7 @@ import { ata, balance, creation, funded, h, HOME, NOW, runtime, transport, type 
 const KEY_FILE = "judge.enc";
 import { CONFIG, type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen, TransportError } from "./ledger-device.js";
 import { airdropped } from "./airdrop.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -151,7 +152,7 @@ describe("a judge on a Ledger", () => {
     const j = await job();
     const ledger = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j, PATH, false), "--yes"], ledger, j.keys);
-    expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
+    expect([refused.code, refused.out]).toEqual([EXIT_REFUSED, ""]);
     expect(refused.err).toContain(`intent ${j.intent} has the earlier announcement ${j.announcement} (seq 1) by ${j.worker} sealed to the encryption key of ${j.key.address}'s profile`);
     expect(refused.err.endsWith(GIVE_KEY_FLAG)).toBe(true);
     ledger.store.ensureQueueEmpty();
@@ -206,7 +207,7 @@ describe("a judge on a Ledger", () => {
     for (const [error, ledger] of cases) {
       const sent = recording();
       const result = await run([...judging(j), "--yes"], ledger, j.keys);
-      expect([result.code, result.err, result.out]).toEqual([EXIT_FAILED, error, ""]);
+      expect([result.code, result.err, result.out]).toEqual([EXIT_REFUSED, error, ""]);
       ledger.store.ensureQueueEmpty();
       expect(sent).toEqual([]);
       expect(statusOf(j.intent)).toBe(IntentStatus.Open);
@@ -289,7 +290,7 @@ describe("a judge on a Ledger", () => {
     h.through = through;
     const ledger = device(j.key, [...found(LEVELS, j.key), ...messageThen()]);
     const judged = await run([...judging(j), "--yes"], ledger, j.keys);
-    expect([judged.code, judged.err]).toEqual([EXIT_FAILED, `Transaction is missing signatures for addresses: ${j.key.address}.`]);
+    expect([judged.code, judged.err]).toEqual([EXIT_REFUSED, `Transaction is missing signatures for addresses: ${j.key.address}.`]);
     ledger.store.ensureQueueEmpty();
     expect(kinds(ledger)).toEqual([MESSAGE]);
     expect(ledger.signed[0]?.bytes.subarray(0, 16)).toEqual(Uint8Array.from([0xff, ...ascii("solana offchain")]));
@@ -315,7 +316,7 @@ describe("a judge on a Ledger", () => {
     const ledger = device(j.key, found(LEVELS, j.key));
     const sent = recording();
     const refused = await run([...judging(j).slice(0, -2), "--fee-payer", "self.json", "--yes"], ledger, { "self.json": j.key.signer });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, FEE_PAYER_IS_JUDGE]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, FEE_PAYER_IS_JUDGE]);
     expect([ledger.signed, sent]).toEqual([[], []]);
   });
 

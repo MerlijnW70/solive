@@ -10,7 +10,6 @@ import { createClient } from "@intent-engine/client/node";
 import { shownRunRead } from "../src/agent/spec.js";
 import { refuseMalformedText } from "../src/agent/wallet/seal.js";
 import { runProblem, runRead } from "../src/judge-run.js";
-import { EXIT_FAILED } from "../src/main.js";
 import { NODE_LAUNCHER, SAME_UID } from "../src/node-runner.js";
 import { nodeMemoryDiffers, runPlan } from "../src/run-plan.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_TMP, type Sandbox } from "../src/sandbox.js";
@@ -18,6 +17,7 @@ import { casesOf, NODE_MEMORY_RULE, NODE_MEMORY_TWICE, NODE_MIN_MEGABYTES, nodeM
 import { announced, keyed } from "./announce.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
 import { status } from "./judge-kit.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '"cases": [{"args": ["a b"], "expected": 2}]';
 const specWith = (block: string) => `# Job\n\n\`\`\`judge-cases\n${block}\n\`\`\`\n`;
@@ -98,7 +98,7 @@ describe("runPlan with a spec that pins node_memory", () => {
         const verdict = join(work, "verdict.json");
         const argv = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", specPath, "--artifact", artifact, "--sandbox", "viper", "--plain-node", "--sandbox-memory", "512m", "--verdict", verdict, "--yes"];
         const run = await cli(argv, { "judge.json": judge });
-        expect([run.code, run.out, run.err], why).toEqual([EXIT_FAILED, "", why]);
+        expect([run.code, run.out, run.err], why).toEqual([EXIT_REFUSED, "", why]);
         expect(existsSync(verdict), why).toBe(false);
         expect(status(intent), why).toBe(IntentStatus.Open);
       }

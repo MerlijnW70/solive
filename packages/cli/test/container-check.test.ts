@@ -7,7 +7,7 @@ import { containerLeft, docker, removeContainer, runContainer } from "../src/che
 import { dockerTimedOut, startFailed } from "../src/container-check.js";
 import { JudgeInfraError, oomInfra, oomInfraUnpinned, timedOutInfra } from "../src/judge-errors.js";
 import { dockerMissing, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
-import { containerOutcome, exitedWith, inspectFailed, killedUnflagged, NEVER_STARTED, oomPinned, ranPastPin, RUN_UNTIMED } from "../src/verdict-model.js";
+import { containerOutcome, exitedWith, inspectFailed, killedUnflagged, NEVER_STARTED, oomPinned, ranPastPin, RUN_UNTIMED, stoppedBeforePin } from "../src/verdict-model.js";
 
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
@@ -240,7 +240,7 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
   it("under a pinned timeout, keeps a container never seen running until --timeout infra", async () => {
     const ran = await runContainer(["image"], "pin-2", envFor({ FAKE_RUN: "hang", FAKE_KILL: "stops", FAKE_STATUS: "created" }), 0.5, 30, 0.2);
     expect(ran).toMatchObject({ timedOut: true, deadline: true, state: null, overran: false });
-    expect(containerOutcome(ran, { ...limits, seconds: 0.5, pinned: { seconds: 0.2 } })).toEqual({ outcome: "infra", reason: timedOutInfra(0.5) });
+    expect(containerOutcome(ran, { ...limits, seconds: 0.5, pinned: { seconds: 0.2 } })).toEqual({ outcome: "infra", reason: stoppedBeforePin(0.5, 0.2) });
   });
 
   it("under a pinned timeout, counts a run from when Docker was asked, not when it answered, that the container was only created", async () => {

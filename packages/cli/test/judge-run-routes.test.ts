@@ -18,6 +18,7 @@ import { strayFence } from "../src/spec-blocks.js";
 import { announced, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 import { boxed, job, type Job, status } from "./judge-kit.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const RUN = 'test "$(cat "$ARTIFACT_PATH/answer.txt")" = 42';
 const BLOCK = { image: SANDBOX_IMAGE, run: RUN, timeout: 20 };
@@ -82,7 +83,7 @@ describe("judge under a judge-run block refuses an unpinned check before anythin
         const { path } = await checkFile(j, "check.mjs", check);
         const verdict = join(j.dir, "verdict.json");
         const run = await cli([...argv(j, path), "--verdict", verdict, "--yes"], { "judge.json": j.judge });
-        expect([run.code, run.out, run.err], why).toEqual([EXIT_FAILED, "", why]);
+        expect([run.code, run.out, run.err], why).toEqual([EXIT_REFUSED, "", why]);
         expect(existsSync(verdict), why).toBe(false);
         expect(status(j.intent), why).toBe(IntentStatus.Open);
       }
@@ -103,7 +104,7 @@ describe("judge under a judge-run block refuses an unpinned check before anythin
       const wrapped = await checkFilesSha256({ name: "wrapped", read: await readArtifact(dir) });
       for (const [path, sha256] of [[other.path, other.sha256], [renamed.path, renamed.sha256], [dir, wrapped]] as const) {
         const run = await cli([...boxed(j, RUN), "--check", path], { "judge.json": j.judge });
-        expect([run.code, run.err], path).toEqual([EXIT_FAILED, refused("--check", checkDiffers(path, sha256, `check_sha256 ${pinned.sha256}`))]);
+        expect([run.code, run.err], path).toEqual([EXIT_REFUSED, refused("--check", checkDiffers(path, sha256, `check_sha256 ${pinned.sha256}`))]);
       }
       expect(await calls()).toEqual([]);
     });
@@ -120,7 +121,7 @@ describe("judge under a judge-run block refuses an unpinned check before anythin
       ] as const) {
         const j = await job(specWith(body));
         const run = await cli(boxed(j, RUN), { "judge.json": j.judge });
-        expect([run.code, run.err.startsWith(why), run.err.endsWith("; nothing was run or paid")], why).toEqual([EXIT_FAILED, true, true]);
+        expect([run.code, run.err.startsWith(why), run.err.endsWith("; nothing was run or paid")], why).toEqual([EXIT_REFUSED, true, true]);
       }
       expect(await calls()).toEqual([]);
     });
@@ -132,7 +133,7 @@ describe("judge under a judge-run block refuses an unpinned check before anythin
         for (const argv of [(j: Job) => boxed(j, RUN), (j: Job) => [...boxed(j, RUN), "--sandbox", "none", "--i-trust-this-work"], (j: Job) => boxed(j, RUN).filter((part, i, all) => part !== "--run" && all[i - 1] !== "--run").concat(["--sandbox", "viper"])]) {
           const j = await job(text);
           const run = await cli(argv(j), { "judge.json": j.judge });
-          expect([run.code, run.out, run.err], `${why} ${argv(j).slice(-2).join(" ")}`).toEqual([EXIT_FAILED, "", `${why}; nothing was run or paid`]);
+          expect([run.code, run.out, run.err], `${why} ${argv(j).slice(-2).join(" ")}`).toEqual([EXIT_REFUSED, "", `${why}; nothing was run or paid`]);
           expect(status(j.intent)).toBe(IntentStatus.Open);
         }
       }
@@ -181,7 +182,7 @@ describe("judge under a judge-run block refuses an unpinned check before anythin
         [[...watching(j, RUN), "--check", other.path], refused("--check", checkDiffers(other.path, other.sha256, `check_sha256 ${pinned.sha256}`))],
       ] as const) {
         const run = await cli([...argv], { "judge.json": j.judge });
-        expect([run.code, run.out, run.err], why).toEqual([EXIT_FAILED, "", why]);
+        expect([run.code, run.out, run.err], why).toEqual([EXIT_REFUSED, "", why]);
       }
       expect(await calls()).toEqual([]);
       expect(status(j.intent)).toBe(IntentStatus.Open);
@@ -218,7 +219,7 @@ describe("judge under a judge-run block refuses an unpinned check before anythin
         [member("--sandbox", "viper"), refused("--sandbox viper", NOT_DOCKER)],
       ] as const) {
         const run = await cli([...argv], keys);
-        expect([run.code, run.out, run.err], why).toEqual([EXIT_FAILED, "", why]);
+        expect([run.code, run.out, run.err], why).toEqual([EXIT_REFUSED, "", why]);
         expect(existsSync(verdict)).toBe(false);
       }
       expect(await calls()).toEqual([]);

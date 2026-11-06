@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { EXIT_RETRY, JudgeInfraError, JudgeInterrupted, oomInfra, oomInfraUnpinned, SIGNAL_EXIT, timedOutInfra } from "../src/judge-errors.js";
+import { SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { EXIT_REFUSED, EXIT_RETRY, EXIT_SENT, JudgeInfraError, JudgeInterrupted, JudgeRefused, JudgeUnreadable, oomInfra, oomInfraUnpinned, ReleaseUncertain, SIGNAL_EXIT, timedOutInfra } from "../src/judge-errors.js";
 import {
   type CaseEnd,
   caseFilledPinned,
@@ -34,8 +35,12 @@ import {
   type Ruling,
   shellOutcome,
   startFailed,
+  stoppedBeforePin,
   type Tally,
 } from "../src/verdict-model.js";
+import { EXIT_FAILED, EXIT_USAGE, exitOfError } from "../src/main.js";
+import { UsageError } from "../src/args.js";
+import { memoryUncounted } from "../src/node-judge.js";
 import { ROOT } from "./judge-kit.js";
 
 const LIMITS = { seconds: 30, memory: "512m" };
@@ -129,8 +134,8 @@ describe("the verdict model, row by row", () => {
       expect(pinned(ran(1, { oomKilled: true }), more), String(ranAtMostMs)).toEqual(fail(oomPinned("512m")));
       expect(pinned(ran(1, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(infra(oomInfraUnpinned("1g")));
     }
-    expect(pinned(null, { deadline: true, ranAtMostMs: 90_000 })).toEqual(infra(timedOutInfra(90)));
-    expect(pinned(ran(0), { deadline: true, ranAtMostMs: 10 })).toEqual(infra(timedOutInfra(90)));
+    expect(pinned(null, { deadline: true, ranAtMostMs: 90_000 })).toEqual(infra(stoppedBeforePin(90, 60)));
+    expect(pinned(ran(0), { deadline: true, ranAtMostMs: 10 })).toEqual(infra(stoppedBeforePin(90, 60)));
     expect(pinned(ran(0, { error: "OCI runtime create failed" }), { ranAtMostMs: 10 })).toEqual(infra(startFailed(0, "OCI runtime create failed")));
     expect(pinned(ran(0, { started: false }), { ranAtMostMs: 10 })).toEqual(infra(NEVER_STARTED));
     expect(pinned(null, { inspect: "gone", ranAtMostMs: 10 })).toEqual(infra(inspectFailed("gone")));
@@ -226,7 +231,7 @@ describe("the verdict model, row by row", () => {
   });
 
   it("turns infra into exit 75 and an interrupt into 130 or 143, and returns only pass or fail", () => {
-    expect(EXIT_OF).toEqual({ pass: 0, fail: 1, infra: EXIT_RETRY });
+    expect(EXIT_OF).toEqual({ pass: 0, fail: 1, infra: EXIT_RETRY, refused: EXIT_REFUSED });
     expect(() => decided(infra("late") as Ruling)).toThrow(new JudgeInfraError("late"));
     expect(new JudgeInfraError("late").exitCode).toBe(EXIT_RETRY);
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -236,11 +241,39 @@ describe("the verdict model, row by row", () => {
     expect(decided(PASS as Ruling)).toEqual(PASS);
     expect(decided(fail("wrong") as Ruling)).toEqual(fail("wrong"));
   });
+
+  it("gives each ending of a judge run its own exit code, a refusal and an unforeseen error 78, never the 1 of a fail", () => {
+    expect(new Set([EXIT_OF.pass, EXIT_OF.fail, EXIT_OF.infra, EXIT_OF.refused]).size).toBe(4);
+    expect(exitOfError(new JudgeRefused("no"), true)).toBe(EXIT_REFUSED);
+    expect(exitOfError(new JudgeRefused("no"), false)).toBe(EXIT_FAILED);
+    expect(exitOfError(new JudgeInfraError("late"), false)).toBe(EXIT_RETRY);
+    expect(exitOfError(new JudgeUnreadable("the spec url answered 503"), true)).toBe(EXIT_RETRY);
+    expect(exitOfError(new ReleaseUncertain("may have landed"), true)).toBe(EXIT_SENT);
+    const limited = new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Too Many Requests", statusCode: 429 });
+    expect(exitOfError(new Error("the request failed", { cause: limited }), true)).toBe(EXIT_RETRY);
+    expect(exitOfError(new Error("the request failed", { cause: limited }), false)).toBe(EXIT_FAILED);
+    const missing = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT", path: "/tmp/judge-spec.md" });
+    expect(exitOfError(missing, true, ["judge", "--spec", "/tmp/judge-spec.md"])).toBe(EXIT_USAGE);
+    expect(exitOfError(missing, true, ["judge", "--spec=/tmp/judge-spec.md"])).toBe(EXIT_USAGE);
+    expect(exitOfError(missing, true, ["judge", "--spec", "/tmp/other.md"])).toBe(EXIT_REFUSED);
+    expect(exitOfError(new JudgeInfraError("late"), true)).toBe(EXIT_RETRY);
+    expect(exitOfError(new JudgeInterrupted("SIGTERM"), true)).toBe(SIGNAL_EXIT.SIGTERM);
+    expect(exitOfError(new UsageError("bad"), true)).toBe(EXIT_USAGE);
+    expect(exitOfError(new Error("odd"), true)).toBe(EXIT_REFUSED);
+    expect(exitOfError(new Error("odd"), false)).toBe(EXIT_FAILED);
+  });
 });
 
 const INTERNALS = readFileSync(join(ROOT, "docs/maintainers/judge-internals.md"), "utf8");
 
-const OUTCOME_ROWS: Record<string, Ruling> = {
+type Refusal = { outcome: "refused" | "infra"; exit: number };
+
+const refusedBy = (error: unknown): Refusal => {
+  const exit = exitOfError(error, true);
+  return { outcome: exit === EXIT_RETRY ? "infra" : "refused", exit };
+};
+
+const OUTCOME_ROWS: Record<string, Ruling | Refusal> = {
   "`--sandbox docker`: the container started and exited 0": docker(ran(0)),
   "`--sandbox docker`: the container started and exited with any other code, 125 included": docker(ran(125)),
   "`--sandbox docker`: the container exited 137, a kill with signal 9, under the memory the judge chose, and Docker did not flag it out of memory": docker(ran(137)),
@@ -284,6 +317,11 @@ const OUTCOME_ROWS: Record<string, Ruling> = {
   "an engine ends non-zero, writes no readable verdict, answers the wrong number of cases, or reports a fault of its own (`engine`)": engineOutcome(ENGINE, { total: 2, passed: 1, faults: 1 }),
   "every engine that ran answered every case": engineOutcome(ENGINE, { total: 2, passed: 2 }),
   "one engine fails a case while another is infra": combine([infra("late") as Ruling, engineOutcome(ENGINE, { total: 2, passed: 1 })]),
+  "the spec, the escrow, a key, the announcement or an option leaves the judge nothing it may judge, so no check runs": refusedBy(new JudgeRefused("the spec has no judge-cases block")),
+  "`--plain-node` under a `judge-cases` block that pins `node_memory`, on a host whose containers do not show the out-of-memory count": refusedBy(new JudgeRefused(memoryUncounted("512m"))),
+  "the check passed, but a check of the release refuses it before it is sent: the second RPC node disagrees, or the Ledger rejects it": refusedBy(new Error("the two RPC nodes report a different genesis hash")),
+  "the RPC node rate-limits, answers a server error, drops the connection or does not answer in time during a `judge` run, or the spec url cannot be read for now": refusedBy(new Error("the request failed", { cause: new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Service Unavailable", statusCode: 503 }) })),
+  "an error the judge did not foresee stops a `judge` run before any release was sent": refusedBy(new Error("the node answered something the judge cannot read")),
   "SIGINT or SIGTERM before the release is sent": docker(ran(0), { interrupted: "SIGTERM" }),
 };
 
@@ -300,10 +338,10 @@ describe("the outcome table in docs/maintainers/judge-internals.md", () => {
 
   it("states for each row the outcome, exit code and signature the classifier gives", () => {
     for (const [what = "", outcome, exit, signs] of rows) {
-      const ruling = OUTCOME_ROWS[what] as Ruling;
+      const ruling = OUTCOME_ROWS[what] as Ruling | Refusal;
       const expected = ruling.outcome === "interrupted" ? ["none", "130 or 143", "no"] : [ruling.outcome, String(EXIT_OF[ruling.outcome]), ruling.outcome === "pass" ? "yes" : "no"];
       expect([outcome, exit, signs], what).toEqual(expected);
-      expect(exitOf(ruling) === Number(exit) || ruling.outcome === "interrupted", what).toBe(true);
+      expect(("exit" in ruling ? ruling.exit : exitOf(ruling)) === Number(exit) || ruling.outcome === "interrupted", what).toBe(true);
     }
   });
 });

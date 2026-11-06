@@ -148,6 +148,20 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artif
 
 The release pays the announcement the verdict names and records its sha256 and salt on chain. The payer checks it with `intent-engine receipt`.
 
+`judge` ends with one exit code for each way a run can end, in text and JSON output alike, so a script tells them apart without reading the output:
+
+| Exit code | Ending | What happened |
+| --- | --- | --- |
+| 0 | pass | every check ran and passed; with `--yes` the release was sent |
+| 1 | fail | the work was shown to fall short of the spec; the verdict is written and nothing is paid |
+| 2 | usage | the command line is wrong, or a file it names is missing or unreadable; nothing was judged |
+| 75 | infra | the check could not finish for a cause the work cannot be blamed for, such as Docker down or a timeout, or a failure that passes: the RPC node rate-limited, answered a server error, dropped the connection or did not answer in time, or the spec url cannot be read for now; nothing was signed, so run it again |
+| 76 | sent | the check passed and the release was handed to the RPC node, but the send was not confirmed, or the verdict could not be written after it landed; read the intent the message names before judging it again |
+| 78 | refused | no verdict was written and no release was sent, because the spec, the escrow, a key, the announcement, an option or a check of the release refused it before the send |
+| 130 or 143 | interrupted | SIGINT or SIGTERM stopped the run; a verdict is written only when the release was already confirmed |
+
+78 is `EX_CONFIG` and 76 `EX_PROTOCOL` from the same `sysexits.h` list as 75, `EX_TEMPFAIL`, and lie outside the codes other commands use. `judge` checks that it can write `--verdict` before it runs anything. A refusal names its reason on stderr. Some refusals can change, such as another wallet's claim on the escrow, so run `judge` again once the reason is gone.
+
 ## A signature needs a passing run
 
 Every pass of `judge`, with or without `--yes`, single or committee, and `--watch`, saves a receipt on this machine; a fail or infra saves none. `solive_wallet_attest`, `solive_wallet_attest_split`, `committee vote` and `solive_wallet_committee_vote` sign for a proof escrow only with a receipt that matches the escrow, the spec's sha256, the work's sha256, the announcement it opens and the route that ran.
@@ -162,11 +176,13 @@ To sign without a receipt, name a reason: `--without-receipt <reason>` on `commi
 
 `judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it lists the announcements to its judge from accounts, opens each new one, downloads the work from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
-A failed check is final: that work is not judged again. An infra outcome prints a line with `outcome: "infra"` and `retry: true` and is tried again, until the watch gives that work up as `skipped`, still with `outcome: "infra"`.
+A failed check is final: that work is not judged again. An infra outcome, a check that could not finish, prints a line with `outcome: "infra"` and `retry: true` and is tried again, until the watch gives that work up as `skipped`, still with `outcome: "infra"`.
 
 A refusal, such as a spec the judge will not run, an announcement none of its keys opens, or work it cannot fetch for good (an answer of 404, a size over the artifact limit, a private address, or bytes the announcement does not bind), so that no check ran, prints `verdict: "refused"` with the reason, never `fail`; that work is not judged again and does not count in `judged`.
 
-A refusal that can change, because another wallet holds the escrow's claim, the node lists the announcements incompletely, an earlier announcement is sealed to a key not given, or the RPC node failed, prints a line with `retry: true` and is tried again next round; the same refusal prints once. Each escrow is still paid at most once.
+A refusal that can change, because another wallet holds the escrow's claim, the node lists the announcements incompletely, an earlier announcement is sealed to a key not given, the work or its spec cannot be read for now, or the RPC node failed, prints a line with `outcome: "deferred"` and `retry: true` and is tried again next round; the same refusal prints once. Each escrow is still paid at most once.
+
+Work that still cannot be read after `UNREADABLE_TRIES` in `packages/cli/src/judge-watch.ts` prints `verdict: "skipped"`, still with `outcome: "deferred"`.
 
 On devnet, testnet and mainnet it refuses a work link that points to a private or local network address.
 
@@ -229,7 +245,9 @@ intent-engine sandbox doctor --sandbox-image $env:IMAGE
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --run "$env:CHECK" --sandbox docker --sandbox-image $env:IMAGE --timeout 1800 --verdict verdict.json --yes
 ```
 
-`$IMAGE` is `<name>@sha256:<digest>`; `judge` refuses a tag alone. `sandbox doctor` must print `"ready": true` on the machine before it judges. Never pass `--sandbox none` for such work. Exit code 1 is a fail of the work. Exit code 75 is infra, no verdict on the work, such as a timeout, Docker down or an engine that crashed: nothing was signed, so run it again. [How the judge works](maintainers/judge-internals.md#outcomes) lists every outcome.
+`$IMAGE` is `<name>@sha256:<digest>`; `judge` refuses a tag alone. `sandbox doctor` must print `"ready": true` on the machine before it judges. Never pass `--sandbox none` for such work.
+
+Exit code 1 is a fail of the work. Exit code 75 is infra, no verdict on the work, such as a timeout, Docker down or an engine that crashed: nothing was signed, so run it again. Exit code 78 is a refusal: no verdict was written and nothing was paid. [How the judge works](maintainers/judge-internals.md#outcomes) lists every outcome.
 
 ## Pin the check in the spec
 
@@ -286,6 +304,10 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/w
 Plain Node cases run under `--sandbox-memory`, and a case killed for using all of it is infra, since that memory is the judge's choice. A hirer who wants such a case to fail adds `"node_memory": "512m"` to the `judge-cases` block, in the format of `--sandbox-memory` and at least `128m`, `NODE_MIN_MEGABYTES` in `packages/cli/src/viper.ts`, below which plain Node itself may not start.
 
 `judge --plain-node` then runs the cases under exactly that memory, fails a case killed for it, and refuses a `--sandbox-memory` that differs. Without `--plain-node` the field changes nothing. `solive_get_spec` and `intent-engine spec` show it as `node_memory`, and refuse a bad value as `judge_run_refused`, as the hirer's checks do before anything is sent.
+
+A pin needs a host whose containers show the kernel's out-of-memory count, as cgroup v2 gives them. Elsewhere `judge --plain-node` refuses with exit 78 before any case runs, and `sandbox doctor` prints `memory_pin` as `false`.
+
+A worker delivers the module as UTF-8 text. `judge` refuses a module that is not, with exit 78, and judges nothing: Node reads such bytes loosely, so a module saved as Windows-1252 may run in plain Node but not in the judge's engines, and failing it would punish an editor's setting. The worker delivers it again saved as UTF-8. `solive_wallet_judge_work` refuses it the same way.
 
 `--sandbox viper` needs neither WSL nor Docker on Windows: a demo job is judged from PowerShell as is. Save the spec and the work byte for byte, such as with `curl.exe -o`; `Set-Content` adds a byte-order mark or line ends that change the sha256, and `judge` then says so.
 

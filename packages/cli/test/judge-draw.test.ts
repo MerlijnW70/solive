@@ -15,6 +15,7 @@ import { answerTooLong, DETAIL_BYTES, DRAW_POLL_SECONDS, DRAW_TAG, drawBeacon, d
 import { casesOf, type Draw, OUTPUT_BYTES, pinnedWasm } from "../src/viper.js";
 import { announced, keyed } from "./announce.js";
 import { cli, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const GENERATOR = `export default function generate(seed, count) {
   const out = [];
@@ -194,7 +195,7 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     expect((judged.json()["drawn"] as { failures: unknown[] }).failures[0]).toEqual({ case: 0, verdict: "wrong", detail: "x".repeat(DETAIL_BYTES - 1) });
     const over = await job(answering(DETAIL_BYTES + 1), drawSpec());
     const refused = await cli(judging(over, "--yes"), { "judge.json": over.judge });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, expect.stringContaining(answerTooLong)]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, expect.stringContaining(answerTooLong)]);
     expect(status(over.intent)).toBe(IntentStatus.Open);
   }, 60_000);
 
@@ -214,7 +215,7 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     ] as const) {
       const j = await job(CORRECT, drawSpec(draw));
       const refused = await cli(judging(j, "--yes"), { "judge.json": j.judge });
-      expect(refused.code, said).toBe(EXIT_FAILED);
+      expect(refused.code, said).toBe(EXIT_REFUSED);
       expect(refused.err, said).toContain(said);
       expect(refused.err, said).toContain("the spec is at fault, not the worker, and nothing was paid");
       expect(refused.out, said).toBe("");
@@ -235,18 +236,18 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
   it("refuses when it stops waiting, when nobody announced the work, or when the node cannot read finalized blocks", async () => {
     const waiting = await job(CORRECT, drawSpec(), { blocks: [null] });
     const stopped = await cli(judging(waiting, "--yes"), { "judge.json": waiting.judge });
-    expect([stopped.code, stopped.err]).toEqual([EXIT_FAILED, expect.stringContaining(stoppedWaiting(ANNOUNCED + BigInt(K)))]);
+    expect([stopped.code, stopped.err]).toEqual([EXIT_REFUSED, expect.stringContaining(stoppedWaiting(ANNOUNCED + BigInt(K)))]);
     expect(h.sleeps).toEqual([DRAW_POLL_SECONDS]);
     expect(status(waiting.intent)).toBe(IntentStatus.Open);
     const silent = await job(CORRECT, drawSpec(), { announced: false });
     const unannounced = await cli(judging(silent, "--yes"), { "judge.json": silent.judge });
-    expect([unannounced.code, unannounced.err]).toEqual([EXIT_FAILED, expect.stringContaining(NOBODY_ANNOUNCED)]);
+    expect([unannounced.code, unannounced.err]).toEqual([EXIT_REFUSED, expect.stringContaining(NOBODY_ANNOUNCED)]);
     const draw = casesOf(new TextEncoder().encode(drawSpec())).draw as Draw;
     await expect(drawBeacon(transport, async () => false, null, draw, silent.intent, silent.sha256)).rejects.toThrow(notAnnounced(silent.sha256, silent.intent));
     expect(status(silent.intent)).toBe(IntentStatus.Open);
     const blind = await job(CORRECT, drawSpec(), { finalized: false });
     const refused = await cli(judging(blind, "--yes"), { "judge.json": blind.judge });
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, expect.stringContaining(noBlocks)]);
+    expect([refused.code, refused.err]).toEqual([EXIT_REFUSED, expect.stringContaining(noBlocks)]);
     expect(status(blind.intent)).toBe(IntentStatus.Open);
   });
 

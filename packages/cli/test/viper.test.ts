@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { JudgeRefused } from "../src/judge-errors.js";
 import { engineOutcome, EngineStopped } from "../src/verdict-model.js";
+import { judgeHost } from "../src/host-judge.js";
 import {
   CLOCK_FROM,
   CLOCK_TO,
@@ -18,6 +19,7 @@ import {
   decodeOutput,
   judgeViper,
   MAX_CASES,
+  NOT_TEXT,
   notUtf8,
   permissionFlag,
   pinnedWasm,
@@ -234,8 +236,10 @@ describe("a delivery judged by the module", () => {
     expect(engineOutcome("the viper judge", crashed).outcome).toBe("infra");
   });
 
-  it("refuses a delivery that is not UTF-8 text", async () => {
-    await expect(judgeViper(await pinnedWasm(), Uint8Array.from([0xff, 0xfe]), cases([{ args: [], expected: 0 }]), 30)).rejects.toThrow("not UTF-8");
+  it("refuses a delivery that is not UTF-8 text in both engines, judging nothing", async () => {
+    const two = cases([{ args: [], expected: 0 }, { args: [], expected: 1 }]);
+    await expect(judgeViper(await pinnedWasm(), Uint8Array.from([0xff, 0xfe]), two, 30)).rejects.toThrow(new JudgeRefused(NOT_TEXT));
+    await expect(judgeHost(Uint8Array.from([0xff, 0xfe]), two, 30)).rejects.toThrow(new JudgeRefused(NOT_TEXT));
   });
 
   it("treats an answer that is not exactly the verdicts it asked for as an engine fault", () => {

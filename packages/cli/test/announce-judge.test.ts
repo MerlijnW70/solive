@@ -11,9 +11,10 @@ import { createClient } from "@intent-engine/client/node";
 import { loadAnnouncement } from "@intent-engine/client/internal";
 import { NOBODY_ANNOUNCED, SKIP_REASONS } from "../src/announcement-views.js";
 import { GIVE_KEY_FLAG } from "../src/judge.js";
-import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { EXIT_OK } from "../src/main.js";
 import { announced, griefed, keyed, WORK_URL } from "./announce.js";
 import { balance, cli, h, NOW, transport, type World, world } from "./harness.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const SPEC = "answer.txt holds 42\n";
 const CHECK = `test "$(cat "$ARTIFACT_PATH")" = 42`;
@@ -112,7 +113,7 @@ describe("judge on announcements", () => {
 
   it("refuses with the reason and what to do next, and signs nothing, until it is given the key an earlier announcement is sealed to", async () => {
     const none = await cli(judging(j, "--yes"), j.keys);
-    expect(none.code).toBe(EXIT_FAILED);
+    expect(none.code).toBe(EXIT_REFUSED);
     expect(none.err).toContain(NOBODY_ANNOUNCED);
     const made = await cli(["profile", "encryption-key", "new", "--out", "judge.enc"], {});
     const key = String(made.json()["encryption_key"]);
@@ -121,7 +122,7 @@ describe("judge on announcements", () => {
     const worker = await keyed();
     await announced(j.intent, worker, j.sha256);
     const blind = await cli(judging(j, "--yes"), j.keys);
-    expect(blind.code).toBe(EXIT_FAILED);
+    expect(blind.code).toBe(EXIT_REFUSED);
     expect(blind.err).toContain("which no key given here opens");
     expect(blind.err).toContain(GIVE_KEY_FLAG);
     expect(status(j.intent)).toBe(IntentStatus.Open);

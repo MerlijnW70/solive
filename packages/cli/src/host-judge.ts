@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
-import { JudgeRefused } from "./judge-errors.js";
 import { deadlineOf, faultOf, type Stop } from "./verdict-model.js";
-import { type CaseResult, type Cases, deadlineMissed, DIAGNOSTIC_BYTES, OUTPUT_BYTES, permissionFlag, type Primitive, runOf, stoppedTally, type Tallied, tallied } from "./viper.js";
+import { type CaseResult, type Cases, deadlineMissed, DIAGNOSTIC_BYTES, moduleText, OUTPUT_BYTES, permissionFlag, type Primitive, runOf, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const HOST_ENGINE = "node-vm";
 export const HOST_CALL_MS = 2_000;
@@ -162,12 +161,7 @@ const readable = (result: unknown): result is CaseResult =>
   typeof result === "object" && result !== null && HOST_VERDICTS.includes((result as { verdict?: unknown }).verdict as string);
 
 export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds: number, seed: number = runOf(cases).seed): Promise<HostJudged> {
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(source);
-  } catch {
-    throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the judge can run; nothing was paid");
-  }
+  const text = moduleText(source);
   const total = cases.cases.length;
   if (timeoutSeconds <= 0) return stoppedHost(total, deadlineOf(deadlineMissed(HOST, timeoutSeconds), total));
   const input = JSON.stringify({ source: text, cases: cases.cases.map((c) => ({ ...wireArgs(c.args), expected: c.expected })), callMs: HOST_CALL_MS, detail: hostDetail(total) });

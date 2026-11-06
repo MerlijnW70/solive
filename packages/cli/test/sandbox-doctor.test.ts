@@ -41,7 +41,7 @@ describe("intent-engine sandbox doctor", () => {
     const doctor = run.json();
     expect((doctor["checks"] as { check: string; ok: boolean; detail?: string }[]).filter((check) => !check.ok)).toEqual([]);
     expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
-    expect(doctor).toMatchObject({ image: SANDBOX_IMAGE, gpu: false, keypair: { path: keypair, reachable: false }, ready: true, next: DOCTOR_READY });
+    expect(doctor).toMatchObject({ image: SANDBOX_IMAGE, gpu: false, keypair: { path: keypair, reachable: false }, memory_pin: true, ready: true, next: DOCTOR_READY });
     expect((doctor["checks"] as { check: string; ok: boolean }[]).map((check) => [check.check, check.ok])).toEqual(CHECKS.map((check) => [check, true]));
   });
 

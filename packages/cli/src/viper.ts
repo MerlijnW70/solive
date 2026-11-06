@@ -427,11 +427,14 @@ export function runViper(wasm: Buffer, input: Buffer, timeoutSeconds: number): P
   });
 }
 
+export const NOT_TEXT =
+  "the delivered module is not UTF-8 text, so it is refused, not judged: Node decodes such bytes loosely and could run what the judge's engines cannot read; the worker delivers it again saved as UTF-8, and nothing was run or paid";
+
 export function moduleText(source: Uint8Array): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(source);
   } catch {
-    throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the viper judge can run; nothing was paid");
+    throw new JudgeRefused(NOT_TEXT);
   }
 }
 

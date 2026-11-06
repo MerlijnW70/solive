@@ -15,6 +15,7 @@ import { cli, h, HOME, NOW, transport } from "./harness.js";
 import { readReceipt } from "../src/judge-receipt.js";
 import { job, type Job, judging, paidAnnouncement, paidTo, PROCESS_TEST, PROCESS_WAIT, releasedIn, SPEC, status, WORK_URL } from "./judge-kit.js";
 import { NO_ISOLATION } from "../src/sandbox.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 describe("intent-engine judge", () => {
   let j: Job;
@@ -94,7 +95,7 @@ describe("intent-engine judge", () => {
     };
     for (const result of [1n, 6n]) {
       const refused = await cli(onNonce("--result", String(result), "--yes"), keys);
-      expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
+      expect([refused.code, refused.out]).toEqual([EXIT_REFUSED, ""]);
       expect(refused.err).toBe(resultOutside(result, intent, 2n, 5n));
       expect(existsSync(ran)).toBe(false);
     }

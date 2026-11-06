@@ -17,6 +17,7 @@ import { sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { casesMissing, DEFAULT_HEAP, DEFAULT_STEPS, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one"], "expected": 1}, {"args": ["one\\ttwo\\u3000three"], "expected": 3}]}';
 const SPEC = `# Count words\n\nCount whitespace-separated words.\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -142,7 +143,7 @@ describe("intent-engine judge --sandbox viper", () => {
     const j = await job(CORRECT, "# no cases\n");
     keys = { "judge.json": j.judge };
     const bare = await cli(judging(j, "--yes"), keys);
-    expect(bare.code).toBe(EXIT_FAILED);
+    expect(bare.code).toBe(EXIT_REFUSED);
     expect(bare.err).toContain(casesMissing(0));
     const k = await job(CORRECT);
     keys = { "judge.json": k.judge };
@@ -150,7 +151,7 @@ describe("intent-engine judge --sandbox viper", () => {
     await mkdir(folder);
     await writeFile(join(folder, "count.mjs"), CORRECT);
     const directory = await cli([...judging(k, "--yes").map((arg) => (arg === k.artifact ? folder : arg))], keys);
-    expect(directory.code).toBe(EXIT_FAILED);
+    expect(directory.code).toBe(EXIT_REFUSED);
     expect(directory.err).toContain("is a directory");
     expect(status(k.intent)).toBe(IntentStatus.Open);
   });

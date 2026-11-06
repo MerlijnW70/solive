@@ -19,11 +19,13 @@ When neither `--keypair` nor `INTENT_ENGINE_KEYPAIR` is given, the wallet `setup
 | Code | Meaning |
 | --- | --- |
 | 0 | The command finished. |
-| 1 | The command failed or was refused; `judge` also exits this way when the verdict is not a pass, and `sandbox doctor` when the sandbox is not ready. |
-| 2 | The arguments were wrong; nothing was sent. |
+| 1 | The command failed or was refused; `judge` exits this way only when the verdict is a fail, and `sandbox doctor` when the sandbox is not ready. |
+| 2 | The arguments were wrong, or a file `judge` was given is missing; nothing was sent. |
 | 3 | The command did part of its work: `crank` when any action failed, `migrate --all` when any account failed to migrate, `mandate revoke` when the revoke landed but a cancel of one of the mandate escrows failed or was not confirmed. The JSON on stdout names what failed; run the command again for the rest. |
 | 4 | `monitor --once` raised at least one alert. |
-| 75 | `judge` hit an infrastructure error, which is not a verdict on the work; nothing was signed or paid. |
+| 75 | `judge` hit an infrastructure error, or a failure that passes, such as an RPC node that rate-limited it; this is not a verdict on the work, and nothing was signed or paid. |
+| 76 | `judge` handed the release to the RPC node, but the send was not confirmed, or the verdict could not be written after it landed; read the intent the message names before judging it again. |
+| 78 | `judge` refused: no verdict was written and no release was sent, because the spec, the escrow, a key, the announcement, an option or a check of the release refused it before the send. |
 | 130 and 143 | `judge` was stopped by SIGINT or SIGTERM; nothing was paid and no verdict was written. |
 
 ## setup

@@ -1,5 +1,7 @@
 export const NODE_READY = '"ready"';
 
+export const NODE_UNCOUNTED = '"uncounted"';
+
 export const SAME_UID = "the plain Node launcher runs under the uid its cases would run under, so a case could reach it, and no case was run";
 
 export const NODE_LAUNCHER = `
@@ -68,6 +70,10 @@ for await (const line of lines) {
     if (process.getuid() === config.uid || process.getgid() === config.gid) {
       process.stderr.write(${JSON.stringify(SAME_UID)} + "\\n");
       process.exit(78);
+    }
+    if (config.pinned === true && oomCount() === null) {
+      process.stdout.write(${JSON.stringify(NODE_UNCOUNTED)} + "\\n");
+      process.exit(0);
     }
     process.stdout.write(${JSON.stringify(NODE_READY)} + "\\n");
     continue;

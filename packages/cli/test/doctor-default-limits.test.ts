@@ -47,7 +47,7 @@ describe.skipIf(process.platform !== "linux")("the sandbox doctor command", () =
     process.env["PATH"] = bin;
     const run = await cli(["sandbox", "doctor", "--keypair", join(dir, "judge.json")], {});
     const checks = run.json()["checks"] as unknown[];
-    expect(seen.timeouts.length).toBe(checks.length - 2);
+    expect(seen.timeouts.length).toBe(checks.length - 1);
     expect(seen.timeouts.slice(0, -1).every((seconds) => seconds === PROBE_LIMITS.probeSeconds)).toBe(true);
     expect(seen.timeouts.at(-1)).toBe(PROBE_LIMITS.timeoutProbeSeconds);
   });

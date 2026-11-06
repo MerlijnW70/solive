@@ -14,6 +14,7 @@ import { settingsPath } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, funded, h, HOME, NOW, transport, world } from "./harness.js";
 import { cliWith, type Disagreement, disagreements, OTHER_GENESIS, SECOND, SECOND_URL, secondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -96,7 +97,7 @@ describe("judge --confirm-url", () => {
       node.lie = lie;
       const wires = h.wires.length;
       const refused = await cliWith(judging(job, "--confirm-url", SECOND, "--yes"), job.keys, node);
-      expect(refused.code, field).toBe(EXIT_FAILED);
+      expect(refused.code, field).toBe(EXIT_REFUSED);
       expect(refused.out).toBe("");
       expect(refused.err).toContain(`ConfirmMismatch: the two RPC nodes report a different ${field}`);
       expect(refused.err).toContain(second);
@@ -114,7 +115,7 @@ describe("judge --confirm-url", () => {
     for (const more of [[], ["--yes"]]) {
       const simulated = h.simulated.length;
       const refused = await cliWith(judging(job, "--confirm-url", SECOND, ...more), job.keys, node);
-      expect(refused.code).toBe(EXIT_FAILED);
+      expect(refused.code).toBe(EXIT_REFUSED);
       expect(refused.err).toContain(`ConfirmMismatch: ${UNREADABLE.second}`);
       expect(h.simulated.length).toBe(simulated);
     }
@@ -138,7 +139,7 @@ describe("judge --confirm-url", () => {
     const node = secondNode();
     node.lie = { genesis: OTHER_GENESIS };
     const refused = await cliWith(judging(job, "--yes"), job.keys, node);
-    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.code).toBe(EXIT_REFUSED);
     expect(refused.err).toContain("ConfirmMismatch: the two RPC nodes report a different genesis hash");
     expect(refused.urls).toContain(SECOND_URL);
     expect(status(job.intent)).toBe(IntentStatus.Open);

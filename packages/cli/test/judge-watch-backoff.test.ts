@@ -26,8 +26,8 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.roundsOf(j.url)).toEqual(BACKOFF_ROUNDS);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "infra", verdict: "retry", retry: true, reason }),
-      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "infra", verdict: "skipped", reason: unreadableSkipped(UNREADABLE_TRIES, reason) }),
+      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "deferred", verdict: "retry", retry: true, reason }),
+      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "deferred", verdict: "skipped", reason: unreadableSkipped(UNREADABLE_TRIES, reason) }),
       { stopped: "ended", intent: j.intent, judged: 0 },
     ]);
     expect(UNREADABLE_TRIES).toBe(BACKOFF_ROUNDS.length);
@@ -43,8 +43,8 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.roundsOf(j.url)).toEqual(BACKOFF_ROUNDS);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "infra", verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
-      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "infra", verdict: "skipped", reason: expect.stringContaining(`could not be read ${UNREADABLE_TRIES} times`) }),
+      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "deferred", verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
+      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "deferred", verdict: "skipped", reason: expect.stringContaining(`could not be read ${UNREADABLE_TRIES} times`) }),
       { stopped: "ended", intent: j.intent, judged: 0 },
     ]);
   }, 120_000);
@@ -74,7 +74,7 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     h.hosts.set(new URL(SPEC_URL).hostname, []);
     const watched = await run(viperWatch(j), { rounds: 3 });
     expect(watched.roundsOf(j.url)).toEqual([0, 1]);
-    expect(watched.lines).toEqual([expect.objectContaining({ outcome: "infra", verdict: "retry", retry: true, reason: expect.stringContaining(SPEC_NOT_PUBLIC) }), { stopped: "ended", intent: j.intent, judged: 0 }]);
+    expect(watched.lines).toEqual([expect.objectContaining({ outcome: "deferred", verdict: "retry", retry: true, reason: expect.stringContaining(SPEC_NOT_PUBLIC) }), { stopped: "ended", intent: j.intent, judged: 0 }]);
   }, 120_000);
 });
 

@@ -1,4 +1,14 @@
+import { isSolanaError, SOLANA_ERROR__TRANSACTION__SIGNATURES_MISSING } from "@solana/kit";
+
+export const EXIT_REFUSED = 78;
+
+export const EXIT_RETRY = 75;
+
+export const EXIT_SENT = 76;
+
 export class JudgeRefused extends Error {
+  readonly exitCode: number = EXIT_REFUSED;
+
   constructor(reason: string) {
     super(reason);
     this.name = "JudgeRefused";
@@ -13,6 +23,8 @@ export class JudgeDeferred extends JudgeRefused {
 }
 
 export class JudgeUnreadable extends JudgeDeferred {
+  override readonly exitCode: number = EXIT_RETRY;
+
   constructor(reason: string) {
     super(reason);
     this.name = "JudgeUnreadable";
@@ -22,12 +34,32 @@ export class JudgeUnreadable extends JudgeDeferred {
 export const unreadableSkipped = (tries: number, last: string): string =>
   `the work or its spec could not be read ${tries} times, so this watch does not fetch it again; this is not a verdict on the work. The last: ${last}`;
 
-export const EXIT_RETRY = 75;
+export class ReleaseUncertain extends Error {
+  readonly exitCode: number = EXIT_SENT;
+
+  constructor(reason: string, cause?: unknown) {
+    super(reason, { cause });
+    this.name = "ReleaseUncertain";
+  }
+}
+
+export const sendUnconfirmed = (intent: string, signature: string | undefined, reason: string): string =>
+  `the check passed and the release was signed and handed to the RPC node${signature === undefined ? "" : ` in ${signature}`}, but the send was not confirmed (${reason}), so the release may have landed. Read intent ${intent} before judging it again; no verdict was written`;
+
+export const verdictUnwritten = (intent: string, signature: string, path: string, reason: string): string =>
+  `the check passed and the release was sent and confirmed in ${signature}, but the verdict could not be written to ${path} (${reason}); read intent ${intent} to see the payment`;
+
+const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export const sendFailure = (handed: boolean, intent: string, signature: string | undefined, error: unknown): unknown =>
+  handed && !isSolanaError(error, SOLANA_ERROR__TRANSACTION__SIGNATURES_MISSING) ? new ReleaseUncertain(sendUnconfirmed(intent, signature, reasonOf(error)), error) : error;
+
+export const failedSend = (error: unknown): string => reasonOf(error instanceof ReleaseUncertain ? error.cause : error);
 
 export const INFRA_NEXT = "nothing was signed or paid and no verdict was written; this is not a verdict on the work, so fix the cause if needed and run the judge again";
 
 export class JudgeInfraError extends JudgeDeferred {
-  readonly exitCode = EXIT_RETRY;
+  override readonly exitCode: number = EXIT_RETRY;
 
   constructor(reason: string) {
     super(`infrastructure error, not a verdict: ${reason}; ${INFRA_NEXT}`);

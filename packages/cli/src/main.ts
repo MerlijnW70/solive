@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createDefaultRpcTransport, createKeyPairSignerFromBytes, createSolanaRpcFromTransport, type KeyPairSigner } from "@solana/kit";
@@ -11,7 +11,7 @@ import { changesFrom, intentNotifications, limitedTransport, observedFetch, obse
 import { type Command, DEFAULT_URL, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
-import { JudgeInfraError, JudgeInterrupted } from "./judge.js";
+import { EXIT_REFUSED, EXIT_RETRY, JudgeInfraError, JudgeInterrupted, JudgeRefused, ReleaseUncertain } from "./judge-errors.js";
 import { exitOfVerdict } from "./verdict-model.js";
 import { watchJudge } from "./judge-watch.js";
 import { addToLines, printable, printableLines, redactUrl, render, renderText } from "./render.js";
@@ -22,7 +22,7 @@ import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 import { monitor, writeBaseline } from "./monitor.js";
 import { launch } from "./launch.js";
-import { rateLimitedHint, rpcCause } from "./rpc-failure.js";
+import { rateLimitedHint, rpcCause, rpcTemporary } from "./rpc-failure.js";
 import { checkLedgerPaths } from "./ledger-keys.js";
 import { monotonic } from "./monotonic.js";
 
@@ -106,12 +106,49 @@ export function debugged(runtime: Runtime, write: (line: string) => void): Runti
   };
 }
 
+export const PATH_FLAGS: readonly string[] = ["--spec", "--artifact", "--check", "--verdict"];
+
+const pathsOf = (argv: readonly string[]): string[] =>
+  argv.flatMap((arg, at) => {
+    const flag = arg.includes("=") ? arg.slice(0, arg.indexOf("=")) : arg;
+    if (!PATH_FLAGS.includes(flag)) {
+      return [];
+    }
+    return arg.includes("=") ? [arg.slice(arg.indexOf("=") + 1)] : [argv[at + 1] ?? ""];
+  });
+
+const missingNamed = (error: unknown, argv: readonly string[]): boolean => {
+  const { code, path } = (error ?? {}) as { code?: unknown; path?: unknown };
+  return code === "ENOENT" && typeof path === "string" && pathsOf(argv).some((arg) => arg !== "" && resolve(arg) === resolve(path));
+};
+
+export function exitOfError(error: unknown, judging: boolean, argv: readonly string[] = []): number {
+  if (error instanceof JudgeInterrupted || error instanceof JudgeInfraError || error instanceof ReleaseUncertain) {
+    return error.exitCode;
+  }
+  if (error instanceof UsageError) {
+    return EXIT_USAGE;
+  }
+  if (!judging) {
+    return EXIT_FAILED;
+  }
+  if (error instanceof JudgeRefused) {
+    return error.exitCode;
+  }
+  if (rpcTemporary(error)) {
+    return EXIT_RETRY;
+  }
+  return missingNamed(error, argv) ? EXIT_USAGE : EXIT_REFUSED;
+}
+
 export async function main(argv: readonly string[], runtime: Runtime, io: Io): Promise<number> {
   let url: string | undefined;
   let unset = false;
+  let judging = false;
   try {
     const settings = await withSettings(runtime, runtime.env);
     const command = parse(argv, settings);
+    judging = command.name === "judge";
     const live = debugOf(argv) ? debugged(runtime, io.err) : runtime;
     url = "url" in command ? command.url : undefined;
     unset = url === DEFAULT_URL && settings[ENV_URL] === undefined && !argv.some((arg) => arg === "--url" || arg.startsWith("--url="));
@@ -170,10 +207,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     return command.name === "judge" && result !== null && "verdict" in result ? exitOfVerdict(result.verdict) : EXIT_OK;
   } catch (error) {
     io.err(message(error, url, unset));
-    if (error instanceof JudgeInterrupted || error instanceof JudgeInfraError) {
-      return error.exitCode;
-    }
-    return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILED;
+    return exitOfError(error, judging, argv);
   }
 }
 

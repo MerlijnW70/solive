@@ -15,10 +15,11 @@ import { specSealedHint } from "../src/agent/spec.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { notInvited } from "../src/invites.js";
 import { jobClosed } from "../src/sealed-commands.js";
-import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 import { approved, UNJUDGED } from "./approved.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 type Json = Record<string, unknown>;
 
@@ -132,7 +133,7 @@ describe("judging an invite-only job", () => {
     };
     const [invitedWorker, outsider] = [await keyed(), await keyed()];
     const refused = await deliveredBy(outsider, [judge.address, invitedWorker.address], 0n);
-    expect([refused.run.code, refused.run.err]).toEqual([EXIT_FAILED, notInvited(outsider.address, refused.intent)]);
+    expect([refused.run.code, refused.run.err]).toEqual([EXIT_REFUSED, notInvited(outsider.address, refused.intent)]);
     const judged = await deliveredBy(invitedWorker, [judge.address, invitedWorker.address], 1n);
     expect([judged.run.code, judged.run.err]).toEqual([EXIT_OK, ""]);
     expect(judged.run.json()).toMatchObject({ intent: judged.intent, verdict: "pass", payTo: invitedWorker.address, signature: null });

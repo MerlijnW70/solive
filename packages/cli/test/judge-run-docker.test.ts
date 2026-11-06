@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
 import { readArtifact } from "../src/artifact.js";
-import { EXIT_RETRY, INFRA_NEXT, oomInfra, oomInfraUnpinned } from "../src/judge-errors.js";
+import { EXIT_REFUSED, EXIT_RETRY, INFRA_NEXT, oomInfra, oomInfraUnpinned } from "../src/judge-errors.js";
 import { checkFilesSha256, RUN_OVERHEAD_SECONDS } from "../src/judge-run.js";
 import { checkDiffers, differs } from "../src/run-plan.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
@@ -82,12 +82,12 @@ describe("judge under a judge-run block, in a real Docker container", () => {
   it("refuses a --run that differs and a --check whose hash differs, before anything runs", LIVE, async () => {
     const { j, check, verdict } = await pinnedJob({ image: SANDBOX_IMAGE, run: RUN, timeout: 60 });
     const run = await cli(boxed(j, "true", "--check", check, "--verdict", verdict, "--yes"), { "judge.json": j.judge });
-    expect([run.code, run.out, run.err]).toEqual([EXIT_FAILED, "", `--run ${differs("true", RUN, "the run")}; nothing was run or paid`]);
+    expect([run.code, run.out, run.err]).toEqual([EXIT_REFUSED, "", `--run ${differs("true", RUN, "the run")}; nothing was run or paid`]);
     const pinned = (await readFile(j.spec, "utf8")).match(/"check_sha256":"([0-9a-f]{64})"/)?.[1] ?? "";
     await writeFile(check, "process.exit(0);\n");
     const other = await checkFilesSha256({ name: "check.mjs", read: await readArtifact(check) });
     const swapped = await cli(boxed(j, RUN, "--check", check, "--verdict", verdict, "--yes"), { "judge.json": j.judge });
-    expect([swapped.code, swapped.out, swapped.err]).toEqual([EXIT_FAILED, "", `--check ${checkDiffers(check, other, `check_sha256 ${pinned}`)}; nothing was run or paid`]);
+    expect([swapped.code, swapped.out, swapped.err]).toEqual([EXIT_REFUSED, "", `--check ${checkDiffers(check, other, `check_sha256 ${pinned}`)}; nothing was run or paid`]);
     expect(existsSync(verdict)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });

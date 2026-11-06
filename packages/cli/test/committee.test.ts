@@ -14,6 +14,7 @@ import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, funded, h, NOW, transport, world } from "./harness.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -128,7 +129,7 @@ describe("intent-engine committee", () => {
     expect(failed.json()).not.toHaveProperty("vote");
     const p = await panel(CORRECT);
     const outsider = await cli(p.judging("outsider.json", join(p.dir, "o.json")), p.keys);
-    expect(outsider.code).toBe(EXIT_FAILED);
+    expect(outsider.code).toBe(EXIT_REFUSED);
     expect(outsider.err).toContain("is not one of its members");
     const v1 = join(p.dir, "v1.json");
     await cli(p.judging("m1.json", v1), p.keys);

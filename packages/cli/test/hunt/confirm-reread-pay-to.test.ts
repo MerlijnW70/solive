@@ -12,6 +12,7 @@ import { main } from "../../src/main.js";
 import { announced, keyed } from "../announce.js";
 import { balance, funded, NOW, runtime, transport, world } from "../harness.js";
 import { SECOND, SECOND_URL, secondNode, WORK_URL } from "../confirm-node.js";
+import { EXIT_REFUSED } from "../../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -87,7 +88,7 @@ describe("judge --confirm-url never pays a later announcer a node hides the firs
     );
 
     expect(primary.hiddenReads()).toBeGreaterThan(0);
-    expect(code).toBe(1);
+    expect(code).toBe(EXIT_REFUSED);
     expect(err.join(" ")).toContain("lists its announcements with seq 1 missing");
     const paidTo = async (owner: Address) => balance(await findAssociatedTokenAddress({ owner, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }));
     const copierPaid = await paidTo(copier.address);

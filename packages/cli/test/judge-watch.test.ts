@@ -14,12 +14,13 @@ import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { DeliveryUnfit, FETCHED_NAME, fetchDelivery, fetchedName } from "../src/delivery-fetch.js";
 import { NOT_SENT } from "../src/flows.js";
 import { JUDGE_WATCH_INTERVAL, WATCH_TAKES_NO_ARTIFACT } from "../src/job-args.js";
-import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
+import { EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
 import type { Runtime } from "../src/runtime.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, h, HOME, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
 import { readReceipt } from "../src/judge-receipt.js";
 import { authorize } from "../src/receipt-gate.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -255,7 +256,7 @@ describe("intent-engine judge --watch", () => {
     const j = await job();
     await writeFile(j.spec, "# another spec\n");
     const mismatched = await watch(j, judging(j, "--yes"));
-    expect([mismatched.code, mismatched.lines, mismatched.fetched]).toEqual([EXIT_FAILED, [], []]);
+    expect([mismatched.code, mismatched.lines, mismatched.fetched]).toEqual([EXIT_REFUSED, [], []]);
     expect(mismatched.err).toContain(`but intent ${j.intent} commits ${sha(SPEC)}`);
   });
 

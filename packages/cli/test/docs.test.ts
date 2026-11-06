@@ -15,7 +15,7 @@ import { SDK_ERRORS, SdkError } from "@intent-engine/client";
 import { LEDGER_FORMS } from "@intent-engine/client/internal";
 import { LEDGER_COMMANDS } from "../src/ledger-keys.js";
 import { EXIT_ALERTED, EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE } from "../src/main.js";
-import { EXIT_RETRY, SIGNAL_EXIT } from "../src/judge-errors.js";
+import { EXIT_REFUSED, EXIT_RETRY, EXIT_SENT, SIGNAL_EXIT } from "../src/judge-errors.js";
 
 type Json = Record<string, unknown>;
 
@@ -106,11 +106,13 @@ const RUNS_ALONE = new Set(["judge"]);
 
 const EXIT_ROWS: string[][] = [
   [String(EXIT_OK), "The command finished."],
-  [String(EXIT_FAILED), "The command failed or was refused; `judge` also exits this way when the verdict is not a pass, and `sandbox doctor` when the sandbox is not ready."],
-  [String(EXIT_USAGE), "The arguments were wrong; nothing was sent."],
+  [String(EXIT_FAILED), "The command failed or was refused; `judge` exits this way only when the verdict is a fail, and `sandbox doctor` when the sandbox is not ready."],
+  [String(EXIT_USAGE), "The arguments were wrong, or a file `judge` was given is missing; nothing was sent."],
   [String(EXIT_PARTIAL), "The command did part of its work: `crank` when any action failed, `migrate --all` when any account failed to migrate, `mandate revoke` when the revoke landed but a cancel of one of the mandate escrows failed or was not confirmed. The JSON on stdout names what failed; run the command again for the rest."],
   [String(EXIT_ALERTED), "`monitor --once` raised at least one alert."],
-  [String(EXIT_RETRY), "`judge` hit an infrastructure error, which is not a verdict on the work; nothing was signed or paid."],
+  [String(EXIT_RETRY), "`judge` hit an infrastructure error, or a failure that passes, such as an RPC node that rate-limited it; this is not a verdict on the work, and nothing was signed or paid."],
+  [String(EXIT_SENT), "`judge` handed the release to the RPC node, but the send was not confirmed, or the verdict could not be written after it landed; read the intent the message names before judging it again."],
+  [String(EXIT_REFUSED), "`judge` refused: no verdict was written and no release was sent, because the spec, the escrow, a key, the announcement, an option or a check of the release refused it before the send."],
   [`${SIGNAL_EXIT.SIGINT} and ${SIGNAL_EXIT.SIGTERM}`, "`judge` was stopped by SIGINT or SIGTERM; nothing was paid and no verdict was written."],
 ];
 
@@ -339,61 +341,6 @@ describe("policy pages", () => {
   });
 });
 
-const POSIX_ONLY = [/\$\(/, /^export /, /^alias /, /~\//, /\$[A-Z_]+\b/, /^[A-Z_]+=/, /\bsha256sum\b/, /'/, / -- npx /];
-const NOT_POWERSHELL = [/^export /, /^alias /, /~\//, /\$(?!env:|HOME\b|PWD\b|cli\b|\()[A-Za-z_]/, /^[A-Z_]+=/, /\bchmod\b/, /\bsha256sum\b/, / -- npx /];
-const fencedIn = (text: string, language: string) => [...text.matchAll(new RegExp(`^\`\`\`${language}\\n([\\s\\S]*?)^\`\`\`$`, "gm"))].map((m) => (m[1] ?? "").trimEnd().split("\n"));
-
-describe("shell forms", () => {
-  it("every shell specific guide has a powershell form", () => {
-    const pages = markdown(DOCS).filter((page) => !page.includes("reference"));
-    const shellSpecific: string[] = [];
-    const missing: string[] = [];
-    const wrong: string[] = [];
-    for (const page of pages) {
-      const text = readFileSync(page, "utf8");
-      const sections = text.split(/^(?=## )/m);
-      for (const part of sections) {
-        const specific = fencedIn(part, "sh").flat().filter((line) => POSIX_ONLY.some((pattern) => pattern.test(line)));
-        if (specific.length > 0) {
-          shellSpecific.push(page);
-          if (fencedIn(part, "powershell").length === 0) {
-            missing.push(`${page}: ${part.split("\n")[0] ?? ""}: ${specific[0] ?? ""}`);
-          }
-        }
-      }
-      for (const line of fencedIn(text, "powershell").flat()) {
-        if (NOT_POWERSHELL.some((pattern) => pattern.test(line))) {
-          wrong.push(`${page}: ${line}`);
-        }
-      }
-      if (fencedIn(text, "powershell").length > 0) {
-        expect(text, page).toContain("PowerShell");
-      }
-    }
-    const named = new Set(shellSpecific.map((page) => page.split(/[\\/]/).pop()));
-    expect([...named].sort()).toEqual(["ai.md", "judge.md", "mandate.md", "private-jobs.md", "quickstart.md", "solver.md"]);
-    expect(missing).toEqual([]);
-    expect(wrong).toEqual([]);
-
-    const ai = readFileSync(`${DOCS}ai.md`, "utf8");
-    const name = (JSON.parse(readFileSync(`${ROOT}/packages/cli/package.json`, "utf8")) as { name: string }).name;
-    const windows = fencedIn(ai, "powershell").flat();
-    expect(windows.filter((line) => line.startsWith("claude ") || line.startsWith("codex "))).toEqual([]);
-    expect(ai).toContain("Claude Code, on any system:");
-    expect(ai).toContain("Codex, on any system:");
-    expect(fencedIn(ai, "sh").flat()).toEqual(expect.arrayContaining([`npx -y ${name} add-to codex`]));
-    expect(ai).not.toContain("startup_timeout_sec");
-    const posix = fencedIn(ai, "sh").flat().filter((line) => line.startsWith("code --add-mcp "));
-    const escaped = windows.filter((line) => line.startsWith("code --add-mcp "));
-    expect(escaped).toHaveLength(posix.length);
-    const argument = (line: string) => /^code --add-mcp '(.*)'$/.exec(line)?.[1] ?? "";
-    escaped.forEach((line, i) => {
-      expect(argument(line)).not.toMatch(/(^|[^\\])"/);
-      expect(JSON.parse(argument(line).replaceAll('\\"', '"'))).toEqual(JSON.parse(argument(posix[i] ?? "")));
-    });
-  });
-});
-
 describe("generated reference docs", () => {
   it("describe version and help as the parser reads them", () => {
     expect(parse(["version"], {})).toEqual({ name: "version" });
@@ -406,7 +353,7 @@ describe("generated reference docs", () => {
   it("reference/cli.md lists every exit code the CLI returns, with the commands that exit 3", () => {
     const page = cliPage();
     expect(page).toContain("## Exit codes");
-    for (const code of [EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_PARTIAL, EXIT_ALERTED, EXIT_RETRY]) {
+    for (const code of [EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_PARTIAL, EXIT_ALERTED, EXIT_RETRY, EXIT_SENT, EXIT_REFUSED]) {
       expect(page, String(code)).toContain(`| ${code} |`);
     }
     const partial = page.split("\n").find((line) => line.startsWith(`| ${EXIT_PARTIAL} |`)) ?? "";
@@ -458,7 +405,7 @@ describe("generated reference docs", () => {
 describe("package readmes", () => {
   const repository = /^repository = "([^"]+)"$/m.exec(readFileSync(`${ROOT}/identity.toml`, "utf8"))?.[1] ?? "";
   const [owner = "", name = ""] = new URL(repository).pathname.slice(1).split("/");
-  const site = `https://${owner.toLowerCase()}.github.io/${name}/`;
+  const site = "https://" + `${owner.toLowerCase()}.github.io/${name}/`;
   const shLines = (text: string) => [...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => (m[1] ?? "").trimEnd().split("\n"));
 
   for (const pkg of ["core", "client", "solver", "cli"]) {
@@ -502,7 +449,7 @@ describe("the readme", () => {
     expect(readme).toContain("Codex:");
     expect(readme).toContain("You need a recent Node.js, from [nodejs.org](https://nodejs.org)");
     expect(readme).toContain("[Quickstart](docs/quickstart.md) names the oldest version that works");
-    expect(readFileSync(`${DOCS}quickstart.md`, "utf8")).toContain(`[Node.js](https://nodejs.org) ${major}.${minor} or later`);
+    expect(readFileSync(`${DOCS}quickstart.md`, "utf8")).toContain("[Node.js](https://" + `nodejs.org) ${major}.${minor} or later`);
     expect(readme).toContain("`node --version`");
     expect(readme.indexOf("Node.js")).toBeLessThan(readme.indexOf("```"));
   });

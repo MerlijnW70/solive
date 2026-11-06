@@ -18,7 +18,7 @@ import { firstOf, walletFetchWork, WORK_OPENS } from "./work.js";
 import { JudgeRefused } from "../../judge-errors.js";
 import { HOST_ENGINE, judgeHost } from "../../host-judge.js";
 import { type Cases, casesOf, type Failure, judgeViper, MAX_CASES, pinnedWasm, REPORTED_FAILURES, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../../viper.js";
-import { combine, engineOutcome } from "../../verdict-model.js";
+import { combine, engineOutcome, type Stop } from "../../verdict-model.js";
 import { sanitized } from "../../untrusted-text.js";
 import { RUN_FENCE } from "../../judge-run.js";
 import { fenceMentions } from "../../spec-blocks.js";
@@ -53,6 +53,12 @@ export const artifactDiffers = (path: string, sha256: string): string =>
 export const artifactUnfit = (path: string): string => `${sanitized(path, ARTIFACT_PATH_LIMIT)} is not a readable file of at most ${FETCH_CAPS.tools} bytes; nothing was run`;
 
 export const specDiffers = (sha256: string): string => `the spec fetched from the escrow's spec url has sha256 ${sha256}, not the escrow's spec_hash, so it is not the spec a release is signed over; nothing was run`;
+
+export const NOT_TEXT_WORK = "the work is not UTF-8 text, so it is refused, not judged: Node decodes such bytes loosely and could run what the ViperJS judge cannot read; ask the worker to deliver the module saved as UTF-8; nothing was run";
+
+export const overBudget = (engine: string): string => `${engine} did not finish within the ${JUDGE_SECONDS} second budget ${tool("wallet_judge_work")} gives one judgement`;
+
+export const budgeted = <T extends { stop?: Stop }>(engine: string, tally: T): T => (tally.stop?.cause === "deadline" ? { ...tally, stop: { ...tally.stop, reason: overBudget(engine) } } : tally);
 
 const notJudged = (error: unknown): never => {
   throw error instanceof JudgeRefused ? new AgentRefusal("NotJudged", sanitized(error.message)) : error;
@@ -222,15 +228,16 @@ export const walletJudgeWork = define({
   run: async (ctx: AgentContext, input) => {
     const cases = await judgeCases(ctx, input.intent);
     const work = input.artifact === undefined ? ((await readWith(walletFetchWork)(ctx, input)) as Fetched) : await workAt(ctx, input, input.artifact);
-    if (work.untrusted_text === undefined) {
-      throw new AgentRefusal("NotJudged", "the work is not UTF-8 text, so it is not a module the ViperJS judge can run; nothing was run");
+    const text = work.untrusted_text;
+    if (text === undefined) {
+      throw new AgentRefusal("NotJudged", NOT_TEXT_WORK);
     }
-    const module = new TextEncoder().encode(work.untrusted_text);
     const wasm = await pinnedWasm().catch(notJudged);
     const run = runOf(cases);
     const left = secondsLeft(JUDGE_SECONDS);
-    const viper = await judgeViper(wasm, module, cases, left(), run).catch(notJudged);
-    const host = await judgeHost(module, cases, left(), run.seed).catch(notJudged);
+    const module = new TextEncoder().encode(text);
+    const viper = budgeted("the viper judge", await judgeViper(wasm, module, cases, left(), run).catch(notJudged));
+    const host = budgeted(HOST_ENGINE, await judgeHost(module, cases, left(), run.seed).catch(notJudged));
     const ruled = combine([engineOutcome("the viper judge", viper), engineOutcome(HOST_ENGINE, host)]);
     const outcome = ruled.outcome === "interrupted" ? "infra" : ruled.outcome;
     const passed = outcome === "pass";

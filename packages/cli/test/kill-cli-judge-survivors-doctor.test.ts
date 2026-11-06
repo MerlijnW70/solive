@@ -160,6 +160,7 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
       image: SANDBOX_IMAGE,
       gpu: false,
       keypair: { path: join(dir, "judge.json"), reachable: true },
+      memory_pin: null,
       mounts: full,
       warnings: [mountsNear(full)],
       checks: [
@@ -178,6 +179,7 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
       image: SANDBOX_IMAGE,
       gpu: false,
       keypair: { path: join(dir, "judge.json"), reachable: true },
+      memory_pin: null,
       mounts: null,
       warnings: [],
       checks: [{ check: "docker is usable", ok: false, detail: "cannot connect" }],

@@ -1,10 +1,10 @@
-import { EXIT_RETRY, type InterruptSignal, JudgeInfraError, JudgeInterrupted, oomInfra, oomInfraUnpinned, timedOutInfra } from "./judge-errors.js";
+import { EXIT_REFUSED, EXIT_RETRY, type InterruptSignal, JudgeInfraError, JudgeInterrupted, oomInfra, oomInfraUnpinned, timedOutInfra } from "./judge-errors.js";
 
 export type Outcome = { outcome: "pass" } | { outcome: "fail"; reason: string } | { outcome: "infra"; reason: string };
 
 export type Ruling = Outcome | { outcome: "interrupted"; signal: InterruptSignal };
 
-export const EXIT_OF = { pass: 0, fail: 1, infra: EXIT_RETRY } as const;
+export const EXIT_OF = { pass: 0, fail: 1, infra: EXIT_RETRY, refused: EXIT_REFUSED } as const;
 
 export const exitOfVerdict = (verdict: unknown): number => (verdict === "pass" ? EXIT_OF.pass : EXIT_OF.fail);
 
@@ -63,6 +63,9 @@ export const nothingJudged = (engine: string): string => `${engine} judged no ca
 
 export const NO_RULING = "no engine or check ran";
 
+export const stoppedBeforePin = (seconds: number, pinned: number): string =>
+  `the check was stopped at the judge's ${seconds} second deadline before it had run the ${pinned} second timeout the spec's judge-run block pins, so it was removed`;
+
 export const ranPastPin = (seconds: number): string => `the check was still running at the ${seconds} second timeout the spec's judge-run block pins`;
 
 export const oomPinned = (memory: string): string => `the check's container was killed for using all of the ${memory} memory the spec's judge-run block pins`;
@@ -118,7 +121,7 @@ export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling 
     return fail(ranPastPin(pinned.seconds));
   }
   if (facts.deadline) {
-    return infra(timedOutInfra(limits.seconds));
+    return infra(pinned === undefined ? timedOutInfra(limits.seconds) : stoppedBeforePin(limits.seconds, pinned.seconds));
   }
   if (facts.problem !== undefined) {
     return infra(notStarted("docker", facts.problem));

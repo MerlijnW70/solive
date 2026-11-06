@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { copyOf, readArtifact, removeCopy } from "./artifact.js";
-import { type ContainerRun, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, holdSignals, runContainer } from "./check-process.js";
+import { type ContainerRun, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, holdSignals, MEMORY_EVENTS, runContainer } from "./check-process.js";
 import { containerOutcome, KILLED_EXIT, type Ruling } from "./verdict-model.js";
 import { JudgeInterrupted } from "./judge-errors.js";
 import { type Box, containerArgs, containerName, dockerEnv, SANDBOX_PIDS, sandboxReady } from "./sandbox.js";
@@ -19,6 +19,7 @@ export type Doctor = {
   gpu: boolean;
   keypair: { path: string; reachable: boolean };
   checks: DoctorCheck[];
+  memory_pin: boolean | null;
   mounts: Mounts | null;
   warnings: string[];
   ready: boolean;
@@ -58,6 +59,8 @@ export const OOM_FLAGGED = "Docker flagged the container out of memory";
 export const OOM_UNFLAGGED = `the container ended with exit code ${KILLED_EXIT} and Docker did not flag it out of memory`;
 
 export const MISSES_OOM = `warning: Docker on this machine did not flag the memory bomb out of memory, so here only exit code ${KILLED_EXIT} shows such a kill; judge treats an exit code ${KILLED_EXIT} under the memory it chose as infra, a check that kills itself with signal 9 included, and fails it only under memory a judge-run block pins`;
+
+export const MEMORY_PIN_UNHELD = `warning: this machine's containers do not show ${MEMORY_EVENTS}, the cgroup v2 out-of-memory count, so judge refuses a spec whose judge-cases block pins node_memory under --plain-node here`;
 
 export type ProbeLimits = { probeSeconds: number; timeoutProbeSeconds: number };
 
@@ -135,7 +138,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
   const version = await docker(["version", "--format", "{{.Server.Version}}"], env);
   const mounts = await measure();
   const near = mounts === null ? undefined : mountsNear(mounts);
-  const base = { image: box.image, gpu: box.gpu, keypair: { path: keyPath, reachable: true }, mounts, warnings: near === undefined ? [] : [near] };
+  const base = { image: box.image, gpu: box.gpu, keypair: { path: keyPath, reachable: true }, memory_pin: null, mounts, warnings: near === undefined ? [] : [near] };
   if (version.status !== 0) {
     return { docker: null, ...base, checks: [{ check: "docker is usable", ok: false, detail: version.out.slice(0, 300) }], ready: false, next: DOCTOR_NOT_READY };
   }
@@ -168,6 +171,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
   const root = { copy, sha256 };
   let keyHidden = false;
   let unflagged = false;
+  let memoryPin: boolean | null = null;
   try {
     const allowed = await allowedEnvOf(box.image, env);
     if (allowed === null) {
@@ -195,6 +199,10 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
       }
     }
     if (signals.caught() === undefined) {
+      const counted = await contained(box, root, `grep -q "^oom_kill [0-9]" ${MEMORY_EVENTS}`, limits.probeSeconds);
+      memoryPin = counted.ruled.outcome === "pass";
+    }
+    if (signals.caught() === undefined) {
       const slow = await contained(box, root, "sleep 600", limits.timeoutProbeSeconds);
       checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.deadline && slow.ruled.outcome === "infra" && slow.gone });
     }
@@ -209,6 +217,6 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
     throw new JudgeInterrupted(interrupted);
   }
   const ready = checks.every((check) => check.ok);
-  const warnings = unflagged ? [...base.warnings, MISSES_OOM] : base.warnings;
-  return { docker: version.out, ...base, warnings, keypair: { path: keyPath, reachable: !keyHidden }, checks, ready, next: ready ? DOCTOR_READY : DOCTOR_NOT_READY };
+  const warnings = [...base.warnings, ...(unflagged ? [MISSES_OOM] : []), ...(memoryPin === false ? [MEMORY_PIN_UNHELD] : [])];
+  return { docker: version.out, ...base, memory_pin: memoryPin, warnings, keypair: { path: keyPath, reachable: !keyHidden }, checks, ready, next: ready ? DOCTOR_READY : DOCTOR_NOT_READY };
 }

@@ -6,8 +6,9 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client/node";
-import { EXIT_RETRY, INFRA_NEXT } from "../src/judge-errors.js";
-import { judgeNode, NODE_ENGINE, sigusr1Unsupported } from "../src/node-judge.js";
+import { EXIT_REFUSED, EXIT_RETRY, INFRA_NEXT, JudgeRefused } from "../src/judge-errors.js";
+import { judgeNode, memoryUncounted, NODE_ENGINE, sigusr1Unsupported } from "../src/node-judge.js";
+import { MEMORY_PIN_UNHELD, sandboxDoctor } from "../src/sandbox-doctor.js";
 import { MEMORY_EVENTS } from "../src/container-check.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
 import { caseFilledPinned, caseOomInfra, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
@@ -17,13 +18,14 @@ import { DOCKER_TEST } from "./docker-switch.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
 import { status } from "./judge-kit.js";
 
-const reads = vi.hoisted(() => ({ broken: false, count: 0, oldNode: false }));
+const reads = vi.hoisted(() => ({ broken: false, count: 0, oldNode: false, engines: 0 }));
 
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
   const spawn = (...all: Parameters<typeof actual.spawn>) => {
-    const [, args, options] = all as unknown as [string, unknown, object | undefined];
+    const [command, args, options] = all as unknown as [string, unknown, object | undefined];
     if (Array.isArray(args) && args[0] === "exec") reads.count += 1;
+    if (command === process.execPath) reads.engines += 1;
     if (reads.oldNode && Array.isArray(args) && args.includes("--entrypoint")) {
       return actual.spawn(process.execPath, ["-e", 'process.stderr.write("node: bad option: --disable-sigusr1\\n"); process.exit(9)'], options ?? {});
     }
@@ -40,6 +42,7 @@ afterEach(() => {
   reads.broken = false;
   reads.count = 0;
   reads.oldNode = false;
+  reads.engines = 0;
 });
 
 const MEMORY = "384m";
@@ -164,5 +167,51 @@ describe("judge --sandbox viper --plain-node with a case killed for memory", () 
     expect([judged.code, judged.out, judged.err]).toEqual([EXIT_RETRY, "", `infrastructure error, not a verdict: ${caseOomInfra(MEMORY)}; ${INFRA_NEXT}`]);
     expect(existsSync(verdict)).toBe(false);
     expect(status(intent)).toBe(IntentStatus.Open);
+  });
+});
+
+describe("a node_memory pin on a host whose containers do not show the out-of-memory count", () => {
+  it("makes the launcher refuse before any case, so a pinned run never counts as pinned", DOCKER_TEST, async () => {
+    reads.broken = true;
+    await expect(judgeNode(BOX, bytes(COUNT), "count.mjs", { ...CASES, nodeMemory: MEMORY }, 7, 60)).rejects.toThrow(new JudgeRefused(memoryUncounted(MEMORY)));
+    const unpinned = await judgeNode(BOX, bytes(COUNT), "count.mjs", CASES, 7, 60);
+    expect([unpinned.judged.passed, unpinned.judged.stop]).toEqual([2, undefined]);
+  });
+
+  it("makes judge --plain-node exit 78 before any engine runs a case, with no verdict and nothing paid, and judge --watch stop with 78 at its start", DOCKER_TEST, async () => {
+    const spec = lines("# Job", "", "```judge-cases", `{"cases": [{"args": ["a b"], "expected": 2}], "node_memory": "${MEMORY}"}`, "```");
+    const w = await world();
+    const judge = await funded();
+    const worker = await keyed();
+    const dir = await mkdtemp(join(tmpdir(), "judge-node-uncounted-"));
+    const specPath = join(dir, "SPEC.md");
+    const artifact = join(dir, "count.mjs");
+    await writeFile(specPath, spec);
+    await writeFile(artifact, COUNT);
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(spec).digest()), judgeFee: 0n } as const;
+    const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
+    await announced(intent, worker, createHash("sha256").update(COUNT).digest("hex"), "https://" + "example.org/count.mjs");
+    const verdict = join(dir, "verdict.json");
+    const argv = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", specPath, "--artifact", artifact, "--sandbox", "viper", "--plain-node", "--verdict", verdict, "--yes"];
+    reads.broken = true;
+    const refused = await cli(argv, { "judge.json": judge });
+    expect([refused.code, refused.out, refused.err]).toEqual([EXIT_REFUSED, "", memoryUncounted(MEMORY)]);
+    expect(reads.engines).toBe(0);
+    expect(existsSync(verdict)).toBe(false);
+    expect(status(intent)).toBe(IntentStatus.Open);
+    const watching = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", specPath, "--sandbox", "viper", "--plain-node", "--yes", "--watch"];
+    const watched = await cli(watching, { "judge.json": judge });
+    expect([watched.code, watched.out, watched.err]).toEqual([EXIT_REFUSED, "", memoryUncounted(MEMORY)]);
+    expect(reads.engines).toBe(0);
+    reads.broken = false;
+    const judged = await cli(argv, { "judge.json": judge });
+    expect([judged.code, judged.json()["verdict"]]).toEqual([0, "pass"]);
+    expect(reads.engines).toBeGreaterThan(0);
+  });
+
+  it("is what sandbox doctor reports as memory_pin false, with a warning, leaving ready to the isolation checks", DOCKER_TEST, async () => {
+    reads.broken = true;
+    const doctor = await sandboxDoctor(BOX, join(tmpdir(), "judge-node-uncounted.json"), async () => null);
+    expect([doctor.memory_pin, doctor.warnings.includes(MEMORY_PIN_UNHELD)]).toEqual([false, true]);
   });
 });

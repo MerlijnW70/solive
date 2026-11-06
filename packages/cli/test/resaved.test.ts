@@ -7,11 +7,12 @@ import { describe, expect, it } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { getIntentDecoder } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
-import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { EXIT_OK } from "../src/main.js";
 import { workResaved } from "../src/judge.js";
 import { isResaved, RESAVED, resavedFrom } from "../src/resaved.js";
 import { announced, keyed } from "./announce.js";
 import { cli, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const SPEC = '# Count\n\n```judge-cases\n{"cases": [{"args": ["a b"], "expected": 2}]}\n```\n';
 const MODULE = "export default (text) => text.split(\" \").length;\n";
@@ -58,7 +59,7 @@ describe("a file saved again on Windows", () => {
     await writeFile(spec, setContent(SPEC));
     await writeFile(artifact, MODULE);
     const run = await cli(["judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper", "--yes"], { "judge.json": j.judge });
-    expect(run.code).toBe(EXIT_FAILED);
+    expect(run.code).toBe(EXIT_REFUSED);
     expect(run.err).toContain(`has sha256 ${sha(setContent(SPEC))}, but intent ${j.intent} commits ${sha(SPEC)}; ${RESAVED}`);
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
@@ -71,7 +72,7 @@ describe("a file saved again on Windows", () => {
     await writeFile(artifact, setContent(MODULE));
     const args = ["judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper"];
     const run = await cli(args, { "judge.json": j.judge });
-    expect(run.code).toBe(EXIT_FAILED);
+    expect(run.code).toBe(EXIT_REFUSED);
     expect(run.err).toContain(workResaved(artifact, sha(setContent(MODULE)), sha(MODULE)));
     await writeFile(artifact, MODULE);
     const passed = await cli(args, { "judge.json": j.judge });
