@@ -12,6 +12,7 @@ import { DeliveryUnfit, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.
 import { sandboxDoctor } from "../src/sandbox-doctor.js";
 import { SANDBOX_IMAGE } from "../src/sandbox.js";
 import type { Lookup } from "../src/public-address.js";
+import { FAST_LIMITS, scriptedDocker } from "./scripted-docker.js";
 
 const faults = vi.hoisted(() => ({ write: false, copy: "" as "" | "fail" | "interrupt" }));
 
@@ -54,15 +55,6 @@ const BYTES = new TextEncoder().encode("work\n");
 const URL_OF = "https://" + "work.example.org/x/work.txt";
 const entry = (path: string) => ({ path, bytes: new Uint8Array([1]), executable: 0 });
 const colliding = (): Artifact => ({ sha256: "", single: false, entries: [entry("a"), entry("a/b")] });
-
-const FAKE_DOCKER = `#!${process.execPath}
-const args = process.argv.slice(2);
-const joined = args.join(" ");
-if (args[0] === "version") process.stdout.write("27.0.0");
-else if (args[0] === "image" && joined.includes("{{.Id}}")) process.stdout.write("sha256:feed");
-else if (args[0] === "image") process.stdout.write("null");
-else if (args[0] === "container") process.exitCode = 1;
-`;
 
 async function delivery(url: string, bytes: Uint8Array = BYTES): Promise<{ announcement: AnnouncementView; salt: string; url: string }> {
   const intent = "SysvarRent111111111111111111111111111111111" as Address;
@@ -158,14 +150,14 @@ describe.skipIf(process.platform !== "linux")("the sandbox doctor", () => {
 
   async function scripted(): Promise<void> {
     const bin = await mkdtemp(join(tmpdir(), "temp-cleanup-bin-"));
-    await writeFile(join(bin, "docker"), FAKE_DOCKER);
+    await writeFile(join(bin, "docker"), scriptedDocker(join(bin, "calls.log"), own, {}));
     await chmod(join(bin, "docker"), 0o755);
     process.env["PATH"] = bin;
   }
 
   it("leaves nothing after a full run", { timeout: 120_000 }, async () => {
     await scripted();
-    const found = await sandboxDoctor(BOX, join(own, "judge.json"), async () => null);
+    const found = await sandboxDoctor(BOX, join(own, "judge.json"), async () => null, FAST_LIMITS);
     expect(found.checks.length).toBeGreaterThan(2);
     expect((await left()).filter((name) => name !== "judge.json" && !name.startsWith("temp-cleanup-bin-"))).toEqual([]);
   });
@@ -173,7 +165,7 @@ describe.skipIf(process.platform !== "linux")("the sandbox doctor", () => {
   it("leaves nothing when staging its files fails", async () => {
     await scripted();
     faults.copy = "fail";
-    await expect(sandboxDoctor(BOX, join(own, "judge.json"), async () => null)).rejects.toThrow("copy failed");
+    await expect(sandboxDoctor(BOX, join(own, "judge.json"), async () => null, FAST_LIMITS)).rejects.toThrow("copy failed");
     expect((await left()).filter((name) => !name.startsWith("temp-cleanup-bin-"))).toEqual([]);
   });
 
@@ -183,7 +175,7 @@ describe.skipIf(process.platform !== "linux")("the sandbox doctor", () => {
     const others = process.listeners("SIGINT");
     process.removeAllListeners("SIGINT");
     try {
-      await expect(sandboxDoctor(BOX, join(own, "judge.json"), async () => null)).rejects.toMatchObject({ name: "JudgeInterrupted", exitCode: 130 });
+      await expect(sandboxDoctor(BOX, join(own, "judge.json"), async () => null, FAST_LIMITS)).rejects.toMatchObject({ name: "JudgeInterrupted", exitCode: 130 });
     } finally {
       for (const listener of others) {
         process.on("SIGINT", listener as NodeJS.SignalsListener);

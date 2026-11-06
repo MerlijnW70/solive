@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,54 +7,7 @@ import { JudgeInfraError } from "../src/judge-errors.js";
 import { type Doctor, DOCTOR_NOT_READY, type Mounts, mountsNear, sandboxDoctor } from "../src/sandbox-doctor.js";
 import { type Box, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
 import { exitedWith } from "../src/verdict-model.js";
-
-type Answer = { code: number; out?: string };
-
-type Plan = {
-  version?: Answer;
-  imageId?: Answer;
-  imageEnv?: Answer;
-  pull?: Answer;
-  runs?: { match: string; code: number; oom?: boolean }[];
-  unlink?: boolean;
-};
-
-type Call = { args: string[]; stdout: string };
-
-const FAKE = (log: string, tmp: string, plan: Plan) => `#!${process.execPath}
-const fs = require("node:fs");
-const path = require("node:path");
-const plan = ${JSON.stringify(plan)};
-const args = process.argv.slice(2);
-let stdout = "";
-try { stdout = fs.readlinkSync("/proc/self/fd/1"); } catch {}
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, stdout }) + "\\n");
-const answer = (found) => { process.stdout.write(found.out ?? ""); process.exitCode = found.code; };
-const joined = args.join(" ");
-if (args[0] === "version") answer(plan.version ?? { code: 0, out: "27.0.0" });
-else if (args[0] === "image" && joined.includes("{{.Id}}")) answer(plan.imageId ?? { code: 0, out: "sha256:feed" });
-else if (args[0] === "image") answer(plan.imageEnv ?? { code: 0, out: "null" });
-else if (args[0] === "pull") answer(plan.pull ?? { code: 1 });
-else if (args[0] === "run") {
-  if (plan.unlink) {
-    for (const name of fs.readdirSync(${JSON.stringify(tmp)})) {
-      if (/^sandbox-doctor-(canary-[0-9a-f]+\\.json|[0-9a-f]{12}\\.txt)$/.test(name)) fs.rmSync(path.join(${JSON.stringify(tmp)}, name), { force: true });
-    }
-  }
-  const run = (plan.runs ?? []).find(({ match }) => joined.includes(match));
-  const code = run === undefined ? 0 : run.code;
-  const state = { Running: false, ExitCode: code, OOMKilled: run?.oom === true, Error: "", StartedAt: "2026-01-01T00:00:00Z" };
-  fs.writeFileSync(path.join(path.dirname(${JSON.stringify(log)}), "state-" + args[args.indexOf("--name") + 1]), JSON.stringify(state));
-  answer({ code });
-}
-else if (args[0] === "container" && args[2] === "--format") {
-  let state = null;
-  try { state = fs.readFileSync(path.join(path.dirname(${JSON.stringify(log)}), "state-" + args[4]), "utf8"); } catch {}
-  answer(state === null ? { code: 1 } : { code: 0, out: state });
-}
-else if (args[0] === "container") answer({ code: 1 });
-else answer({ code: 0 });
-`;
+import { type Call, FAST_LIMITS, type Plan, readCalls, scriptedDocker } from "./scripted-docker.js";
 
 const BOX: Box = { image: SANDBOX_IMAGE, memory: "1g", cpus: "1", tmp: "256m", gpu: false };
 
@@ -77,13 +30,9 @@ async function faked(plan: Plan): Promise<{ path: string; calls: () => Promise<C
   await rm(bin, { recursive: true, force: true });
   await rm(log, { force: true });
   await mkdir(bin);
-  await writeFile(join(bin, "docker"), FAKE(log, tmp, plan));
+  await writeFile(join(bin, "docker"), scriptedDocker(log, tmp, plan));
   await chmod(join(bin, "docker"), 0o755);
-  const calls = async () =>
-    (await readFile(log, "utf8").catch(() => ""))
-      .split("\n")
-      .filter((entry) => entry !== "")
-      .map((entry) => JSON.parse(entry) as Call);
+  const calls = () => readCalls(log);
   return { path: bin, calls };
 }
 
@@ -93,7 +42,7 @@ async function doctor(plan: Plan, keypair: string, measure?: () => Promise<Mount
   process.env["TMPDIR"] = tmp;
   process.env["XDG_RUNTIME_DIR"] = tmp;
   try {
-    const found = await sandboxDoctor(BOX, keypair, measure);
+    const found = await sandboxDoctor(BOX, keypair, measure, FAST_LIMITS);
     return { found, calls: await fake.calls() };
   } finally {
     restore("PATH");
@@ -150,7 +99,7 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
     expect([...new Set(sources)].map((source) => source?.replace(new RegExp(`${owner}\\d+/`), `${owner}NS/`))).toEqual([`source=${join(slot, "work")}`, `source=${join(slot, "spec")}`]);
   });
 
-  it("warns when the host's mounts are near the limit, and the warning alone changes no check", { timeout: 60_000 }, async () => {
+  it("warns when the host's mounts are near the limit, and the warning alone changes no check", async () => {
     const plan = { runs: [{ match: "/dev/zero", code: 137, oom: true }] };
     const keypair = join(dir, "judge.json");
     const full = { count: 99_968, limit: 100_000 };

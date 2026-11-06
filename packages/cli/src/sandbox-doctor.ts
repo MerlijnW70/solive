@@ -53,8 +53,10 @@ export async function hostMounts(): Promise<Mounts | null> {
 export const DOCTOR_READY = "every isolation check passed on this machine; judge untrusted work with --sandbox docker and a digest-pinned --sandbox-image";
 export const DOCTOR_NOT_READY = "one or more isolation checks failed on this machine, so do not judge untrusted work here until each one passes";
 
-const PROBE_SECONDS = 60;
-const TIMEOUT_PROBE_SECONDS = 3;
+export type ProbeLimits = { probeSeconds: number; timeoutProbeSeconds: number };
+
+export const PROBE_LIMITS: ProbeLimits = { probeSeconds: 60, timeoutProbeSeconds: 3 };
+
 const MEMORY_PROBE = "64m";
 const FORK_ATTEMPTS = SANDBOX_PIDS + 144;
 
@@ -121,7 +123,7 @@ async function contained(box: Box, root: { copy: Awaited<ReturnType<typeof copyO
   return { ...ran, gone, ruled: containerOutcome(ran, { seconds: timeout, memory: box.memory }) };
 }
 
-export async function sandboxDoctor(box: Box, keypair: string | undefined, measure: () => Promise<Mounts | null> = hostMounts): Promise<Doctor> {
+export async function sandboxDoctor(box: Box, keypair: string | undefined, measure: () => Promise<Mounts | null> = hostMounts, limits: ProbeLimits = PROBE_LIMITS): Promise<Doctor> {
   const keyPath = resolve(expandHome(keypair ?? defaultWallet(homedir()), homedir()));
   const env = dockerEnv(process.env);
   const version = await docker(["version", "--format", "{{.Server.Version}}"], env);
@@ -168,7 +170,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
       if (signals.caught() !== undefined) {
         break;
       }
-      const ran = await contained(box, root, probe.script, PROBE_SECONDS);
+      const ran = await contained(box, root, probe.script, limits.probeSeconds);
       const ok = ran.ruled.outcome === "pass" && ran.gone;
       checks.push({ check: probe.check, ok, ...(ok ? {} : { detail: !ran.gone ? "the container was left behind" : "reason" in ran.ruled ? ran.ruled.reason : ran.ruled.outcome }) });
       if (probe.check.startsWith("no host file")) {
@@ -176,11 +178,11 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
       }
     }
     if (signals.caught() === undefined) {
-      const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), PROBE_SECONDS);
+      const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), limits.probeSeconds);
       checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.state?.oomKilled === true && memory.ruled.outcome === "infra" && memory.gone });
     }
     if (signals.caught() === undefined) {
-      const slow = await contained(box, root, "sleep 600", TIMEOUT_PROBE_SECONDS);
+      const slow = await contained(box, root, "sleep 600", limits.timeoutProbeSeconds);
       checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.deadline && slow.ruled.outcome === "infra" && slow.gone });
     }
   } finally {
