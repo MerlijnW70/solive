@@ -148,7 +148,7 @@ describe("the judge sandbox mounts", () => {
         ["true", EXIT_OK, []],
         ["exit 4", EXIT_FAILED, []],
         ["sh -c 'kill -SEGV $$'; exit $?", EXIT_FAILED, []],
-        ["sh -c 'kill -KILL $$'; exit $?", EXIT_FAILED, []],
+        ["sh -c 'kill -KILL $$'; exit $?", EXIT_RETRY, []],
         ["sleep 600", EXIT_RETRY, ["--timeout", String(STARTUP_SECONDS)]],
       ] as const) {
         expect((await cli(boxed(j, run, ...more), keys)).code, run).toBe(code);

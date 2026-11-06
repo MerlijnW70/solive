@@ -7,7 +7,7 @@ import { containerLeft, docker, removeContainer, runContainer } from "../src/che
 import { dockerTimedOut, startFailed } from "../src/container-check.js";
 import { JudgeInfraError, oomInfra, timedOutInfra } from "../src/judge-errors.js";
 import { dockerMissing, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
-import { containerOutcome, exitedWith, inspectFailed, NEVER_STARTED, oomPinned, ranPastPin, RUN_UNTIMED } from "../src/verdict-model.js";
+import { containerOutcome, exitedWith, inspectFailed, killedUnflagged, NEVER_STARTED, oomPinned, ranPastPin, RUN_UNTIMED } from "../src/verdict-model.js";
 
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
@@ -191,10 +191,28 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     expect(await calls()).toEqual(["run --name oom-1 image", "container inspect --format {{json .State}} oom-1", "rm -f -v oom-1", "container inspect oom-1"]);
   });
 
-  it("judges a kill with signal 9 that docker did not flag as out of memory as the check's own fail", async () => {
+  it("judges a kill with signal 9 that docker did not flag as out of memory infra under the judge's memory, and the check's own fail under pinned memory", async () => {
     const ran = await runContainer(["image"], "oom-2", envFor({ FAKE_RUN: "oom" }), 30);
     expect(ran).toStrictEqual({ exitCode: 137, timedOut: false, deadline: false, state: ended(137) });
-    expect(containerOutcome(ran, limits)).toEqual({ outcome: "fail", reason: exitedWith(137) });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "infra", reason: killedUnflagged("1g") });
+    expect(containerOutcome({ ...ran, ranAtMostMs: 10 }, { ...limits, pinned: { seconds: 60, memory: "64m" } })).toEqual({ outcome: "fail", reason: exitedWith(137) });
+  });
+
+  it("reads a state without an out-of-memory flag as unflagged, and refuses a flag that is neither true nor false", async () => {
+    const bare = (code: number) => `{"Running":false,"ExitCode":${code},"Error":"","StartedAt":"2026-01-01T00:00:00Z"}`;
+    const passed = await runContainer(["image"], "bare-1", envFor({ FAKE_RUN: "slow", FAKE_STATE: bare(0) }), 30);
+    expect(passed).toStrictEqual({ exitCode: 0, timedOut: false, deadline: false, state: ended(0) });
+    expect(containerOutcome(passed, limits)).toEqual({ outcome: "pass" });
+    const failed = await runContainer(["image"], "bare-2", envFor({ FAKE_RUN: "exit", FAKE_STATE: bare(3) }), 30);
+    expect(containerOutcome(failed, limits)).toEqual({ outcome: "fail", reason: exitedWith(3) });
+    const killed = await runContainer(["image"], "bare-3", envFor({ FAKE_RUN: "oom", FAKE_STATE: bare(137) }), 30);
+    expect(containerOutcome(killed, limits)).toEqual({ outcome: "infra", reason: killedUnflagged("1g") });
+    for (const flag of ['"yes"', "1", "null"]) {
+      const odd = `{"Running":false,"ExitCode":0,"OOMKilled":${flag},"Error":"","StartedAt":"2026-01-01T00:00:00Z"}`;
+      const ran = await runContainer(["image"], "bare-4", envFor({ FAKE_RUN: "slow", FAKE_STATE: odd }), 30);
+      expect(ran.state, flag).toBeNull();
+      expect(containerOutcome(ran, limits).outcome, flag).toBe("infra");
+    }
   });
 
   it("counts docker's out-of-memory flag even when the container's shell survives and exits otherwise", async () => {

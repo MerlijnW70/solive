@@ -81,8 +81,8 @@ try {
   await module.link(() => {
     throw new Error("the delivery imports a module");
   });
-  process.once("exit", () => {
-    if (loading && write(cases.map(() => ({ verdict: "no-module", detail: "the module's top-level code never finished loading" })))) process.exitCode = 0;
+  process.once("beforeExit", () => {
+    if (loading) all("no-module", "the module's top-level code never finished loading");
   });
   await module.evaluate({ timeout: callMs });
   loading = false;

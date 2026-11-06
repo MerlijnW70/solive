@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MOUNT_BASE, MOUNT_DIR } from "../src/artifact.js";
 import { JudgeInfraError } from "../src/judge-errors.js";
-import { type Doctor, DOCTOR_NOT_READY, type Mounts, mountsNear, sandboxDoctor } from "../src/sandbox-doctor.js";
+import { type Doctor, DOCTOR_NOT_READY, MISSES_OOM, type Mounts, mountsNear, OOM_FLAGGED, OOM_UNFLAGGED, sandboxDoctor } from "../src/sandbox-doctor.js";
 import { type Box, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
 import { exitedWith } from "../src/verdict-model.js";
 import { type Call, FAST_LIMITS, type Plan, readCalls, scriptedDocker } from "./scripted-docker.js";
@@ -99,6 +99,27 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
     expect([...new Set(sources)].map((source) => source?.replace(new RegExp(`${owner}\\d+/`), `${owner}NS/`))).toEqual([`source=${join(slot, "work")}`, `source=${join(slot, "spec")}`]);
   });
 
+  it("passes a memory bomb Docker did not flag but that ended with 137 and was judged infra, and warns that Docker misses the flag", async () => {
+    const keypair = join(dir, "judge.json");
+    const unflagged = await doctor({ runs: [{ match: "/dev/zero", code: 137 }] }, keypair, async () => null);
+    expect(checkNamed(unflagged.found, "a memory bomb is killed at the memory limit and reported as out of memory")).toStrictEqual({
+      check: "a memory bomb is killed at the memory limit and reported as out of memory",
+      ok: true,
+      detail: OOM_UNFLAGGED,
+    });
+    expect(unflagged.found.warnings).toStrictEqual([MISSES_OOM]);
+    const flagged = await doctor({ runs: [{ match: "/dev/zero", code: 137, oom: true }] }, keypair, async () => null);
+    expect(checkNamed(flagged.found, "a memory bomb is killed at the memory limit and reported as out of memory")).toStrictEqual({
+      check: "a memory bomb is killed at the memory limit and reported as out of memory",
+      ok: true,
+      detail: OOM_FLAGGED,
+    });
+    expect(flagged.found.warnings).toStrictEqual([]);
+    const full = { count: 99_968, limit: 100_000 };
+    const both = await doctor({ runs: [{ match: "/dev/zero", code: 137 }] }, keypair, async () => full);
+    expect(both.found.warnings).toStrictEqual([mountsNear(full), MISSES_OOM]);
+  });
+
   it("warns when the host's mounts are near the limit, and the warning alone changes no check", async () => {
     const plan = { runs: [{ match: "/dev/zero", code: 137, oom: true }] };
     const keypair = join(dir, "judge.json");
@@ -117,8 +138,9 @@ describe.skipIf(process.platform !== "linux")("sandbox doctor against a scripted
     const { found, calls } = await doctor({ imageEnv: { code: 1 } }, join(dir, "judge.json"));
     expect(checkNamed(found, "the image's own environment can be read")).toStrictEqual({ check: "the image's own environment can be read", ok: false });
     expect(checkNamed(found, "a memory bomb is killed at the memory limit and reported as out of memory")?.ok).toBe(false);
-    const unflagged = await doctor({ runs: [{ match: "/dev/zero", code: 137 }] }, join(dir, "judge.json"));
-    expect(checkNamed(unflagged.found, "a memory bomb is killed at the memory limit and reported as out of memory")?.ok).toBe(false);
+    const exited = await doctor({ runs: [{ match: "/dev/zero", code: 1 }] }, join(dir, "judge.json"));
+    expect(checkNamed(exited.found, "a memory bomb is killed at the memory limit and reported as out of memory")?.ok).toBe(false);
+    expect(exited.found.warnings).toStrictEqual([]);
     expect(checkNamed(found, "read-only root filesystem")?.ok).toBe(true);
     expect(scriptOf(calls, "allowed=")).not.toContain(" IMAGE_OWN ");
     expect(found.ready).toBe(false);

@@ -67,6 +67,11 @@ export const ranPastPin = (seconds: number): string => `the check was still runn
 
 export const oomPinned = (memory: string): string => `the check's container was killed for using all of the ${memory} memory the spec's judge-run block pins`;
 
+export const KILLED_EXIT = 137;
+
+export const killedUnflagged = (memory: string): string =>
+  `the check's container ended with exit code ${KILLED_EXIT}, a kill with signal 9, under the ${memory} memory the judge chose, and Docker did not flag it out of memory; Docker can miss that flag when the kernel kills for memory, so this is no verdict on the work; raise --sandbox-memory, or pin memory in a judge-run block, to judge it`;
+
 export const RUN_UNTIMED =
   "the check's container ended, but on the judge's own clock it may have run for the spec's pinned timeout, so whether it kept to it is unknown";
 
@@ -96,6 +101,9 @@ export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling 
   }
   if (state.oomKilled) {
     return pinned?.memory === undefined ? infra(oomInfra(limits.memory)) : fail(oomPinned(pinned.memory));
+  }
+  if (state.exitCode === KILLED_EXIT && pinned?.memory === undefined) {
+    return infra(killedUnflagged(limits.memory));
   }
   if (pinned !== undefined && !(facts.ranAtMostMs !== undefined && facts.ranAtMostMs < pinned.seconds * 1000)) {
     return infra(RUN_UNTIMED);

@@ -14,6 +14,8 @@ import {
   exitedWith,
   failedCases,
   inspectFailed,
+  KILLED_EXIT,
+  killedUnflagged,
   NEVER_STARTED,
   NO_RULING,
   nothingJudged,
@@ -43,18 +45,37 @@ const stopAt = (cause: "deadline" | "fault", unfinished: number) => ({ cause, re
 const exitOf = (ruling: Ruling): number => (ruling.outcome === "interrupted" ? SIGNAL_EXIT[ruling.signal] : EXIT_OF[ruling.outcome]);
 
 describe("the verdict model, row by row", () => {
-  it("lets a started Docker container's own exit code decide, 125 and 137 included", () => {
-    for (const code of [1, 2, 125, 126, 127, 137, 139, 255]) {
+  it("lets a started Docker container's own exit code decide, 125 included, and 137 under memory a judge-run block pins", () => {
+    for (const code of [1, 2, 125, 126, 127, 136, 138, 139, 255]) {
       expect(docker(ran(code)), String(code)).toEqual(fail(exitedWith(code)));
     }
     expect(docker(ran(0))).toEqual(PASS);
+    expect(KILLED_EXIT).toBe(137);
+    const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
+    expect(containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 10 }, pinnedMemory)).toEqual(fail(exitedWith(137)));
   });
 
-  it("makes Docker's out-of-memory flag infra whatever the exit code, and leaves a 137 without it to the check", () => {
+  it("makes Docker's out-of-memory flag infra whatever the exit code under the memory the judge chose, and fail under pinned memory", () => {
+    const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
     for (const code of [0, 1, 125, 137]) {
       expect(docker(ran(code, { oomKilled: true })), String(code)).toEqual(infra(oomInfra("512m")));
+      expect(containerOutcome({ deadline: false, state: ran(code, { oomKilled: true }), ranAtMostMs: 10 }, pinnedMemory), String(code)).toEqual(fail(oomPinned("512m")));
     }
-    expect(docker(ran(137))).toEqual(fail(exitedWith(137)));
+  });
+
+  it("makes an exit 137 without Docker's flag infra under the memory the judge chose, a self-kill included, since Docker can miss the flag", () => {
+    expect(docker(ran(137))).toEqual(infra(killedUnflagged("512m")));
+    const timeOnly = { seconds: 90, memory: "1g", pinned: { seconds: 60 } };
+    for (const ranAtMostMs of [10, 60_000, undefined]) {
+      const more = ranAtMostMs === undefined ? {} : { ranAtMostMs };
+      expect(containerOutcome({ deadline: false, state: ran(137), ...more }, timeOnly), String(ranAtMostMs)).toEqual(infra(killedUnflagged("1g")));
+    }
+    const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
+    expect(containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 10 }, pinnedMemory)).toEqual(fail(exitedWith(137)));
+    expect(containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 60_000 }, pinnedMemory)).toEqual(infra(RUN_UNTIMED));
+    expect(docker(ran(137), { deadline: true })).toEqual(infra(timedOutInfra(30)));
+    expect(docker(ran(137, { error: "OCI runtime create failed" }))).toEqual(infra(startFailed(137, "OCI runtime create failed")));
+    expect(docker(ran(137), { interrupted: "SIGINT" })).toEqual({ outcome: "interrupted", signal: "SIGINT" });
   });
 
   it("makes a container with State.Error, one that never started, and a failed inspect infra", () => {
@@ -87,6 +108,7 @@ describe("the verdict model, row by row", () => {
     for (const code of [1, 3, 137]) {
       expect(pinned(ran(code), { ranAtMostMs: 100 }), String(code)).toEqual(fail(exitedWith(code)));
     }
+    expect(pinned(ran(137), { ranAtMostMs: 100 }, LEFT)).toEqual(infra(killedUnflagged("1g")));
     for (const code of [0, 1]) {
       for (const more of [{ ranAtMostMs: 60_000 }, { ranAtMostMs: 600_000 }, {}]) {
         expect(pinned(ran(code), more), `${code} ${JSON.stringify(more)}`).toEqual(infra(RUN_UNTIMED));
@@ -170,7 +192,8 @@ const INTERNALS = readFileSync(join(ROOT, "docs/maintainers/judge-internals.md")
 
 const OUTCOME_ROWS: Record<string, Ruling> = {
   "`--sandbox docker`: the container started and exited 0": docker(ran(0)),
-  "`--sandbox docker`: the container started and exited with any other code, 125 and 137 included": docker(ran(137)),
+  "`--sandbox docker`: the container started and exited with any other code, 125 included": docker(ran(125)),
+  "`--sandbox docker`: the container exited 137, a kill with signal 9, under the memory the judge chose, and Docker did not flag it out of memory": docker(ran(137)),
   "`--sandbox docker`: Docker flags the container out of memory the judge chose, whatever its exit code": docker(ran(1, { oomKilled: true })),
   "`--sandbox docker` under a `judge-run` block: Docker flags the container out of the pinned `memory`, whatever its exit code or how long it ran": containerOutcome(
     { deadline: false, state: ran(0, { oomKilled: true }) },
@@ -184,9 +207,9 @@ const OUTCOME_ROWS: Record<string, Ruling> = {
     { deadline: false, state: ran(0), ranAtMostMs: 4_999 },
     { ...LIMITS, pinned: { seconds: 5 } },
   ),
-  "`--sandbox docker` under a `judge-run` block: on the judge's own clock the container ended less than the pinned `timeout` after it could have started, and it exited with any other code": containerOutcome(
-    { deadline: false, state: ran(2), ranAtMostMs: 10 },
-    { ...LIMITS, pinned: { seconds: 5 } },
+  "`--sandbox docker` under a `judge-run` block: on the judge's own clock the container ended less than the pinned `timeout` after it could have started, and it exited with any other code, 137 only when the block pins `memory`": containerOutcome(
+    { deadline: false, state: ran(137), ranAtMostMs: 10 },
+    { ...LIMITS, pinned: { seconds: 5, memory: "512m" } },
   ),
   "`--sandbox docker` under a `judge-run` block: the container ended, but the judge's own clock cannot show that it ran less than the pinned `timeout`": containerOutcome(
     { deadline: false, state: ran(0), ranAtMostMs: 5_000 },

@@ -65,10 +65,10 @@ export async function endedState(name: string, env: NodeJS.ProcessEnv, timeoutSe
     return { state: null, problem: "its state is not JSON" };
   }
   const { ExitCode: exitCode, OOMKilled: oomKilled, Error: error, StartedAt: startedAt, Running: running } = state;
-  if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode) || typeof oomKilled !== "boolean" || typeof error !== "string" || typeof startedAt !== "string" || running !== false) {
-    return { state: null, problem: "its state lacks an ended container's exit code, out-of-memory flag, error or start time" };
+  if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode) || (oomKilled !== undefined && typeof oomKilled !== "boolean") || typeof error !== "string" || typeof startedAt !== "string" || running !== false) {
+    return { state: null, problem: "its state lacks an ended container's exit code, error or start time, or has an out-of-memory flag that is not true or false" };
   }
-  return { state: { started: startedAt !== "" && startedAt !== NEVER, exitCode, oomKilled, error } };
+  return { state: { started: startedAt !== "" && startedAt !== NEVER, exitCode, oomKilled: oomKilled === true, error } };
 }
 
 export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {

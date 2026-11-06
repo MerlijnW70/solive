@@ -10,7 +10,7 @@ import { EXIT_RETRY, INFRA_NEXT, oomInfra, timedOutInfra } from "../src/judge-er
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { judgeNode, NODE_ENGINE, OUT_OF_TURN, PROTOCOL_BROKEN } from "../src/node-judge.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
-import { engineOutcome } from "../src/verdict-model.js";
+import { engineOutcome, killedUnflagged } from "../src/verdict-model.js";
 import { announced, keyed } from "./announce.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
@@ -37,13 +37,22 @@ const infra = (reason: string) => `infrastructure error, not a verdict: ${reason
 const BOX = { image: SANDBOX_IMAGE, memory: SANDBOX_MEMORY, cpus: SANDBOX_CPUS, tmp: SANDBOX_TMP, gpu: false };
 
 describe("judge --sandbox docker lets the container's own exit decide", () => {
-  it("fails a container that exits 125 or 137 by itself or prints Docker's errors, and signs nothing", DOCKER_TEST, async () => {
+  it("makes a container that exits 137 by itself, which Docker cannot tell from a memory kill it did not flag, infra under the judge's memory, and signs nothing", DOCKER_TEST, async () => {
+    for (const run of ["exit 137", "sh -c 'kill -KILL $$'; exit $?", "node -e 'process.kill(process.pid, \"SIGKILL\")'; exit $?"]) {
+      const j = await job();
+      const verdict = join(j.dir, "verdict.json");
+      const killed = await cli(boxed(j, run, "--verdict", verdict, "--yes"), { "judge.json": j.judge });
+      expect([killed.code, killed.out, killed.err], run).toEqual([EXIT_RETRY, "", infra(killedUnflagged(SANDBOX_MEMORY))]);
+      expect(existsSync(verdict), run).toBe(false);
+      expect(status(j.intent), run).toBe(IntentStatus.Open);
+    }
+  });
+
+  it("fails a container that exits 125 by itself or prints Docker's errors, and signs nothing", DOCKER_TEST, async () => {
     for (const [run, code] of [
       ["exit 125", 125],
       ["echo 'docker: Error response from daemon: OCI runtime create failed' >&2; exit 125", 125],
-      ["exit 137", 137],
-      ["sh -c 'kill -KILL $$'; exit $?", 137],
-      ["node -e 'process.kill(process.pid, \"SIGKILL\")'; exit $?", 137],
+      ["exit 136", 136],
     ] as const) {
       const j = await job();
       const verdict = join(j.dir, "verdict.json");

@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { copyOf, readArtifact, removeCopy } from "./artifact.js";
 import { type ContainerRun, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, holdSignals, runContainer } from "./check-process.js";
-import { containerOutcome, type Ruling } from "./verdict-model.js";
+import { containerOutcome, KILLED_EXIT, type Ruling } from "./verdict-model.js";
 import { JudgeInterrupted } from "./judge-errors.js";
 import { type Box, containerArgs, containerName, dockerEnv, SANDBOX_PIDS, sandboxReady } from "./sandbox.js";
 import { defaultWallet, expandHome } from "./wallet.js";
@@ -52,6 +52,12 @@ export async function hostMounts(): Promise<Mounts | null> {
 
 export const DOCTOR_READY = "every isolation check passed on this machine; judge untrusted work with --sandbox docker and a digest-pinned --sandbox-image";
 export const DOCTOR_NOT_READY = "one or more isolation checks failed on this machine, so do not judge untrusted work here until each one passes";
+
+export const OOM_FLAGGED = "Docker flagged the container out of memory";
+
+export const OOM_UNFLAGGED = `the container ended with exit code ${KILLED_EXIT} and Docker did not flag it out of memory`;
+
+export const MISSES_OOM = `warning: Docker on this machine did not flag the memory bomb out of memory, so here only exit code ${KILLED_EXIT} shows such a kill; judge treats an exit code ${KILLED_EXIT} under the memory it chose as infra, a check that kills itself with signal 9 included, and fails it only under memory a judge-run block pins`;
 
 export type ProbeLimits = { probeSeconds: number; timeoutProbeSeconds: number };
 
@@ -161,6 +167,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
   }
   const root = { copy, sha256 };
   let keyHidden = false;
+  let unflagged = false;
   try {
     const allowed = await allowedEnvOf(box.image, env);
     if (allowed === null) {
@@ -179,7 +186,13 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
     }
     if (signals.caught() === undefined) {
       const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), limits.probeSeconds);
-      checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.state?.oomKilled === true && memory.ruled.outcome === "infra" && memory.gone });
+      const flagged = memory.state?.oomKilled === true;
+      const killed = flagged || memory.state?.exitCode === KILLED_EXIT;
+      const ok = killed && memory.ruled.outcome === "infra" && memory.gone;
+      checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok, ...(ok ? { detail: flagged ? OOM_FLAGGED : OOM_UNFLAGGED } : {}) });
+      if (ok && !flagged) {
+        unflagged = true;
+      }
     }
     if (signals.caught() === undefined) {
       const slow = await contained(box, root, "sleep 600", limits.timeoutProbeSeconds);
@@ -196,5 +209,6 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
     throw new JudgeInterrupted(interrupted);
   }
   const ready = checks.every((check) => check.ok);
-  return { docker: version.out, ...base, keypair: { path: keyPath, reachable: !keyHidden }, checks, ready, next: ready ? DOCTOR_READY : DOCTOR_NOT_READY };
+  const warnings = unflagged ? [...base.warnings, MISSES_OOM] : base.warnings;
+  return { docker: version.out, ...base, warnings, keypair: { path: keyPath, reachable: !keyHidden }, checks, ready, next: ready ? DOCTOR_READY : DOCTOR_NOT_READY };
 }
