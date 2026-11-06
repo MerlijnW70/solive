@@ -195,7 +195,7 @@ describe("intent-engine judge --watch", () => {
     expect(await paidTo(j, worker.address)).toBe(-1n);
   }, 60_000);
 
-  it("fails work whose bytes the announcement's commitment does not bind, never runs it and never fetches it again", async () => {
+  it("refuses work whose bytes the announcement's commitment does not bind, never runs it and never fetches it again", async () => {
     const j = await job();
     const worker = await keyed();
     const made = await announce(j, worker, CORRECT, WRONG);
@@ -208,7 +208,7 @@ describe("intent-engine judge --watch", () => {
       announcement: made.announcement,
       seq: "1",
       artifactSha256: null,
-      verdict: "fail",
+      verdict: "refused",
       reason: `the work at ${made.url} has sha256 ${sha(WRONG)}, which the commitment ${Buffer.from(view.commitment).toString("hex")} of ${worker.address} does not bind; it is not judged again`,
     });
     expect(status(j.intent)).toBe(IntentStatus.Open);

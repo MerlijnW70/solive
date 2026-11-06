@@ -1,4 +1,4 @@
-import { EXIT_RETRY, type InterruptSignal, JudgeInfraError, JudgeInterrupted, oomInfra, timedOutInfra } from "./judge-errors.js";
+import { EXIT_RETRY, type InterruptSignal, JudgeInfraError, JudgeInterrupted, oomInfra, oomInfraUnpinned, timedOutInfra } from "./judge-errors.js";
 
 export type Outcome = { outcome: "pass" } | { outcome: "fail"; reason: string } | { outcome: "infra"; reason: string };
 
@@ -72,6 +72,9 @@ export const KILLED_EXIT = 137;
 export const killedUnflagged = (memory: string): string =>
   `the check's container ended with exit code ${KILLED_EXIT}, a kill with signal 9, under the ${memory} memory the judge chose, and Docker did not flag it out of memory; Docker can miss that flag when the kernel kills for memory, so this is no verdict on the work; raise --sandbox-memory, or pin memory in a judge-run block, to judge it`;
 
+export const killedUnflaggedUnpinned = (memory: string): string =>
+  `the check's container ended with exit code ${KILLED_EXIT}, a kill with signal 9, under ${memory} of memory, and Docker did not flag it out of memory; Docker can miss that flag when the kernel kills for memory, so this is no verdict on the work; the spec's judge-run block pins no memory, so ${memory} is the judge's default and a different --sandbox-memory is refused: it can be judged with more only after the spec's author pins memory in that block`;
+
 export const RUN_UNTIMED =
   "the check's container ended, but on the judge's own clock it may have run for the spec's pinned timeout, so whether it kept to it is unknown";
 
@@ -131,10 +134,10 @@ export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling 
     return infra(NEVER_STARTED);
   }
   if (state.oomKilled) {
-    return killedForMemory(limits, oomInfra, oomPinned);
+    return killedForMemory(limits, pinned === undefined ? oomInfra : oomInfraUnpinned, oomPinned);
   }
   if (state.exitCode === KILLED_EXIT && pinned?.memory === undefined) {
-    return infra(killedUnflagged(limits.memory));
+    return infra((pinned === undefined ? killedUnflagged : killedUnflaggedUnpinned)(limits.memory));
   }
   if (pinned !== undefined && !(facts.ranAtMostMs !== undefined && facts.ranAtMostMs < pinned.seconds * 1000)) {
     return infra(RUN_UNTIMED);

@@ -43,6 +43,9 @@ export const timedOutInfra = (seconds: number): string => `the check did not fin
 export const oomInfra = (memory: string): string =>
   `the check's container was killed with signal 9, as the kernel does when it uses all of its ${memory} memory; raise --sandbox-memory if the check needs more`;
 
+export const oomInfraUnpinned = (memory: string): string =>
+  `the check's container was killed with signal 9, as the kernel does when it uses all of its ${memory} memory; the spec's judge-run block pins no memory, so the check ran with the judge's default ${memory}, and a different --sandbox-memory is refused: the check gets more only if the spec's author pins memory in that block`;
+
 export class JudgeInterrupted extends Error {
   readonly exitCode: number;
 

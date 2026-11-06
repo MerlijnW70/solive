@@ -91,7 +91,7 @@ describe("sealed announcements", () => {
       worker: copier.address,
       url: null,
       artifactSha256: null,
-      verdict: "fail",
+      verdict: "refused",
       reason: `the announcement ${copy} ${SEALED_ELSEWHERE}`,
     });
     expect(watched.lines[1]).toMatchObject({
@@ -103,7 +103,7 @@ describe("sealed announcements", () => {
       signature: expect.any(String),
       skipped: [{ announcement: copy, seq: "1", worker: copier.address, reason: "does-not-open" }],
     });
-    expect(watched.lines[2]).toEqual({ stopped: "paid", intent, judged: 2 });
+    expect(watched.lines[2]).toEqual({ stopped: "paid", intent, judged: 1 });
     expect(await paidTo(w.inputMint, worker.address)).toBeGreaterThan(0n);
     expect(await paidTo(w.inputMint, copier.address)).toBe(-1n);
   }, 60_000);

@@ -3,6 +3,7 @@ import { createHash, randomInt } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { CASES_FENCE, utf8Exact } from "@intent-engine/client/internal";
 import { JudgeRefused } from "./judge-errors.js";
 import { megabytesOf, memoryValid } from "./sandbox.js";
 import { ambiguous, blockFields, readBlocks, specText, strayFence, topKeys } from "./spec-blocks.js";
@@ -11,7 +12,7 @@ import { Wtf8Refused, wtf8Decode, wtf8Encode } from "./wtf8.js";
 
 export const VIPER_WASM_SHA256 = "7e698ca9c14f2ea6a030bdd5f18dd7615795531bd6082157f4c3a4fa44eebf5e";
 export const VIPER_ENGINE_COMMIT = "6a25ec47d6e776996062509edfc1164b4f7f3bb5";
-export const CASES_FENCE = "judge-cases";
+export { CASES_FENCE };
 export const NODE_MEMORY = "node_memory";
 export const NODE_MIN_MEGABYTES = 128;
 export const NODE_MEMORY_RULE = `a string of whole megabytes or gigabytes, such as "512m" or "2g", of at least ${NODE_MIN_MEGABYTES}m, the least under which the launcher and a case that does nothing both start in Node`;
@@ -53,9 +54,7 @@ const refuse = (why: string): never => {
 export const isPrimitive = (value: unknown): value is Primitive =>
   value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 
-const LONE_SURROGATE = /\p{Cs}/u;
-
-export const utf8Exact = (value: Primitive): boolean => typeof value !== "string" || !LONE_SURROGATE.test(value);
+export { utf8Exact };
 
 export const notUtf8 = "a string with a lone surrogate, which UTF-8 cannot carry, so the engines would not all receive it as written";
 

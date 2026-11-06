@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmod, readdir, stat } from "node:fs/promises";
 import { join, posix, relative, sep } from "node:path";
+import { cpusValid, DOCKER_ASK_SECONDS, imageValid, megabytesOf, memoryValid } from "@intent-engine/client/internal";
 import { UsageError } from "./arg-values.js";
 import type { Values } from "./arg-options.js";
 import { CHECK_ENV, docker, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH } from "./check-process.js";
@@ -12,7 +13,6 @@ export const SANDBOX_CPUS = "1";
 export const SANDBOX_PIDS = 256;
 export const SANDBOX_TMP = "256m";
 export const SANDBOX_NOFILE = 1024;
-export const DOCKER_ASK_SECONDS = 30;
 export const DOCKER_PULL_SECONDS = 900;
 export const SANDBOX_USER = "65534:65534";
 export const SANDBOX_ROOT = "/judge";
@@ -35,15 +35,8 @@ export const TRUST_ONLY_WITH_NONE = "--i-trust-this-work applies only with --san
 
 export const DOCKER_ENV = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY", "XDG_RUNTIME_DIR"] as const;
 
-const DIGESTED = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/;
-const MEMORY = /^[1-9]\d{0,5}[mg]$/;
-const CPUS = /^\d{1,3}(\.\d{1,2})?$/;
-const MEGABYTES_PER_GIGABYTE = 1024;
+export { cpusValid, DOCKER_ASK_SECONDS, imageValid, megabytesOf, memoryValid };
 
-export const imageValid = (image: string): boolean => DIGESTED.test(image);
-export const memoryValid = (memory: string): boolean => MEMORY.test(memory);
-export const cpusValid = (cpus: string): boolean => CPUS.test(cpus) && Number(cpus) > 0;
-export const megabytesOf = (memory: string): number => Number(memory.slice(0, -1)) * (memory.endsWith("g") ? MEGABYTES_PER_GIGABYTE : 1);
 const SANDBOX_ONLY = ["sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu"] as const;
 const READABLE = 0o444;
 const SEARCHABLE = 0o755;

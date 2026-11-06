@@ -24,6 +24,7 @@ import { announced, keyed } from "./announce.js";
 import { NO_BOOK } from "../src/agent/wallet/openings.js";
 import { ata, balance, FEE_BPS, funded, h, transport } from "./harness.js";
 import { approved, UNJUDGED } from "./approved.js";
+import { judgedBy } from "./receipt-kit.js";
 
 const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
 
@@ -133,6 +134,28 @@ describe("the wallet server's split releases", () => {
     expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients: signed, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidTransition" });
     const plain = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.02", attestor: owner, min_result: "1", max_result: "1" }));
     expect((await call(client, "wallet_attest_split", { ...UNJUDGED, owner, nonce: plain["nonce"], recipients, delivered_sha256: work })).value).toMatchObject({ code: "NotAProof" });
+  });
+
+  it("binds the override's reason into the split release approval, so a send under another reason or a receipt's approval is refused and pays nothing", async () => {
+    const work = "d7".repeat(32);
+    const { owner, intent, nonce, coauthors, recipients } = await splitEscrow(work, [10_000]);
+    const made = await announced(intent, coauthors[0] as KeyPairSigner, work);
+    const ask = { owner, nonce, recipients, delivered_sha256: work };
+    const one = await ok(client, "wallet_attest_split", { ...ask, without_receipt: "the first reason" });
+    const two = await ok(client, "wallet_attest_split", { ...ask, without_receipt: "the second reason" });
+    expect(one["approval"]).toMatch(/^[0-9a-f]{16}$/);
+    expect(two["approval"]).not.toBe(one["approval"]);
+    await judgedBy([owner], { owner, nonce: BigInt(nonce), intent, specSha256: "4b".repeat(32), deliveredSha256: work, announcement: made.announcement });
+    const receipted = await ok(client, "wallet_attest_split", ask);
+    expect(receipted).not.toHaveProperty("unchecked");
+    expect([one["approval"], two["approval"]]).not.toContain(receipted["approval"]);
+    const signed = await signedBy(recipients, coauthors, one["envelope"] as string);
+    const send = { ...ask, recipients: signed, send: true };
+    expect((await call(client, "wallet_attest_split", { ...send, without_receipt: "the second reason", approval: one["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    expect((await call(client, "wallet_attest_split", { ...send, approval: one["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    expect((await call(client, "wallet_attest_split", { ...send, without_receipt: "the first reason", approval: receipted["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    expect(await paidTo(coauthors[0]!.address)).toBeLessThan(1n);
+    expect(await ok(client, "wallet_attest_split", { ...send, without_receipt: "the first reason", approval: one["approval"] })).toMatchObject({ sent: true, unchecked: { reason: "the first reason" } });
   });
 
   it("refuses a split without a valid delivered_sha256, or before any announcement opens to it", async () => {

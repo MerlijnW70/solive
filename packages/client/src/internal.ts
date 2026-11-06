@@ -38,6 +38,8 @@ export * from "./intent-filters.js";
 export * from "./intent-ref.js";
 export * from "./jobs.js";
 export * from "./ledger-path.js";
+export * from "./run-block.js";
+export * from "./spec-blocks.js";
 export * from "./fetch-failed.js";
 export * from "./address-ranges.js";
 export * from "./observe.js";

@@ -162,7 +162,9 @@ To sign without a receipt, name a reason: `--without-receipt <reason>` on `commi
 
 `judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it lists the announcements to its judge from accounts, opens each new one, downloads the work from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
-A failed check is final: that work is not judged again. An infra outcome prints a line with `retry: true` and is tried again, until the watch gives that work up as `skipped`.
+A failed check is final: that work is not judged again. An infra outcome prints a line with `outcome: "infra"` and `retry: true` and is tried again, until the watch gives that work up as `skipped`, still with `outcome: "infra"`.
+
+A refusal, such as a spec the judge will not run, an announcement none of its keys opens, or work it cannot fetch for good (an answer of 404, a size over the artifact limit, a private address, or bytes the announcement does not bind), so that no check ran, prints `verdict: "refused"` with the reason, never `fail`; that work is not judged again and does not count in `judged`.
 
 A refusal that can change, because another wallet holds the escrow's claim, the node lists the announcements incompletely, an earlier announcement is sealed to a key not given, or the RPC node failed, prints a line with `retry: true` and is tried again next round; the same refusal prints once. Each escrow is still paid at most once.
 
@@ -247,6 +249,8 @@ Without more, each judge picks the check: its own `--run`, `--check`, `--timeout
 
 A pinned limit is part of the bar. A check still running at the pinned `timeout`, timed on the judge's own clock from when it saw the container running, fails, and so does a container killed for using all of the pinned `memory`. Running out of memory the spec did not pin, or reaching `--timeout` before the check ran its pinned time, stays infra.
 
+A `timeout` counts the container's setup too. The judge cannot see when the check itself began inside Docker, so it counts a run from the last time it saw the container created and not yet started, and a run is inside `timeout` only if it ended sooner than that. Pin `timeout` with headroom over what the check needs: a check that ends near the limit ends as infra, not as a pass.
+
 `judge` refuses a spec whose block has an unknown or repeated field, a bad value, a second `judge-run` block, a `judge-cases` block beside it, or a fence that names `judge-run` or `judge-cases` anywhere but on a plain top-level line, such as indented, behind `>` or a list marker, with `~~~`, or inside another fenced block.
 
 `solive_get_spec` and `intent-engine spec` show the pinned check as `judge_run`, or why the block is refused. `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `create attested` and `seal` refuse such a spec before anything is sent.
@@ -294,6 +298,8 @@ So that a delivery cannot answer from a table of the published cases, the spec's
 The generator's single `export default` gets the seed in hex and `n` and returns `n` argument lists; the checker's gets one list and the delivery's answer and returns `true` or `false`, each in a fresh ViperJS engine with the spec's budgets. `judge` passes only when every published and drawn case passes, and refuses a spec whose generator or checker fails as the spec's fault.
 
 A drawn case accepts an answer that is null, `true`, `false`, a finite number, or a string with no lone surrogate; only these reach the checker, exactly as the delivery returned them, U+FFFD included. Every other answer fails the case: `undefined` as `wrong`, an object as `not-primitive`, and `NaN`, `Infinity`, `-Infinity` or a string holding a lone surrogate such as `"\ud800"` as `not-primitive` with a `detail` naming the reason.
+
+The viper judge reports at most DETAIL_BYTES (256, in bytes) of an answer, so a drawn case whose answer is longer cannot be checked. `judge` then refuses, as a limit of its own and not a verdict on the work: nothing is paid and no fail receipt is saved. Keep the draw's answers within that length.
 
 `judge` refuses a spec whose arguments, expected answers, generator or checker hold a lone surrogate such as `"\ud800"`, which UTF-8 cannot carry, so the engines would receive different strings. It refuses drawn arguments that hold one the same way. Nothing is run or paid.
 

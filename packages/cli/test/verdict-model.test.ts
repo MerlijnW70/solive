@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { EXIT_RETRY, JudgeInfraError, JudgeInterrupted, oomInfra, SIGNAL_EXIT, timedOutInfra } from "../src/judge-errors.js";
+import { EXIT_RETRY, JudgeInfraError, JudgeInterrupted, oomInfra, oomInfraUnpinned, SIGNAL_EXIT, timedOutInfra } from "../src/judge-errors.js";
 import {
   type CaseEnd,
   caseFilledPinned,
@@ -21,6 +21,7 @@ import {
   inspectFailed,
   KILLED_EXIT,
   killedUnflagged,
+  killedUnflaggedUnpinned,
   NEVER_STARTED,
   NO_RULING,
   nothingJudged,
@@ -77,7 +78,7 @@ describe("the verdict model, row by row", () => {
     const timeOnly = { seconds: 90, memory: "1g", pinned: { seconds: 60 } };
     for (const ranAtMostMs of [10, 60_000, undefined]) {
       const more = ranAtMostMs === undefined ? {} : { ranAtMostMs };
-      expect(containerOutcome({ deadline: false, state: ran(137), ...more }, timeOnly), String(ranAtMostMs)).toEqual(infra(killedUnflagged("1g")));
+      expect(containerOutcome({ deadline: false, state: ran(137), ...more }, timeOnly), String(ranAtMostMs)).toEqual(infra(killedUnflaggedUnpinned("1g")));
     }
     const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
     expect(containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 10 }, pinnedMemory)).toEqual(fail(exitedWith(137)));
@@ -117,7 +118,7 @@ describe("the verdict model, row by row", () => {
     for (const code of [1, 3, 137]) {
       expect(pinned(ran(code), { ranAtMostMs: 100 }), String(code)).toEqual(fail(exitedWith(code)));
     }
-    expect(pinned(ran(137), { ranAtMostMs: 100 }, LEFT)).toEqual(infra(killedUnflagged("1g")));
+    expect(pinned(ran(137), { ranAtMostMs: 100 }, LEFT)).toEqual(infra(killedUnflaggedUnpinned("1g")));
     for (const code of [0, 1]) {
       for (const more of [{ ranAtMostMs: 60_000 }, { ranAtMostMs: 600_000 }, {}]) {
         expect(pinned(ran(code), more), `${code} ${JSON.stringify(more)}`).toEqual(infra(RUN_UNTIMED));
@@ -126,7 +127,7 @@ describe("the verdict model, row by row", () => {
     for (const ranAtMostMs of [100, 60_000, undefined]) {
       const more = ranAtMostMs === undefined ? {} : { ranAtMostMs };
       expect(pinned(ran(1, { oomKilled: true }), more), String(ranAtMostMs)).toEqual(fail(oomPinned("512m")));
-      expect(pinned(ran(1, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(infra(oomInfra("1g")));
+      expect(pinned(ran(1, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(infra(oomInfraUnpinned("1g")));
     }
     expect(pinned(null, { deadline: true, ranAtMostMs: 90_000 })).toEqual(infra(timedOutInfra(90)));
     expect(pinned(ran(0), { deadline: true, ranAtMostMs: 10 })).toEqual(infra(timedOutInfra(90)));
@@ -137,6 +138,21 @@ describe("the verdict model, row by row", () => {
     expect(pinned(ran(0), { overran: true, interrupted: "SIGINT" })).toEqual({ outcome: "interrupted", signal: "SIGINT" });
     expect(containerOutcome({ deadline: false, state: ran(0), overran: true, ranAtMostMs: 999_999 }, LIMITS)).toEqual(PASS);
     expect(docker(ran(1, { oomKilled: true }))).toEqual(infra(oomInfra("512m")));
+  });
+
+  it("advises --sandbox-memory only where it is accepted: never under a judge-run block, whether or not it pins memory", () => {
+    const loose = { seconds: 90, memory: "1g", pinned: { seconds: 60 } };
+    const tight = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
+    const reasons = [
+      docker(ran(1, { oomKilled: true })),
+      docker(ran(137)),
+      containerOutcome({ deadline: false, state: ran(1, { oomKilled: true }), ranAtMostMs: 10 }, loose),
+      containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 10 }, loose),
+      containerOutcome({ deadline: false, state: ran(1, { oomKilled: true }), ranAtMostMs: 10 }, tight),
+    ].map((ruling) => (ruling as { reason: string }).reason);
+    expect(reasons.map((reason) => reason.includes("different --sandbox-memory is refused"))).toEqual([false, false, true, true, false]);
+    expect(reasons.map((reason) => reason.includes("raise --sandbox-memory"))).toEqual([true, true, false, false, false]);
+    expect(reasons[4]).toBe(oomPinned("512m"));
   });
 
   it("makes a plain Node case killed with signal 9 while its container's out-of-memory count rose infra under the memory the judge chose, and fail under pinned memory", () => {

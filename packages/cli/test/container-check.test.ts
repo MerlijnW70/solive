@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { containerLeft, docker, removeContainer, runContainer } from "../src/check-process.js";
 import { dockerTimedOut, startFailed } from "../src/container-check.js";
-import { JudgeInfraError, oomInfra, timedOutInfra } from "../src/judge-errors.js";
+import { JudgeInfraError, oomInfra, oomInfraUnpinned, timedOutInfra } from "../src/judge-errors.js";
 import { dockerMissing, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
 import { containerOutcome, exitedWith, inspectFailed, killedUnflagged, NEVER_STARTED, oomPinned, ranPastPin, RUN_UNTIMED } from "../src/verdict-model.js";
 
@@ -29,7 +29,10 @@ case "$1" in
     exit 0 ;;
   rm) exit 0 ;;
   container)
-    if [ "$4" = "{{.State.Status}}" ]; then echo "\${FAKE_STATUS:-exited}"; exit 0; fi
+    if [ "$4" = "{{.State.Status}}" ]; then
+      if [ -n "$FAKE_CREATED_DELAY" ] && [ ! -e "$FAKE_DIR/$5.created" ]; then : > "$FAKE_DIR/$5.created"; sleep "$FAKE_CREATED_DELAY"; echo created; exit 0; fi
+      echo "\${FAKE_STATUS:-exited}"; exit 0
+    fi
     if [ "$3" = "--format" ]; then
       if [ "$FAKE_INSPECT_FAIL" = 1 ]; then echo "Error: No such container: $5" >&2; exit 1; fi
       if [ "$FAKE_INSPECT_HANG" = 1 ]; then sleep 10; fi
@@ -240,6 +243,15 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     expect(containerOutcome(ran, { ...limits, seconds: 0.5, pinned: { seconds: 0.2 } })).toEqual({ outcome: "infra", reason: timedOutInfra(0.5) });
   });
 
+  it("under a pinned timeout, counts a run from when Docker was asked, not when it answered, that the container was only created", async () => {
+    const slowAnswer = { FAKE_RUN: "slow", FAKE_STATUS: "running", FAKE_CREATED_DELAY: "0.15" };
+    const ran = await runContainer(["image"], "pin-3", envFor(slowAnswer), 30, 30, 60);
+    expect(ran).toMatchObject({ state: ended(0), overran: false });
+    expect(ran.ranAtMostMs ?? 0).toBeGreaterThanOrEqual(250);
+    expect(containerOutcome(ran, { ...limits, pinned: { seconds: 0.25, memory: "64m" } })).toEqual({ outcome: "infra", reason: RUN_UNTIMED });
+    expect(containerOutcome(ran, { ...limits, pinned: { seconds: 60, memory: "64m" } })).toEqual({ outcome: "pass" });
+  });
+
   it("under a pinned timeout, judges by exit code a container that ended sooner on its own clock, whatever Docker's times say, and only then", async () => {
     const backwards = (code: number, oom = false) =>
       `{"Running":false,"ExitCode":${code},"OOMKilled":${oom},"Error":"","StartedAt":"2026-01-01T00:00:05Z","FinishedAt":"2026-01-01T00:00:01Z"}`;
@@ -252,7 +264,7 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     expect(containerOutcome(failed, pins(60))).toEqual({ outcome: "fail", reason: exitedWith(3) });
     const killed = await runContainer(["image"], "back-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: backwards(137, true) }), 30, 30, 60);
     expect(containerOutcome(killed, pins(60))).toEqual({ outcome: "fail", reason: oomPinned("64m") });
-    expect(containerOutcome(killed, { ...limits, pinned: { seconds: 60 } })).toEqual({ outcome: "infra", reason: oomInfra("1g") });
+    expect(containerOutcome(killed, { ...limits, pinned: { seconds: 60 } })).toEqual({ outcome: "infra", reason: oomInfraUnpinned("1g") });
     for (const fake of [{ FAKE_RUN: "slow", FAKE_STATE: backwards(0) }, { FAKE_RUN: "slow", FAKE_STATUS: "dead" }]) {
       const long = await runContainer(["image"], "back-4", envFor(fake), 30, 30, 0.2);
       expect(long.ranAtMostMs ?? 0, JSON.stringify(fake)).toBeGreaterThanOrEqual(200);

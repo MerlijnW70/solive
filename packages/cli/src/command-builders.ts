@@ -1,3 +1,4 @@
+import { MAX_JUDGE_TIMEOUT } from "@intent-engine/client/internal";
 import { AUTO_PRICE_CAP } from "./compute.js";
 import { tokenNamed } from "./tokens.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./agent/create.js";
@@ -355,7 +356,7 @@ export function maxPagesOf(values: Values): number {
 }
 
 export const JUDGE_TIMEOUT = 600;
-export const MAX_JUDGE_TIMEOUT = 86_400;
+export { MAX_JUDGE_TIMEOUT };
 export const RUN_NEEDED = "--run must name the command that checks the artifact";
 
 export function runOf(text: string): string {

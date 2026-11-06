@@ -20,7 +20,14 @@ export type Stopped = "paid" | "passed" | "closed" | "ended" | InterruptSignal;
 
 type Seen = { announcement: Address; seq: bigint; worker: Address; url: string | null };
 
-export type Watched = Seen & (Verdict | { artifactSha256: string | null; verdict: "fail"; reason: string } | { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true } | { artifactSha256: string | null; verdict: "skipped"; reason: string });
+type Infra = { outcome?: "infra" };
+
+export type Watched =
+  | (Seen & Verdict)
+  | (Seen & { artifactSha256: string | null; verdict: "fail"; reason: string })
+  | (Seen & { artifactSha256: string | null; verdict: "refused"; reason: string })
+  | (Seen & Infra & { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true })
+  | (Seen & Infra & { artifactSha256: string | null; verdict: "skipped"; reason: string });
 
 export const INFRA_RUNS = 3;
 
@@ -57,20 +64,20 @@ async function judgeAnnounced(
 ): Promise<Watched | null | "skipped" | "later"> {
   const { announcement } = delivery;
   const seen: Seen = { announcement: announcement.address, seq: announcement.seq, worker: announcement.worker, url: delivery.url };
-  const failed = (error: Error, sha256: string | null): Watched => ({ ...seen, artifactSha256: sha256, verdict: "fail", reason: error.message });
+  const refused = (error: Error, sha256: string | null): Watched => ({ ...seen, artifactSha256: sha256, verdict: "refused", reason: error.message });
   const unreadable = (error: Error, sha256: string | null): Watched => {
     const tries = (work.missed.get(announcement.address)?.tries ?? 0) + 1;
     work.missed.set(announcement.address, { tries, due: work.round + 2 ** (tries - 1) });
     return tries >= UNREADABLE_TRIES
-      ? { ...seen, artifactSha256: sha256, verdict: "skipped", reason: unreadableSkipped(tries, error.message) }
-      : { ...seen, artifactSha256: sha256, verdict: "retry", reason: error.message, retry: true };
+      ? { ...seen, outcome: "infra", artifactSha256: sha256, verdict: "skipped", reason: unreadableSkipped(tries, error.message) }
+      : { ...seen, outcome: "infra", artifactSha256: sha256, verdict: "retry", reason: error.message, retry: true };
   };
   let fetched: Fetched;
   try {
     fetched = await fetchDelivery(runtime.specFetch, transport, delivery, command.timeout, runtime.lookup);
   } catch (error) {
     if (error instanceof DeliveryUnfit) {
-      return failed(error, null);
+      return refused(error, null);
     }
     if (error instanceof DeliveryUnreadable) {
       return unreadable(error, null);
@@ -95,7 +102,7 @@ async function judgeAnnounced(
       const runs = (work.stalled.get(announcement.address) ?? 0) + 1;
       work.stalled.set(announcement.address, runs);
       if (runs >= INFRA_RUNS) {
-        return { ...seen, artifactSha256: fetched.sha256, verdict: "skipped", reason: infraSkipped(runs, error.message) };
+        return { ...seen, outcome: "infra", artifactSha256: fetched.sha256, verdict: "skipped", reason: infraSkipped(runs, error.message) };
       }
     }
     if (error instanceof JudgeUnreadable) {
@@ -104,11 +111,11 @@ async function judgeAnnounced(
     }
     if (error instanceof JudgeDeferred || rpcFailed(error)) {
       work.deferred.add(fetched.sha256);
-      return { ...seen, artifactSha256: fetched.sha256, verdict: "retry", reason: reasonOf(error), retry: true };
+      return { ...seen, outcome: "infra", artifactSha256: fetched.sha256, verdict: "retry", reason: reasonOf(error), retry: true };
     }
     if (error instanceof JudgeRefused) {
       work.judged.add(fetched.sha256);
-      return failed(error, fetched.sha256);
+      return { ...seen, artifactSha256: fetched.sha256, verdict: "refused", reason: error.message };
     }
     throw error;
   } finally {
@@ -164,7 +171,7 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
       let watched: Watched | null | "skipped" | "later";
       if (found === undefined || found.url === null) {
         const { address: at, seq, worker } = announcement;
-        watched = { announcement: at, seq, worker, url: null, artifactSha256: null, verdict: "fail", reason: `the announcement ${at} ${SEALED_ELSEWHERE}` };
+        watched = { announcement: at, seq, worker, url: null, artifactSha256: null, verdict: "refused", reason: `the announcement ${at} ${SEALED_ELSEWHERE}` };
       } else {
         watched = await judgeAnnounced(command, runtime, transport, { announcement, salt: found.salt, url: found.url }, signals.caught, work);
       }
@@ -186,7 +193,7 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
       if (watched === "skipped") {
         continue;
       }
-      if (watched.verdict === "skipped") {
+      if (watched.verdict === "skipped" || watched.verdict === "refused") {
         out(line(watched));
         continue;
       }

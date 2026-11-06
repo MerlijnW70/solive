@@ -6,7 +6,9 @@ With `--wallet` the server serves the everyday tools, the committee and profile 
 
 ## How a job works
 
-A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`, runs the spec's check with `solive_wallet_judge_work` or the CLI command `judge`, and only on a pass pays with `solive_wallet_attest`, or, as a committee, votes with `solive_wallet_committee_vote`.
+A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`.
+
+The judge runs a check on the work, never one it takes from the spec's prose: `solive_wallet_judge_work` runs the cases of the spec's `judge-cases` block, and the CLI command `judge` runs the check a `judge-run` block pins, or else the one the judge gives it. Only on a pass does it pay with `solive_wallet_attest` or, as a committee member, vote with `solive_wallet_committee_vote`.
 
 A signature needs a passing run. `solive_wallet_judge_work` and `judge` save a receipt on each pass, and `solive_wallet_attest`, `solive_wallet_attest_split` and `solive_wallet_committee_vote` sign for a proof escrow only with a matching one; otherwise they refuse with `NoJudgeReceipt`. `solive_wallet_committee_release` relays votes without a receipt, except a member's own co-author signature. The override is `without_receipt`, a non-empty reason: the output records it as `unchecked` with a warning, and the preview's `approval` binds it. See [Judge work](judge.md#a-signature-needs-a-passing-run).
 
@@ -29,7 +31,7 @@ With `--wallet` the server also offers prompts. Each is one message that walks t
 | `start` | Sets up a test wallet and makes a first swap |
 | `hire` | Writes a spec with a check, escrows it with a judge, then judges the delivery |
 | `earn` | Finds a job whose spec matches, claims it, delivers and follows it to payment |
-| `judge` | Fetches delivered work, runs the spec's check, then approves a pass or refuses |
+| `judge` | Fetches delivered work, runs a check on it, then approves a pass or refuses |
 | `worker` | Makes a separate local worker for a job, hands an agent its brief, then judges what it delivers |
 
 ## Without a wallet
@@ -81,9 +83,9 @@ The server without a wallet holds no keys, so it has `solive_prepare_deliver` in
 
 ## Where a spec is uploaded
 
-After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
+After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per COST_STEP_BYTES (65536, in bytes) of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
 
-The preview says what will happen, a preview uploads nothing, and the upload adds up to 20000 ms to the send's answer. Its retries count against the mirror's rate limit.
+The preview says what will happen, a preview uploads nothing, and the upload adds up to SPEC_READ_MS (20000, in milliseconds) to the send's answer. Its retries count against the mirror's rate limit.
 
 - With `spec_url`, it uploads the bytes at that url when they hash to `spec_hash` and are not sealed.
 - With `spec_text`, a wrong hash is refused before anything is sent. It is uploaded unless `spec_url` is sealed or cannot be read.

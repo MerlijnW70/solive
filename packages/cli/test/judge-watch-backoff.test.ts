@@ -26,8 +26,8 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.roundsOf(j.url)).toEqual(BACKOFF_ROUNDS);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ url: j.url, artifactSha256: null, verdict: "retry", retry: true, reason }),
-      expect.objectContaining({ url: j.url, artifactSha256: null, verdict: "skipped", reason: unreadableSkipped(UNREADABLE_TRIES, reason) }),
+      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "infra", verdict: "retry", retry: true, reason }),
+      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "infra", verdict: "skipped", reason: unreadableSkipped(UNREADABLE_TRIES, reason) }),
       { stopped: "ended", intent: j.intent, judged: 0 },
     ]);
     expect(UNREADABLE_TRIES).toBe(BACKOFF_ROUNDS.length);
@@ -43,8 +43,8 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.roundsOf(j.url)).toEqual(BACKOFF_ROUNDS);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ artifactSha256: sha(CORRECT), verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
-      expect.objectContaining({ artifactSha256: sha(CORRECT), verdict: "skipped", reason: expect.stringContaining(`could not be read ${UNREADABLE_TRIES} times`) }),
+      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "infra", verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
+      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "infra", verdict: "skipped", reason: expect.stringContaining(`could not be read ${UNREADABLE_TRIES} times`) }),
       { stopped: "ended", intent: j.intent, judged: 0 },
     ]);
   }, 120_000);
@@ -56,8 +56,8 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     expect(missing.roundsOf(gone.url)).toEqual([0]);
     expect(missing.roundsOf(SPEC_URL)).toEqual([0]);
     expect(missing.lines).toEqual([
-      expect.objectContaining({ artifactSha256: sha(CORRECT), verdict: "fail", reason: expect.stringContaining(`${SPEC_URL} answered 404`) }),
-      { stopped: "ended", intent: gone.intent, judged: 1 },
+      expect.objectContaining({ artifactSha256: sha(CORRECT), verdict: "refused", reason: expect.stringContaining(`${SPEC_URL} answered 404`) }),
+      { stopped: "ended", intent: gone.intent, judged: 0 },
     ]);
     const inside = await job({ specUrl: SPEC_URL });
     h.genesis = DEVNET_GENESIS_HASH;
@@ -65,7 +65,7 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     const private_ = await run(viperWatch(inside), { rounds: 5 });
     expect(private_.roundsOf(inside.url)).toEqual([0]);
     expect(private_.roundsOf(SPEC_URL)).toEqual([]);
-    expect(private_.lines).toEqual([expect.objectContaining({ verdict: "fail", reason: expect.stringContaining(SPEC_NOT_PUBLIC) }), { stopped: "ended", intent: inside.intent, judged: 1 }]);
+    expect(private_.lines).toEqual([expect.objectContaining({ verdict: "refused", reason: expect.stringContaining(SPEC_NOT_PUBLIC) }), { stopped: "ended", intent: inside.intent, judged: 0 }]);
   }, 120_000);
 
   it("keeps a spec host that does not resolve temporary", async () => {
@@ -74,7 +74,7 @@ describe("judge --watch backs off from hosts that keep failing", () => {
     h.hosts.set(new URL(SPEC_URL).hostname, []);
     const watched = await run(viperWatch(j), { rounds: 3 });
     expect(watched.roundsOf(j.url)).toEqual([0, 1]);
-    expect(watched.lines).toEqual([expect.objectContaining({ verdict: "retry", retry: true, reason: expect.stringContaining(SPEC_NOT_PUBLIC) }), { stopped: "ended", intent: j.intent, judged: 0 }]);
+    expect(watched.lines).toEqual([expect.objectContaining({ outcome: "infra", verdict: "retry", retry: true, reason: expect.stringContaining(SPEC_NOT_PUBLIC) }), { stopped: "ended", intent: j.intent, judged: 0 }]);
   }, 120_000);
 });
 

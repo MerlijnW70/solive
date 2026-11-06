@@ -75,6 +75,24 @@ describe("a local worker's send", () => {
     expect(lamportsOf(done["worker"] as Address)).toBe(lamportsIn(again["funding"] as string));
   }, 60_000);
 
+  it("refuses an approval altered by one character, or taken from another job, and sends nothing", async () => {
+    const { intent } = await hireWith(hirer, wallet, false);
+    const other = await hireWith(hirer, wallet, false);
+    const preview = await ok(hirer, "wallet_worker", { intent });
+    const approval = preview["approval"] as string;
+    const altered = `${approval.slice(0, -1)}${approval.endsWith("0") ? "1" : "0"}`;
+    const elsewhere = (await ok(hirer, "wallet_worker", { intent: other.intent }))["approval"];
+    const before = lamportsOf(wallet);
+    for (const tampered of [altered, elsewhere]) {
+      expect(tampered).not.toBe(approval);
+      expect((await call(hirer, "wallet_worker", { intent, approval: tampered, send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: WORKER_CHANGED });
+    }
+    expect(lamportsOf(wallet)).toBe(before);
+    expect(workerFiles()).toEqual([]);
+    const done = await ok(hirer, "wallet_worker", { intent, approval, send: true });
+    expect(done).toMatchObject({ sent: true, approval });
+  }, 60_000);
+
   const refusedAfter = async (intent: Address, change: () => Promise<Client>, previewer: Client = hirer) => {
     const preview = await ok(previewer, "wallet_worker", { intent });
     const client = await change();

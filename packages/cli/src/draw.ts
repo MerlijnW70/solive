@@ -50,7 +50,7 @@ const refuseDraw = (part: "generator" | "checker", why: string): never => {
 export const notAnnounced = (sha256: string, intent: Address): string =>
   `the spec draws its cases from the first finalized block after the earliest announcement of the artifact with sha256 ${sha256} for intent ${intent}, and nobody announced it; nothing was run or paid`;
 
-export const answerTooLong = `a drawn case's answer is longer than the ${DETAIL_BYTES} bytes the viper judge reports, so the checker cannot see it; nothing was paid`;
+export const answerTooLong = `a drawn case's answer is longer than the ${DETAIL_BYTES} bytes the viper judge reports, so the judge cannot check it; that is the judge's own limit, not a verdict on the work, and nothing was paid`;
 
 export function answerFault(answer: unknown): string | undefined {
   if (typeof answer === "number" && !Number.isFinite(answer)) {

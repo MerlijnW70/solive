@@ -244,7 +244,7 @@ describe("the spec source sentences of the docs", () => {
       "pass `specSources` to `createClient` to replace it.",
       "A client keeps each escrow's verified spec in memory by the escrow and its hash, so reading it again makes no request. It keeps a copy from another source only when the escrow publishes no memo url, so a memo url that comes back is read again.",
       "A spec is known as sealed only from its memo url. When that url is gone, a sealed job's spec is read by hash like any other, from whatever copy a source serves.",
-      "A list whose first source is not `memo` is refused with `InvalidInput`, and one read stops asking sources after " + SPEC_READ_MS + " ms.",
+      "A list whose first source is not `memo` is refused with `InvalidInput`, and one read stops asking sources after SPEC_READ_MS (" + SPEC_READ_MS + ", in milliseconds).",
     ]) {
       expect(client).toContain(sentence);
     }

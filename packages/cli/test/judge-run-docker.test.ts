@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
 import { readArtifact } from "../src/artifact.js";
-import { EXIT_RETRY, INFRA_NEXT, oomInfra } from "../src/judge-errors.js";
+import { EXIT_RETRY, INFRA_NEXT, oomInfra, oomInfraUnpinned } from "../src/judge-errors.js";
 import { checkFilesSha256, RUN_OVERHEAD_SECONDS } from "../src/judge-run.js";
 import { checkDiffers, differs } from "../src/run-plan.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
@@ -74,7 +74,7 @@ describe("judge under a judge-run block, in a real Docker container", () => {
 
     const chosen = await pinnedJob({ image: SANDBOX_IMAGE, run: BOMB, timeout: 120 });
     const stalled = await cli(boxed(chosen.j, BOMB, "--check", chosen.check, "--verdict", chosen.verdict, "--yes"), { "judge.json": chosen.j.judge });
-    expect([stalled.code, stalled.out, stalled.err]).toEqual([EXIT_RETRY, "", infra(oomInfra(SANDBOX_MEMORY))]);
+    expect([stalled.code, stalled.out, stalled.err]).toEqual([EXIT_RETRY, "", infra(oomInfraUnpinned(SANDBOX_MEMORY))]);
     expect(existsSync(chosen.verdict)).toBe(false);
     expect(status(chosen.j.intent)).toBe(IntentStatus.Open);
   });

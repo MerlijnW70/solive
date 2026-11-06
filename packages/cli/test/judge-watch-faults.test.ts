@@ -60,7 +60,7 @@ describe("judge --watch on temporary failures", () => {
     const watched = await run(viperWatch(j));
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ url: j.url, artifactSha256: null, verdict: "retry", retry: true, reason: `the work at ${j.url} answered 503; it is fetched again later` }),
+      expect.objectContaining({ url: j.url, artifactSha256: null, outcome: "infra", verdict: "retry", retry: true, reason: `the work at ${j.url} answered 503; it is fetched again later` }),
       expect.objectContaining({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) }),
       { stopped: "paid", intent: j.intent, judged: 1 },
     ]);
@@ -82,7 +82,7 @@ describe("judge --watch on temporary failures", () => {
     const watched = await run(viperWatch(j));
     expect([watched.code, watched.err, asked]).toEqual([EXIT_OK, "", 2]);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ artifactSha256: sha(CORRECT), verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
+      expect.objectContaining({ artifactSha256: sha(CORRECT), outcome: "infra", verdict: "retry", retry: true, reason: expect.stringContaining(`who the job ${j.intent} invites cannot be checked`) }),
       expect.objectContaining({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) }),
       { stopped: "paid", intent: j.intent, judged: 1 },
     ]);
@@ -96,8 +96,8 @@ describe("judge --watch on temporary failures", () => {
       const last = new JudgeInfraError(timedOutInfra(1)).message;
       expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
       expect(watched.lines).toEqual([
-        expect.objectContaining({ url: j.url, artifactSha256: sha(CORRECT), verdict: "retry", retry: true, reason: last }),
-        { announcement: expect.any(String), seq: "1", worker: j.worker.address, url: j.url, artifactSha256: sha(CORRECT), verdict: "skipped", reason: infraSkipped(INFRA_RUNS, last) },
+        expect.objectContaining({ url: j.url, artifactSha256: sha(CORRECT), outcome: "infra", verdict: "retry", retry: true, reason: last }),
+        { announcement: expect.any(String), seq: "1", worker: j.worker.address, url: j.url, artifactSha256: sha(CORRECT), outcome: "infra", verdict: "skipped", reason: infraSkipped(INFRA_RUNS, last) },
         { stopped: "ended", intent: j.intent, judged: 0 },
       ]);
       expect((await calls(log)).filter((call) => call === "run")).toHaveLength(INFRA_RUNS);

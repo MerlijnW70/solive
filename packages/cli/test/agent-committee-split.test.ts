@@ -167,6 +167,20 @@ describe("the wallet server's committee-judged split releases", () => {
     expect([await paidTo(s.worker.address), await paidTo(s.lead)]).toEqual(SHARES);
   });
 
+  it("asks a member who co-authors for its own receipt before it signs its share", async () => {
+    const member = await committeeSplit("e6".repeat(32), false, true);
+    useKey(member.peer);
+    const { shown: memberShown, vote: peerVote } = await signedVote(member.ballot);
+    member.restore();
+    const memberBase = {
+      ...member.ballot,
+      votes: [peerVote],
+      recipients: [{ ...member.recipients[0], signature: await signedOver(member.worker, memberShown["envelope"] as string) }, { ...member.recipients[1] }],
+    };
+    expect((await call(client, "wallet_committee_release", memberBase)).value).toMatchObject({ code: "NoJudgeReceipt" });
+    expect(await ok(client, "wallet_committee_release", { ...memberBase, ...UNJUDGED })).toMatchObject({ sent: false, unchecked: { reason: UNJUDGED.without_receipt } });
+  });
+
   it("refuses a split vote with a wrong or missing approval and signs nothing, then signs the same vote with the right one", async () => {
     const s = await committeeSplit("e5".repeat(32), false);
     const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...s.ballot });

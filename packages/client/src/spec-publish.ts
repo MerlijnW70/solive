@@ -2,6 +2,7 @@ import { isSealed } from "@intent-engine/core/internal";
 import type { Lookup } from "./address-ranges.js";
 import { sha256Hex } from "./encoding.js";
 import { webFetch } from "./job-specs.js";
+import { runBlockPreflight } from "./run-block.js";
 import { before, guardedSend, type SendAnswer } from "./spec-fetch.js";
 import { MAX_SPEC_BYTES, type SpecFetch, SpecUnreadable } from "./spec-guard.js";
 import { MIRROR_UNUSABLE, mirrorProblem, mirrorUnusable, specMirror, SPEC_READ_MS, trimmed } from "./spec-sources.js";
@@ -21,6 +22,7 @@ export type PublishSpecOptions = {
 export const MIRROR_OFF = "no mirror is set, since INTENT_ENGINE_SPEC_MIRROR is empty";
 export const PUBLISH_SEALED = "the spec is sealed, and a sealed spec is never uploaded";
 export const SPEC_PUBLISH_OVER = "the upload ran out of time";
+export const RUN_BLOCK_UNJUDGEABLE = "no judge can run it, so nothing was uploaded; fix the block, then publish the spec again";
 
 const BACKOFF_SHARE = 20;
 const RETRIED: ReadonlySet<number> = new Set([403, 429, 503]);
@@ -70,11 +72,16 @@ const paused = (ms: number): Promise<void> => new Promise((resolve) => setTimeou
 export async function publishSpec(bytes: Uint8Array, options: PublishSpecOptions): Promise<SpecPublished> {
   const sha256 = await sha256Hex(bytes);
   const refused = (reason: string): SpecPublished => ({ published: false, sha256, reason });
+  const sealed = isSealed(bytes);
+  const unrunnable = sealed || bytes.length > MAX_SPEC_BYTES ? undefined : runBlockPreflight(bytes);
+  if (unrunnable !== undefined) {
+    return refused(`${unrunnable}; ${RUN_BLOCK_UNJUDGEABLE}`);
+  }
   const mirror = options.mirror === undefined ? specMirror() : options.mirror;
   if (mirror === null) {
     return refused(MIRROR_OFF);
   }
-  if (isSealed(bytes)) {
+  if (sealed) {
     return refused(PUBLISH_SEALED);
   }
   if (bytes.length > MAX_SPEC_BYTES) {

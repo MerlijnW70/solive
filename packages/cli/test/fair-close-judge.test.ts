@@ -15,9 +15,9 @@ import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { FAIL_RECEIPT_KIND, readReceipt } from "../src/judge-receipt.js";
 import { CLI_REJECT_NEXT } from "../src/receipt-gate.js";
-import { otherWork } from "../src/reject-check.js";
+import { otherWork, unopened } from "../src/reject-check.js";
 import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
-import { announced as announce, keyed } from "./announce.js";
+import { announced as announce, griefed, keyed } from "./announce.js";
 import { cli, DOMAIN, h, HOME, NOW, runtime, transport, world } from "./harness.js";
 import { approved } from "./approved.js";
 import { job, type Job, judging } from "./judge-kit.js";
@@ -79,6 +79,15 @@ describe("intent-engine reject", () => {
     expect(wrong.code).toBe(EXIT_FAILED);
     expect(wrong.err).toContain(otherWork(j.first.announcement, other));
     expect(await states(j.intent)).toContainEqual([j.first.announcement, "announced"]);
+  });
+
+  it("refuses an announcement none of the judge's keys opens, even with a reason and --yes, and rejects nothing", async () => {
+    const griefer = await keyed();
+    const sealed = await griefed(j.intent, griefer, j.judge.address, [griefer.address], j.sha256);
+    const refused = await cli(["reject", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--announcement", sealed, "--sha256", j.sha256, "--without-receipt", "the check is known to fail", "--yes"], keys());
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.err).toContain(unopened(sealed, j.sha256));
+    expect(await states(j.intent)).toContainEqual([sealed, "announced"]);
   });
 });
 
@@ -210,6 +219,19 @@ describe("wallet_reject behind wallet_judge_work", () => {
     expect(await ok(judge, "wallet_judge_work", { intent: job.intent })).toMatchObject({ verdict: "pass" });
     const refused = await call(judge, "wallet_reject", { owner: judgeWallet, nonce: job.nonce, announcement: job.announcement, delivered_sha256: sha(SOLUTION) });
     expect(refused).toMatchObject({ error: true, value: { code: "NoJudgeReceipt", hint: expect.stringContaining("failed the work") } });
+  });
+
+  it("refuses an announcement the judge's keys cannot open, with a reason, and signs and sends nothing", async () => {
+    const job = await delivered(WRONG);
+    const griefer = await keyed();
+    const sealed = await griefed(job.intent, griefer, judgeWallet, [griefer.address], sha(WRONG));
+    const target = { owner: judgeWallet, nonce: job.nonce, announcement: sealed, delivered_sha256: sha(WRONG), without_receipt: "the check is known to fail" };
+    for (const send of [false, true]) {
+      const refused = await call(judge, "wallet_reject", { ...target, send });
+      expect(refused).toMatchObject({ error: true, value: { code: "NotRejectable" } });
+      expect(JSON.stringify(refused.value)).toContain(unopened(sealed, sha(WRONG)));
+    }
+    expect(await svmStates(job.intent)).toContainEqual([sealed, "announced"]);
   });
 
   it("refuses a send whose reason or approval differs from its preview", async () => {
