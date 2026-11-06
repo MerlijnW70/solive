@@ -26,7 +26,7 @@ async function escrows() {
   return { w, holder, other, keys, intents: made, run, owner: w.owner.address };
 }
 
-const open = (nonce: string, extra: string[] = []) => ["claims", "open", "--keypair", "owner.json", "--nonce", nonce, "--max-secs", "3600", "--stake", "0.05", ...extra, "--yes"];
+const open = (nonce: string, extra: string[] = []) => ["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", nonce, "--max-secs", "3600", "--stake", "0.05", ...extra, "--yes"];
 
 describe("claims standby", () => {
   it("keeps the holder out of its own line and lets any other wallet join it", async () => {

@@ -34,6 +34,8 @@ export const LEDGER_COMMANDS = [
   "claims leave",
   "claims advance",
   "claims settle",
+  "claims collect",
+  "reject",
   "mandate grant",
   "mandate revoke",
   "profile set",

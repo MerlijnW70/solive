@@ -4,11 +4,13 @@ import { formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { buildClaimJob, buildDropClaim, claimCooldown, takeUntil, findIntentPda, formatTime, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
 import { type ClaimListView, type ClaimsView, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
+import { claimProtection, protectionLines, reviewBoardOf } from "@intent-engine/client/internal";
+import { reviewPastExpiry } from "../fair-lines.js";
 import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";
 import { type AgentContext, define, specReach } from "./actions.js";
-import { type Admit, advanceStep, claimAt, claimBoard, closedEscrow, type EscrowState, escrowState, fillsGoing, leaveStep, type LineStep, lineWaitingHere, refusedBy, settleCall, settleStep, standbyStep } from "./claim-line.js";
+import { type Admit, advanceStep, claimAt, claimBoard, closedEscrow, type EscrowState, escrowState, collectStep, fillsGoing, heldFor, leaveStep, type LineStep, reviewHeld, lineWaitingHere, refusedBy, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
@@ -21,7 +23,7 @@ import { access, bookOf, checkSale, deviceOutput, limited, live, PREVIEW_APPROVA
 export const CLAIM_CHANGED =
   "this claim differs from its preview: the escrow, action, seconds or stake changed, or no approval was given; preview it again and show the user";
 
-const ACTIONS = ["take", "drop", "settle", "standby", "leave", "advance"] as const;
+const ACTIONS = ["take", "drop", "settle", "collect", "standby", "leave", "advance"] as const;
 
 const escrowRef = {
   owner: account("the wallet that made the escrow"),
@@ -48,6 +50,12 @@ function claimsNext(intent: Address, escrow: EscrowState, view: ClaimsView, owne
   if (escrow !== "open") {
     return `${closedEscrow(intent, escrow)}; ${settleCall(owner, nonce)} closes its claims board and returns the rent to ${view.owner}`;
   }
+  if (view.review?.lapsed === true && view.worker !== null) {
+    return `the judge neither released nor rejected the delivery of ${view.worker} by ${view.review.until}; ${tool("wallet_claim")} action collect pays it its stake and the kill fee`;
+  }
+  if (view.review !== null && view.worker !== null) {
+    return `the judge reviews the delivery of ${view.worker} until ${view.review.until}; the job stays held until it releases, rejects or the review ends`;
+  }
   if (view.state === "held" && view.worker !== null) {
     return `${view.worker} holds this job's claim for ${view.secondsLeft} more seconds; ${tool("wallet_claim")} action standby joins the line that gets the job next`;
   }
@@ -66,7 +74,7 @@ function claimsNext(intent: Address, escrow: EscrowState, view: ClaimsView, owne
 export const getClaims = define({
   name: tool("get_claims"),
   title: "Who holds a job's claim",
-  description: "Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. claim_list names the only wallets the program lets claim. invited lists the wallets an invite-only job's sealed spec names; only they can be paid. next says what to do about the claim.",
+  description: "Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. review_secs and kill_fee are the protection a holder's first delivery gets, and review its state. claim_list names the only wallets the program lets claim. invited lists the wallets an invite-only job's sealed spec names; only they can be paid. next says what to do about the claim.",
   effect: "read",
   input: object(escrowRef),
   output: object({
@@ -80,6 +88,16 @@ export const getClaims = define({
     seconds_left: optional(amount("seconds until the claim lapses, by the chain's clock")),
     stake: optional(amount("lamports a worker stakes to claim")),
     max_secs: optional(integer(1, MAX_CLAIM_SECS, "the longest a claim may run")),
+    review_secs: optional(integer(0, MAX_CLAIM_SECS, "seconds the judge has to release or reject the holder's first delivery; 0: no review, so a delivery is unprotected")),
+    kill_fee: optional(amount("lamports the holder collects with its stake when the judge neither releases nor rejects in the review window")),
+    review: optional(
+      nullable(
+        object(
+          { announcement: account(), until: time("when the review ends"), seconds_left: amount(), lapsed: flag("true once it ended with no release or reject: the holder collects its stake and the kill fee") },
+          "the armed review of the holder's delivery, while one runs or waits to be collected",
+        ),
+      ),
+    ),
     owner: optional(account()),
     dropped_by: optional(nullable(account("a worker that dropped its claim and may not claim again until cooldown_until"))),
     cooldown_until: optional(time("when the worker that dropped may claim again")),
@@ -116,6 +134,9 @@ export const getClaims = define({
       seconds_left: view.secondsLeft,
       stake: view.stake,
       max_secs: view.maxSecs,
+      review_secs: view.reviewSecs,
+      kill_fee: view.killFee,
+      review: view.review === null ? null : { announcement: view.review.announcement, until: view.review.until, seconds_left: view.review.secondsLeft, lapsed: view.review.lapsed },
       owner: view.owner,
       dropped_by: view.cooldown?.worker ?? null,
       ...(view.cooldown === null ? {} : { cooldown_until: view.cooldown.until }),
@@ -130,13 +151,13 @@ export const getClaims = define({
 export const walletClaim = define({
   name: tool("wallet_claim"),
   title: "Claim, drop or queue for a job",
-  description: `Reserves a job: take stakes what the owner asks so only this wallet is paid for secs seconds, lost if it lapses; drop returns it. standby queues behind another claim, leave quits, advance passes a lapsed job down the line, settle returns a finished board's rent. ${PREVIEW_APPROVAL}`,
+  description: `Reserves a job: take stakes what the owner asks so only this wallet is paid for secs seconds, lost if it lapses; drop returns it. standby queues, leave quits, advance passes a lapsed job on, collect takes lapsed review pay, settle returns a finished board's rent. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...escrowRef,
     action: choice(
       ACTIONS,
-      "take claims the job; drop gives up this wallet's claim and its stake returns; standby joins the line for a job another worker holds; leave quits the line, returning the entry's stake and rent; advance hands a lapsed job to the first in line; settle moves a lapsed claim's stake to the owner and, once the escrow is released or gone, closes the claims board and returns its rent to the owner",
+      "take claims the job; drop gives up this wallet's claim and its stake returns; standby joins the line for a job another worker holds; leave quits the line, returning the entry's stake and rent; advance hands a lapsed job to the first in line; settle moves a lapsed claim's stake to the owner, or a lapsed review's stake and kill fee to its holder; collect pays the holder its stake and the kill fee once the judge's review of its delivery ended with no release or reject; settle, once the escrow is released or gone, closes the claims board and returns its rent to the owner",
     ),
     secs: optional(integer(1, MAX_CLAIM_SECS, "how long to hold the claim; needed with take and standby")),
     seq: optional(integer(0, 0xffff_ffff, "with leave: the line entry to return, needed once the claims board is closed")),
@@ -174,6 +195,8 @@ export const walletClaim = define({
       throw new AgentRefusal("ClaimsMissing", noClaims(intent));
     } else if (input.action === "settle") {
       step = await settleStep(client, ctx.transport, escrow, view, signer.address);
+    } else if (input.action === "collect") {
+      step = await collectStep(ctx.transport, intent, signer.address);
     } else if (input.action === "standby") {
       step = await standbyStep(client, ctx.transport, escrow, view, signer, needSecs(input.secs, input.action), admit);
     } else if (input.action === "advance") {
@@ -260,8 +283,11 @@ export async function takeStep(client: ReturnType<typeof createClient>, escrow: 
   if (refused === "LineWaiting") {
     throw new AgentRefusal("LineWaiting", lineWaitingHere(intent, view.line.waiting));
   }
+  if (refused === "ReviewPastExpiry") {
+    throw new AgentRefusal("ReviewPastExpiry", reviewPastExpiry(intent, secs, view.reviewSecs, found.intent.expiresAt).replace("--secs", "secs"));
+  }
   if (refused === "ClaimHeld") {
-    const held = heldBy(intent, board.worker, board.until - now);
+    const held = `${heldBy(intent, board.worker, heldFor(view, now))}${reviewHeld(view)}`;
     throw new AgentRefusal("ClaimHeld", board.worker === signer.address ? held : `${held}; join the line with ${tool("wallet_claim")} action standby`);
   }
   const cooling = claimCooldown(board, now);
@@ -283,8 +309,9 @@ export async function takeStep(client: ReturnType<typeof createClient>, escrow: 
       `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only this wallet ${signer.address} can be paid`,
       `Stakes: ${stake}, returned when a release pays this wallet or it drops the claim, and lost to the owner if the claim lapses first`,
       ...(slot.state === "lapsed" ? [`Ends: the lapsed claim of ${slot.worker}, whose stake goes to the owner ${view.owner}`] : []),
+      ...protectionLines(claimProtection(reviewBoardOf(view), found.intent.expiresAt, until, null), (lamports) => `${formatAmount(lamports, 9)} SOL`),
     ],
-    key: `${secs}:${view.stake}`,
+    key: `${secs}:${view.stake}:${view.reviewSecs}:${view.killFee}`,
     done: `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses`,
   };
 }

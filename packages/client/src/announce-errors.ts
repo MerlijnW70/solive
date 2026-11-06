@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import { SdkError } from "@intent-engine/core";
 
-export type NotDeliverableReason = "no-shared-secret" | "claim-held" | "not-a-proof-escrow" | "not-open" | "announced-unseen";
+export type NotDeliverableReason = "no-shared-secret" | "claim-held" | "not-a-proof-escrow" | "not-open" | "announced-unseen" | "cancel-due";
 
 export class NotDeliverable extends SdkError {
   readonly code = "not-deliverable";

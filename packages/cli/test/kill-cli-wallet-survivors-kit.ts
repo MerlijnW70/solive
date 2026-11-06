@@ -46,7 +46,7 @@ export const movedEvent = (intent: Address, worker: Address, to: Address, role: 
 
 export const queuedEvent = (intent: Address, worker: Address, stake = 50_000_000n) => tagged(getStoodByEventEncoder().encode({ intent, worker, seq: 1, secs: 600, stake }));
 
-export const droppedEvent = (intent: Address, worker: Address, refunded = 50_000_000n) => tagged(getClaimDroppedEventEncoder().encode({ intent, worker, refunded }));
+export const droppedEvent = (intent: Address, worker: Address, refunded = 50_000_000n) => tagged(getClaimDroppedEventEncoder().encode({ intent, worker, refunded, announcement: "11111111111111111111111111111111" as Address }));
 
 export const leftEvent = (intent: Address, worker: Address, refunded = 50_000_000n) => tagged(getLineLeftEventEncoder().encode({ intent, worker, seq: 1, refunded }));
 

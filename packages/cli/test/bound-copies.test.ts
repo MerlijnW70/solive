@@ -59,6 +59,7 @@ const OWNERS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     "CHECK_WINDOW_SECS services/faucet/src/limits.ts": "the faucet's check window",
     "PUT_WINDOW_SECS services/specs/src/limits.ts": "the spec store's upload window",
     "UNPAID_GRACE_SECS services/specs/src/limits.ts": "how long an unpaid spec is kept",
+    "MIN_REVIEW_SECS packages/core/src/claims.ts": "the shortest review window the program takes, from fair closing; not an expiry or poll bound",
   },
   [U64]: {
     "U64_MAX packages/core/src/math.ts": "the one 64-bit bound; every other 64-bit limit imports it",

@@ -145,6 +145,18 @@ export const NOTABLE = new Set([
 
 export type DecodedEvent = { name: string; notable: boolean; fields: object };
 
+export const GROWN_EVENTS: Readonly<Partial<Record<EngineEventName, number>>> = { ClaimDropped: 32, ClaimsOpened: 12 };
+
+function grown(name: EngineEventName, body: Uint8Array): Uint8Array {
+  const added = GROWN_EVENTS[name];
+  if (added === undefined) {
+    return body;
+  }
+  const padded = new Uint8Array(body.length + added);
+  padded.set(body);
+  return padded;
+}
+
 export function decodeEvent(data: Uint8Array): EngineEvent | null {
   if (!EVENT_IX_TAG.every((b, i) => data[i] === b)) {
     return null;
@@ -159,7 +171,11 @@ export function decodeEvent(data: Uint8Array): EngineEvent | null {
   try {
     return { name, notable: NOTABLE.has(name), fields: PARSERS[name](body) } as EngineEvent;
   } catch {
-    return null;
+    try {
+      return { name, notable: NOTABLE.has(name), fields: PARSERS[name](grown(name, body)) } as EngineEvent;
+    } catch {
+      return null;
+    }
   }
 }
 

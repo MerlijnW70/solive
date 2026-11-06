@@ -34,6 +34,9 @@ const viewOf = (over: Partial<ClaimsView>): ClaimsView =>
     cooldown: null,
     line: { head: 0, tail: 0, waiting: 0 },
     list: null,
+    reviewSecs: 0,
+    killFee: 0n,
+    review: null,
     ...over,
   }) as ClaimsView;
 
@@ -94,16 +97,16 @@ describe("a claim taken through the core checks", () => {
     const cooling = await refusal(takeStep(open, escrow, viewOf({ cooldown: { worker: worker.address, until: UNTIL } }), worker, 60));
     expect(cooling).toMatchObject({ code: "ClaimCooldown", hint: coolingDown(escrow.intent, worker.address, UNTIL) });
     const other = await takeStep(open, escrow, viewOf({ cooldown: { worker: holder, until: UNTIL } }), worker, 60);
-    expect(other.key).toBe("60:50000000");
+    expect(other.key).toBe("60:50000000:0:0");
   });
 
   it("decides on the clock it reads now, as the program does", async () => {
     const { escrow, holder, worker } = await actors();
     const late = clientAt(UNTIL);
     const lapsed = await takeStep(late, escrow, heldView(holder), worker, 60);
-    expect(lapsed.key).toBe("60:50000000");
+    expect(lapsed.key).toBe("60:50000000:0:0");
     const cooled = await takeStep(late, escrow, viewOf({ cooldown: { worker: worker.address, until: UNTIL } }), worker, 60);
-    expect(cooled.key).toBe("60:50000000");
+    expect(cooled.key).toBe("60:50000000:0:0");
   });
 
   it("names only errors the program has", () => {

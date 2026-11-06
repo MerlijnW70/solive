@@ -6,6 +6,7 @@ import { BookNotClosable, connect, CosignRejected, createClient, NotRefutable, N
 import { budgeted, PACKET_DATA_SIZE, RECLAIM_BATCH, transactionBytes } from "../src/internal.js";
 import { FEE_BPS, world } from "./svm.js";
 import { announced, fundedSigner, keyed, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const WORK = sha("the refuted work");
 const PAY = 1_000_000n;
@@ -59,7 +60,7 @@ describe("refuting, reclaiming and closing", () => {
       signatures: [],
     });
     await expect(client.closeBook(intent, owner)).rejects.toThrow(BookNotClosable);
-    await client.cancel(owner, { owner: owner.address, nonce });
+    await cancelAfterNotice(client, w.chain.svm, owner, { owner: owner.address, nonce });
     await expect(client.closeBook(intent, owner)).rejects.toThrow("still holds 2 announcements");
     const [workerBefore, relayerBefore] = [w.chain.svm.getBalance(worker.address) ?? 0n, w.chain.svm.getBalance(relayer.address) ?? 0n];
     const rent = w.chain.svm.getBalance(relayed.announcement) ?? 0n;
@@ -86,7 +87,7 @@ describe("refuting, reclaiming and closing", () => {
       const params = { kind: Kind.AttestedResult, amountIn: 1_000n, minResult: 1n, maxResult: 1n, attestor: judge.signer.address, specHash: specHash("the spec"), judgeFee: 0n } as const;
       const made = await client.createIntent({ signer: owner, params, inputMint: NATIVE_MINT, outputMint: w.outputMint });
       await client.announce({ worker, payer: await fundedSigner(w), intent: made.intent, sha256: WORK, url: workUrl() });
-      await client.cancel(owner, { owner: owner.address, nonce: made.nonce });
+      await cancelAfterNotice(client, w.chain.svm, owner, { owner: owner.address, nonce: made.nonce });
       intents.push(made.intent);
     }
     const { announcements: mine } = await client.announcementsBy(worker.address);

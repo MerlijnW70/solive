@@ -11,7 +11,7 @@ import { loadCommittee } from "./client-committee.js";
 import { loadClaims, loadProfile } from "./client-claims.js";
 import { reputationOf } from "./reputation.js";
 export { type CommitteeCreatePlan, type EscrowCommittee, escrowCommittee, loadCommittee } from "./client-committee.js";
-export { type CancelClaims, cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
+export { type CancelClaims, cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile, reviewOf, type ReviewView } from "./client-claims.js";
 import { committeeSettlement, proofBallotOf } from "./client-settle.js";
 import { TransportLacks } from "./client-errors.js";
 export { committeeJudged } from "./client-settle.js";
@@ -30,6 +30,8 @@ import { amountShown, amountText } from "./simple-tokens.js";
 import { firstOpening, openings } from "./first-opening.js";
 import { heldSharesOf } from "./held-shares.js";
 import { observerOf } from "./observe.js";
+import { cancelState } from "./fair-close.js";
+import { rejectPlans } from "./fair-reject.js";
 import { observedFetch, observedTransport } from "./observe-transport.js";
 import { cappedTransport } from "./capped-transport.js";
 import { checkedLimits, limitedTransport, waitUnless } from "./rpc-limits.js";
@@ -150,6 +152,7 @@ export function createClient(options: ClientOptions): Client {
   const proofBallot = proofBallotOf(context);
   const { committeeBallot } = committeeSettlement(context);
   const { splitBallot } = splitSettlement(context);
+  const { rejectBallot } = rejectPlans(context);
 
   return {
     url,
@@ -207,6 +210,8 @@ export function createClient(options: ClientOptions): Client {
     openings: (input) => openings(transport, input),
     splitBallot,
     heldShares: (wallet, options) => heldSharesOf(transport, wallet, options),
+    cancelState: (ref) => cancelState(transport, ref),
+    rejectBallot,
     ...planWrites(send, plan),
   };
 }

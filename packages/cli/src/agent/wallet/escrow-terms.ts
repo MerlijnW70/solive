@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { type DeliveryOpener, formatAmount } from "@intent-engine/core";
-import { isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, sealedTo } from "@intent-engine/core/internal";
+import { checkReviewTerms, isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MAX_REVIEW_SECS, MIN_REVIEW_SECS, sealedTo } from "@intent-engine/core/internal";
 import { loadCommittee, MAX_SPEC_BYTES, type Transport } from "@intent-engine/client/internal";
 import { tooLarge } from "../../delivery-fetch.js";
 import type { AgentContext } from "../actions.js";
@@ -12,6 +12,7 @@ import type { ClaimTerms, SpecRead } from "./escrow-claims.js";
 import { raw } from "./guard.js";
 import { malformedRun, openedSpec, SEALED_UNCHECKED } from "./seal.js";
 import { runProblem } from "../../judge-run.js";
+import { DEFAULT_REVIEW_SECS, reviewLine } from "../../fair-lines.js";
 
 export { malformedRun, refuseMalformedText } from "./seal.js";
 
@@ -87,15 +88,45 @@ export const CLAIMS_NEED_SPEC = "claims need spec_hash, since only a proof escro
 export const claimInputs = {
   claim_stake: optional(text(`whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least the rent-exempt minimum of an empty account on the cluster; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash`)),
   claim_secs: optional(integer(1, MAX_CLAIM_SECS, "the longest a worker may hold the job by claiming it, in seconds; with claim_stake")),
+  review_secs: optional(integer(0, MAX_REVIEW_SECS, `with claims: the seconds the judge has to release or reject the holder's first delivery, during which this wallet cannot cancel; 0, or ${MIN_REVIEW_SECS} to ${MAX_REVIEW_SECS}; default ${DEFAULT_REVIEW_SECS}`)),
+  kill_fee: optional(text("with claims: whole SOL this wallet locks on the claims board and pays the holder if the judge neither releases nor rejects its delivery in the review window; 0 or at least the rent-exempt minimum; default the claim stake, or 0 without a stake or review")),
 };
 
-type Claims = ClaimTerms & { line: string };
+type Claims = ClaimTerms & { line: string; lines: string[] };
 
 export const claimsLine = (secs: number, stake: string, every: boolean) =>
   `Opens: claims on ${every ? "every piece" : "the escrow"}; a worker can hold the job for up to ${secs} seconds by staking ${stake} SOL`;
 
-export async function claimTerms(input: { claim_stake?: string | undefined; claim_secs?: number | undefined }, every: boolean, transport: Transport): Promise<Claims | undefined> {
+type ReviewInput = { review_secs?: number | undefined; kill_fee?: string | undefined };
+
+export function reviewOf(input: ReviewInput, stake: bigint, floor: bigint | undefined): { reviewSecs: number; killFee: bigint } {
+  const reviewSecs = input.review_secs ?? DEFAULT_REVIEW_SECS;
+  const killFee = input.kill_fee === undefined ? (reviewSecs === 0 ? 0n : stake) : raw(input.kill_fee, 9, "kill_fee");
+  try {
+    checkReviewTerms(reviewSecs, killFee, stake, floor);
+  } catch (error) {
+    const path = reviewSecs !== 0 && (reviewSecs < MIN_REVIEW_SECS || reviewSecs > MAX_REVIEW_SECS) ? "review_secs" : "kill_fee";
+    throw new InvalidInput([{ path, message: `a review window is 0 or ${MIN_REVIEW_SECS} to ${MAX_REVIEW_SECS} seconds; a kill fee needs a review window and a claim stake, is 0 or at least the rent-exempt minimum, and is at most ${formatAmount(MAX_CLAIM_STAKE, 9)} SOL: ${error instanceof Error ? error.message : String(error)}` }]);
+  }
+  return { reviewSecs, killFee };
+}
+
+export function escrowExpiresIn(given: number | undefined, claims: { maxSecs: number; reviewSecs?: number } | undefined, base: number): number {
+  const review = claims?.reviewSecs ?? 0;
+  if (given === undefined) {
+    return base + review;
+  }
+  if (claims !== undefined && review > 0 && given < claims.maxSecs + review) {
+    throw new InvalidInput([{ path: "expires_in", message: `must be at least claim_secs plus review_secs, ${claims.maxSecs + review} seconds, so a worker can claim the job and the judge still has the whole review window before expiry; or give a shorter review_secs` }]);
+  }
+  return given;
+}
+
+export async function claimTerms(input: { claim_stake?: string | undefined; claim_secs?: number | undefined } & ReviewInput, every: boolean, transport: Transport): Promise<Claims | undefined> {
   if (input.claim_stake === undefined && input.claim_secs === undefined) {
+    if (input.review_secs !== undefined || input.kill_fee !== undefined) {
+      throw new InvalidInput([{ path: input.review_secs !== undefined ? "review_secs" : "kill_fee", message: "a review needs claims: give claim_stake and claim_secs too" }]);
+    }
     return undefined;
   }
   if (input.claim_stake === undefined || input.claim_secs === undefined) {
@@ -105,11 +136,13 @@ export async function claimTerms(input: { claim_stake?: string | undefined; clai
   if (stake > MAX_CLAIM_STAKE) {
     throw new InvalidInput([{ path: "claim_stake", message: `must be at most ${formatAmount(MAX_CLAIM_STAKE, 9)}` }]);
   }
-  const floor = stake > 0n ? await claimFloor(transport) : undefined;
-  if (floor !== undefined && stake < floor) {
+  const floor = stake > 0n || (input.kill_fee !== undefined && input.kill_fee.trim() !== "0") ? await claimFloor(transport) : undefined;
+  if (floor !== undefined && stake > 0n && stake < floor) {
     throw new InvalidInput([{ path: "claim_stake", message: stakeBelowRent(floor) }]);
   }
   const maxSecs = input.claim_secs;
-  return { line: claimsLine(maxSecs, formatAmount(stake, 9), every), maxSecs, stake, ...(floor === undefined ? {} : { floor }) };
+  const review = reviewOf(input, stake, floor);
+  const line = claimsLine(maxSecs, formatAmount(stake, 9), every);
+  return { line, lines: [reviewLine(review.reviewSecs, review.killFee), line], maxSecs, stake, ...review, ...(floor === undefined ? {} : { floor }) };
 }
 

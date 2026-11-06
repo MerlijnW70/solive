@@ -26,7 +26,7 @@ describe("the claim stake of an escrow", () => {
     h.watched.push(wallet);
   });
 
-  const withStake = (stake: string) => call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "5c".repeat(32), claim_stake: stake, claim_secs: 600 });
+  const withStake = (stake: string) => call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "5c".repeat(32), claim_stake: stake, claim_secs: 600, review_secs: 0 });
 
   it("takes no stake, the smallest stake and the largest stake, and refuses one lamport either side", async () => {
     expect((await withStake("0")).error).toBe(false);
@@ -54,7 +54,7 @@ describe("what an escrow warns about before and after it is sent", () => {
     const terms = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "5c".repeat(32) };
     expect((await ok(client, "wallet_escrow", terms))["warnings"]).toContain(SPEC_NO_ANSWER);
     expect(JSON.stringify((await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", terms)))["warnings"])).not.toContain("the earliest announcer is paid");
-    const claimed = { ...terms, claim_stake: "0.01", claim_secs: 600 };
+    const claimed = { ...terms, claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     expect((await ok(client, "wallet_escrow", claimed))["warnings"]).toContain(SPEC_ANSWER_OUT);
     expect(JSON.stringify((await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", claimed)))["warnings"])).not.toContain("the earliest announcer is paid");
     const unlisted = { sell: "SOL", amount: "0.05", attestor: wallet };

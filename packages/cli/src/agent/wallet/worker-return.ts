@@ -7,13 +7,12 @@ import {
   buildSettleClaims,
   CLAIM_BOARD_DISCRIMINATOR,
   claimSlot,
-  decodeClaimBoardAccount,
   decodeStandbyAccount,
   STANDBY_DISCRIMINATOR,
   stakeReceiverOnSettle,
 } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
-import { chainTime, intentAt, isLedgerPath, mintOf, unmemoized } from "@intent-engine/client/internal";
+import { chainTime, intentAt, isLedgerPath, mintOf, readBoard, unmemoized } from "@intent-engine/client/internal";
 import type { Client, EngineAccount, Transport } from "@intent-engine/client";
 import { keptLines } from "../../announcement-views.js";
 import { listAccount } from "../../claim-lists.js";
@@ -128,7 +127,7 @@ export async function workerStakes(transport: Transport, worker: Address): Promi
   for (const found of boards) {
     let board;
     try {
-      board = decodeClaimBoardAccount(found.data);
+      board = readBoard(found.data);
     } catch {
       throw new AgentRefusal("WorkerBusy", boardUnread(found.address));
     }
@@ -136,15 +135,17 @@ export async function workerStakes(transport: Transport, worker: Address): Promi
       continue;
     }
     const open = await isOpen(transport, board.intent, now);
-    if (open && claimSlot(board, now).state === "held") {
+    const lapsed = board.reviewUntil !== 0n && now >= board.reviewUntil;
+    if (open && claimSlot(board, now).state === "held" && !lapsed) {
       throw new AgentRefusal("WorkerBusy", claimHeldOpen(worker, board.intent));
     }
     const receiver = stakeReceiverOnSettle(board, now, open) ?? board.owner;
+    const killFee = board.reviewUntil !== 0n && receiver === worker ? board.killFee : 0n;
     const view = await claimOf(transport, board.intent);
     settles.push({
       instruction: await buildSettleClaims({ intent: board.intent, owner: board.owner, worker, ...listAccount(view?.list ?? null) }),
-      line: settleLine(worker, board.intent, board.held, receiver),
-      toWorker: receiver === worker ? board.held : 0n,
+      line: settleLine(worker, board.intent, board.held + killFee, receiver),
+      toWorker: receiver === worker ? board.held + killFee : 0n,
     });
   }
   return settles;

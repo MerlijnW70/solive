@@ -197,7 +197,7 @@ describe("the escrow spec check", () => {
     const terms = { sell: "SOL", amount: "0.05", spec_hash: sha(SPEC), spec_url: SEALED_URL };
     const missed = warnings(await ok(client, "wallet_escrow", { ...terms, attestor: judge }));
     expect(missed).toContain(notSealedTo([judge], false));
-    const covered = await ok(client, "wallet_escrow", { ...terms, attestor: owner, claim_stake: "0.01", claim_secs: 600 });
+    const covered = await ok(client, "wallet_escrow", { ...terms, attestor: owner, claim_stake: "0.01", claim_secs: 600, review_secs: 0 });
     expect(warnings(covered).filter((line) => line.startsWith("spec_url holds a spec not sealed"))).toEqual([]);
     expect(covered["summary"]).toContain(sealedLimits([worker]));
     const plan = await ok(client, "wallet_escrow_plan", {
@@ -206,7 +206,7 @@ describe("the escrow spec check", () => {
       spec_hash: sha(SPEC),
       spec_url: SEALED_URL,
       claim_stake: "0.01",
-      claim_secs: 600,
+      claim_secs: 600, review_secs: 0,
       pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01", attestor: owner }],
     });
     expect(warnings(plan)).toContain(`Piece 1 (a): ${notSealedTo([judge], false)}`);

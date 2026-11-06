@@ -7,6 +7,7 @@ import { delivery, deliveryBookAddress } from "@intent-engine/core/internal";
 import { createTestWorld, type TestWallet, type TestWorld } from "../src/testing.js";
 import { MONEY_SECTION } from "./doc-sections.js";
 import { workUrl } from "./work.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const SECTION = MONEY_SECTION.exec(readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8"))?.[0] ?? "";
@@ -97,7 +98,7 @@ describe("the section of the client page on what a release moves", () => {
     const rent = await lamportsOf(world, made.announcement);
     const idleBook = await lamportsOf(world, await deliveryBookAddress(unpaid.intent));
     expect((await world.client.plan.reclaim({ worker: idle })).kept).toEqual([made.announcement]);
-    await world.client.cancel(unpaid.owner, unpaid.intent);
+    await cancelAfterNotice(world.client, world.svm, unpaid.owner, unpaid.intent);
     const idleBefore = solOf(world, idle);
     expect(await world.client.reclaim({ worker: idle })).toMatchObject({ closed: [made.announcement], books: [await deliveryBookAddress(unpaid.intent)] });
     expect(solOf(world, idle) - idleBefore).toBe(rent + idleBook - 2n * SIGNATURE_FEE);

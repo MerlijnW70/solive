@@ -133,7 +133,7 @@ describe("a wallet send bound to what its preview showed", () => {
 
   it("refuses an escrow whose sealed spec was sealed to another worker after its preview, and keeps a re-seal to the same wallets", async () => {
     const [judge, worker, intruder] = [address(), address(), address()];
-    const terms = { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600 };
+    const terms = { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     h.specPages.set(SPEC_URL, await sealedTo([owner, judge, worker]));
     const preview = await ok(client, "wallet_escrow", terms);
     expect(preview).toMatchObject({ sent: false, next: PREVIEW_APPROVAL_NEXT, approval: expect.stringMatching(/^[0-9a-f]{16}$/) });
@@ -163,7 +163,7 @@ describe("a wallet send bound to what its preview showed", () => {
 
   it("refuses a plan whose sealed spec was sealed to another worker after its preview, before escrowing any piece", async () => {
     const [judge, worker, intruder] = [address(), address(), address()];
-    const plan = { sell: "SOL", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }] };
+    const plan = { sell: "SOL", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }] };
     h.specPages.set(SPEC_URL, await sealedTo([owner, judge, worker]));
     const preview = await ok(client, "wallet_escrow_plan", plan);
     expect(preview).toMatchObject({ sent: false, next: PREVIEW_APPROVAL_NEXT, approval: expect.stringMatching(/^[0-9a-f]{16}$/) });

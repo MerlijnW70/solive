@@ -20,6 +20,7 @@ import { announce, call as callTool, COUNT, KEY_FILE, LEVELS, logged, PATH, publ
 import { cli, DOMAIN, funded, h, runtime, world } from "./harness.js";
 import { keyOf } from "./held-kit.js";
 import { device, found } from "./ledger-device.js";
+import { NO_CLAIMS_UNPROTECTED } from "@intent-engine/client/internal";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -85,10 +86,11 @@ describe("announcing work and judging it", () => {
       `Seals: the salt and the url ${WORK_URL} to ${judgeWallet} (the key derived from its wallet), so only they can open it`,
       "Pays: the announcement's rent and the transaction fee, from this wallet; the rent returns when the announcement closes, and the escrow's tokens do not move",
       bookCreated(bookRent, "this wallet"),
+      `Unprotected: ${NO_CLAIMS_UNPROTECTED}`,
     ]);
     const prepared = await prepare(intent);
     expect(prepared["sync_first"]).toBe(false);
-    expect(prepared["summary"]).toHaveLength(4);
+    expect(prepared["summary"]).toHaveLength(5);
     const other = await keyed();
     const members = sortMembers([judgeWallet, other.address]);
     const payer = await funded();
@@ -97,7 +99,7 @@ describe("announcing work and judging it", () => {
     const committee = created.json()["committee"] as Address;
     const teamed = await hire(committee, "6e");
     const syncing = await ok(worker, "wallet_deliver", { intent: teamed["intent"], sha256: WORK, url: WORK_URL });
-    expect(syncing["summary"]).toHaveLength(5);
+    expect(syncing["summary"]).toHaveLength(6);
     expect((syncing["summary"] as string[])[4]).toBe(`Syncs first, in its own transaction: the key snapshot of committee ${committee}`);
     const sync = await prepare(teamed["intent"] as Address);
     expect(sync["sync_first"]).toBe(true);

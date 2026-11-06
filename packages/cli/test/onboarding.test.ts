@@ -149,7 +149,7 @@ describe("refusals for orders the wallet does not have", () => {
   });
 
   it("claims open does the same for a nonce the wallet never escrowed", async () => {
-    const run = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "9", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
+    const run = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "9", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
     expect(run.code).toBe(EXIT_FAILED);
     expect(run.err).toBe(noOrder(w.owner.address, 9n));
   });

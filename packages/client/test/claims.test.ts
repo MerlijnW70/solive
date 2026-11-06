@@ -29,6 +29,7 @@ const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the claims spec").digest());
 const STAKE = 50_000_000n;
 const SIGNATURE_FEE = 5_000n;
+const UNREVIEWED = { reviewSecs: 0, killFee: 0n, reviewUntil: null };
 const NONE = "11111111111111111111111111111111" as Address;
 const WORK = sha("the claimed work");
 
@@ -104,7 +105,7 @@ describe("claimed escrows", () => {
   it("client.claims reports free, held and lapsed from the chain's clock", async () => {
     const s = await setup();
     const board = await claimBoardAddress(s.intent);
-    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null, line: { head: 0, tail: 0, waiting: 0 }, list: null };
+    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null, line: { head: 0, tail: 0, waiting: 0 }, list: null, reviewSecs: 0, killFee: 0n, review: null };
     expect(await s.client.claims({ owner: s.owner.address, nonce: s.nonce })).toEqual({ ...terms, state: "free", worker: null, until: 0n, secondsLeft: 0n });
     await s.claim(s.worker);
     const now = s.w.chain.svm.getClock().unixTimestamp;
@@ -197,13 +198,13 @@ describe("claimed escrows", () => {
     const views = await loadClaimsOf(counted, [s.intent, bare]);
     expect(calls).toEqual(["many"]);
     expect(views).toEqual([await s.client.claims({ owner: s.owner.address, nonce: s.nonce }), null]);
-    expect(views.map(jobClaimOf)).toEqual([{ takesClaims: true, claimedBy: s.worker.address, claimEnds: views[0]?.until, waiting: 0 }, { takesClaims: false, claimedBy: null, claimEnds: null, waiting: 0 }]);
+    expect(views.map(jobClaimOf)).toEqual([{ takesClaims: true, claimedBy: s.worker.address, claimEnds: views[0]?.until, waiting: 0, ...UNREVIEWED }, { takesClaims: false, claimedBy: null, claimEnds: null, waiting: 0, ...UNREVIEWED }]);
     expect(await loadClaimsOf(counted, [])).toEqual([]);
     expect(calls).toEqual(["many"]);
     const clock = s.w.chain.svm.getClock();
     clock.unixTimestamp += 601n;
     s.w.chain.svm.setClock(clock);
-    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ takesClaims: true, claimedBy: null, claimEnds: null, waiting: 0 }]);
+    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ takesClaims: true, claimedBy: null, claimEnds: null, waiting: 0, ...UNREVIEWED }]);
   });
 
   it("reads the line, names the first worker still in it and the holes before it, and a drop hands the job over", async () => {

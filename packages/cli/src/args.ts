@@ -428,6 +428,7 @@ function parseCommand(argv: readonly string[], env: Env): Command {
     case "reputation":
     case "feedback":
     case "claims":
+    case "reject":
     case "profile":
       return trustOf(verb, sub, remote, values, third);
     case "approve":

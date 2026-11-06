@@ -11,6 +11,8 @@ import { shown } from "../src/shown.js";
 import { testSignature } from "../src/testing.js";
 import { funded, onDevnet, world, type World } from "./svm.js";
 import { keyed, sha, workUrl } from "./work.js";
+import { passNotice } from "./notice.js";
+import { NOTICE_SECS } from "../src/internal.js";
 
 const WORK = sha("the kill simple work");
 const SPEC = sha("the kill simple spec");
@@ -257,6 +259,11 @@ describe("the work reads and sends of the simple client", () => {
     const preview = await reviewer.release({ escrow, deliveredSha256: WORK, keypair: judge.keypair, preview: true });
     expect(preview.summary).toBe(`Release escrow ${escrow} holding 0.0075 SOL to ${worker.address} for work ${WORK}, announced first in ${announcement}`);
     const buyer = await at(owner, part);
+    expect((await buyer.cancel({ escrow, preview: true })).summary).toBe(
+      `Request a cancel of ${escrow}: work was announced to it, so it can be cancelled ${NOTICE_SECS} seconds after this request lands; cancel again then`,
+    );
+    await (await at(owner)).cancel({ escrow });
+    passNotice(w.chain.svm);
     expect((await buyer.cancel({ escrow, preview: true })).summary).toBe(`Cancel ${escrow} and return 0.0075 SOL to ${owner.address}`);
     const unrelated = await at(owner, await filledAt(w, escrow, 2_500_000n));
     expect((await unrelated.cancel({ escrow, preview: true })).summary).toBe(`Cancel ${escrow} and return 0.01 SOL to ${owner.address}`);

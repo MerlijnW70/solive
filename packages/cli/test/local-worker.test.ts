@@ -43,6 +43,7 @@ import {
   WALLET,
   workerFiles,
   workFile,
+  cancelledOver,
 } from "./local-worker-kit.js";
 import { guideOf } from "./served-texts.js";
 
@@ -162,7 +163,7 @@ describe("a local worker for any job", () => {
   describe("a job a worker could not satisfy", () => {
     it("is refused once cancelled", async () => {
       const { intent, nonce } = await hire(false);
-      await ok(hirer, "wallet_cancel", { nonce, close: false, send: true });
+      await cancelledOver(hirer, nonce);
       const refused = await call(hirer, "wallet_worker", { intent, send: true });
       expect(refused.value).toMatchObject({ code: expect.stringMatching(/WorkerUnfit|NotFound/) });
       if (refused.value["code"] === "WorkerUnfit") {

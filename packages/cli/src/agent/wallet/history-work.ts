@@ -16,10 +16,35 @@ export const SOL_DECIMALS = 9;
 export const STAKE_OUTCOMES = ["held", "returned", "forfeited", "unknown"] as const;
 type StakeOutcome = (typeof STAKE_OUTCOMES)[number];
 
-export const UNPAID_REASONS = ["released_to_other", "open", "cancelled", "expired", "unknown"] as const;
+export const UNPAID_REASONS = ["released_to_other", "rejected", "open", "cancelled", "expired", "unknown"] as const;
 type UnpaidReason = (typeof UNPAID_REASONS)[number];
 
 const CLAIM_ACTIONS = ["claimed", "dropped", "queued", "left"] as const;
+
+export const REVIEW_STATES = ["armed", "lapsed"] as const;
+
+type Fairness = { review?: (typeof REVIEW_STATES)[number]; review_until?: bigint; cancel_at?: bigint; rejected: boolean };
+
+export function fairnessOf(transactions: readonly EngineTransaction[], intent: Address, announcement: Address): Fairness {
+  const found: Fairness = { rejected: false };
+  for (const event of eventsIn(transactions)) {
+    const fields = event.fields as Record<string, unknown>;
+    if (fields["intent"] !== intent) {
+      continue;
+    }
+    if (event.name === "CancelRequested") {
+      found.cancel_at = event.fields.cancelAt;
+    } else if (event.name === "ReviewArmed" && event.fields.announcement === announcement) {
+      found.review = found.review ?? "armed";
+      found.review_until = event.fields.reviewUntil;
+    } else if (event.name === "ReviewLapsed" && event.fields.announcement === announcement) {
+      found.review = "lapsed";
+    } else if (event.name === "DeliveryRejected" && event.fields.announcement === announcement) {
+      found.rejected = true;
+    }
+  }
+  return found;
+}
 type ClaimAction = (typeof CLAIM_ACTIONS)[number];
 
 const landedAt = (what: string) => nullable(time(`unix seconds ${what} landed, when the cluster reports it`));
@@ -39,10 +64,13 @@ export const workItem = object({
   unpaid_reason: nullable(
     choice(
       UNPAID_REASONS,
-      "null when paid; released_to_other: a release paid released_to, not this wallet; open: the escrow is still open; cancelled or expired: it ended unpaid; unknown: not found",
+      "null when paid; released_to_other: a release paid released_to, not this wallet; rejected: the judge rejected this announcement; open: the escrow is still open; cancelled or expired: it ended unpaid; unknown: not found",
     ),
   ),
   released_to: nullable(account("with released_to_other: the wallet the release paid; for a split, its first recipient")),
+  review: optional(choice(REVIEW_STATES, `armed: this announcement armed a review that ran or runs until review_until; lapsed: the judge let it end with no release or reject, and the stake and kill fee went or go to the holder with ${tool("wallet_claim")} action collect`)),
+  review_until: optional(time("with review: when the judge's review ended or ends")),
+  cancel_at: optional(time("when the escrow's owner requested a cancel: from this time the cancel can land")),
 });
 
 export const claimItem = object({
@@ -159,7 +187,8 @@ export async function workOf(transport: Transport, wallet: Address, transactions
     const lookup = lookups.get(intent) ?? releaseLookup(transport, intent);
     lookups.set(intent, lookup);
     const paid = await paidFor(transport, delivery, wallet, await lookup, tokens);
-    const unpaid = paid === null ? await unpaidOf(transport, intent, wallet, await lookup) : { reason: null, releasedTo: null };
+    const { rejected, ...fair } = fairnessOf([...transactions, ...(await lookup).transactions], intent, announcement);
+    const unpaid = paid !== null ? { reason: null, releasedTo: null } : rejected ? { reason: "rejected" as const, releasedTo: null } : await unpaidOf(transport, intent, wallet, await lookup);
     work.push({
       intent,
       announcement,
@@ -173,6 +202,7 @@ export async function workOf(transport: Transport, wallet: Address, transactions
       ...(paid?.returned === undefined ? {} : { returned: paid.returned, ...(paid.returned_in === undefined ? {} : { returned_in: paid.returned_in }) }),
       unpaid_reason: unpaid.reason,
       released_to: unpaid.releasedTo,
+      ...fair,
     });
   }
   return { work, more: announced.length > limit };

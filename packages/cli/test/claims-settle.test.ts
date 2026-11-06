@@ -78,7 +78,7 @@ describe("settling a claims board from the wallet tools", () => {
   });
 
   async function escrow() {
-    const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600 }));
+    const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600, review_secs: 0 }));
     const intent = made["intent"] as Address;
     const nonce = made["nonce"] as string;
     return { intent, nonce, board: await claimBoardAddress(intent), ref: { owner: wallet, nonce } };

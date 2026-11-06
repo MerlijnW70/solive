@@ -1,7 +1,7 @@
 import { type Address, getAddressDecoder, type Instruction, type TransactionPartialSigner, type TransactionSigner } from "@solana/kit";
 import { IntentStatus } from "@intent-engine/core";
-import { buildCloseDeliveryBook, decodeDeliveryBookAccount } from "@intent-engine/core/internal";
-import { BOOK_BATCH, batched, booksPaidBy, intentAt, unmemoized } from "@intent-engine/client/internal";
+import { buildCloseDeliveryBook } from "@intent-engine/core/internal";
+import { BOOK_BATCH, batched, booksPaidBy, intentAt, readBook, unmemoized } from "@intent-engine/client/internal";
 import type { Transport } from "@intent-engine/client";
 import { execute } from "../../flows.js";
 import { tool } from "../names.js";
@@ -86,7 +86,7 @@ export async function booksOf(transport: Transport, worker: Address, key: Transa
   for (const { address, data, lamports } of found) {
     let book;
     try {
-      book = decodeDeliveryBookAccount(data);
+      book = readBook(data);
     } catch {
       books.open.push(address);
       books.kept.push(bookUnread(address, keypair));

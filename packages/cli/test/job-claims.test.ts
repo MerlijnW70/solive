@@ -32,7 +32,7 @@ async function job() {
   const keys = { "owner.json": w.owner, "worker.json": worker, "rival.json": rival, "payer.json": payer };
   const ref = ["--owner", w.owner.address, "--nonce", "0"];
   const run = (args: string[]) => cli(args, keys);
-  const open = () => run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
+  const open = () => run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
   const show = async () => (await run(["claims", "show", ...ref])).json();
   const sol = (address: Address) => h.svm.getBalance(address) ?? 0n;
   return { w, client, intent, worker, rival, payer, ref, run, open, show, sol };
@@ -59,16 +59,16 @@ describe("job claims from the command line", () => {
     const board = await claimBoardAddress(j.intent);
     const none = await j.run(["claims", "show", ...j.ref]);
     expect([none.code, none.err]).toEqual([EXIT_FAILED, noClaims(j.intent)]);
-    const preview = await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05"]);
+    const preview = await j.run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05"]);
     expect(preview.json()).toMatchObject({ intent: j.intent, board, sent: false, next: NOT_SENT });
     expect(h.svm.getAccount(board).exists).toBe(false);
-    expect((await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "101"])).code).toBe(EXIT_USAGE);
+    expect((await j.run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "101"])).code).toBe(EXIT_USAGE);
     for (const stake of ["0.000000001", "0.000890879"]) {
-      const below = await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", stake]);
+      const below = await j.run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", stake]);
       expect([below.code, below.err]).toEqual([EXIT_FAILED, stakeBelowRent(890_880n)]);
     }
     expect(STAKE_FORMAT).toContain("0 or at least the rent-exempt minimum of an empty account on the cluster");
-    expect((await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.00089088"])).json()).toMatchObject({ sent: false });
+    expect((await j.run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.00089088"])).json()).toMatchObject({ sent: false });
     expect((await j.open()).json()).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(await j.show()).toMatchObject({ intent: j.intent, board, state: "free", worker: null, stake: STAKE.toString(), max_secs: 3600, owner: j.w.owner.address });
 

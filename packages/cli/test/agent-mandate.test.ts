@@ -1,4 +1,6 @@
-import { type KeyPairSigner } from "@solana/kit";
+import { type Address, type KeyPairSigner } from "@solana/kit";
+import { cancelNotReadyText, cancelStateAt } from "@intent-engine/client/internal";
+import { plantBook } from "./local-worker-kit.js";
 import { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
@@ -159,6 +161,16 @@ describe("mandates through the agent server", () => {
     expect(third["summary"]).toContain("None of the agent's intents under it are open");
     expect(third["allowance"]).toBe("0");
     expect(REVOKE_CANCELS).toBe(6);
+  });
+
+  it("revoke leaves an intent with an announcement to the two-step cancel, saying why", async () => {
+    await execute((await ok(client, "prepare_mandate", grant()))["prepared"], w.owner);
+    const intent = (await ok(client, "agent_create", { owner: w.owner.address, order: order("300", "150"), expires_in: 600 }))["intent"] as Address;
+    await plantBook(w.owner.address, intent);
+    const revoke = await ok(client, "prepare_revoke_mandate", { owner: w.owner.address, agent: agent.address });
+    expect([revoke["cancelled"], revoke["cancels"], revoke["still_open"]]).toEqual([[], [], 1]);
+    expect(revoke["skipped"]).toEqual([{ intent, reason: `it ${cancelNotReadyText(await cancelStateAt(transport, intent, 0))}` }]);
+    expect((revoke["skipped"] as { reason: string }[])[0]?.reason).toContain("first requests a cancel");
   });
 
   it("revoke succeeds when a cancel cannot refund", async () => {

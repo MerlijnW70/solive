@@ -3,7 +3,7 @@ import { AccountState, getRevokeInstruction, getTokenDecoder } from "@solana-pro
 import { formatAmount, IntentStatus, findAssociatedTokenAddress } from "@intent-engine/core";
 import { buildApproveDelegate, buildCancelIntent, buildRevokeMandate, tokenOf } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
-import { cancelClaims, createdAccount, mintOf, TOKEN_PROGRAMS, tokenProgramOf } from "@intent-engine/client/internal";
+import { cancelClaims, cancelNotReadyText, cancelStateAt, createdAccount, mintOf, TOKEN_PROGRAMS, tokenProgramOf } from "@intent-engine/client/internal";
 import { vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
@@ -109,6 +109,11 @@ export const prepareRevokeMandate = define({
       const refund = await refundProblem(transport, input.owner, state.inputMint, tokenProgram);
       if (refund.problem !== null) {
         skipped.push({ intent, reason: skipReason(refund.account, refund.problem) });
+        continue;
+      }
+      const stage = await cancelStateAt(transport, intent, state.claims);
+      if (stage.stage !== "now") {
+        skipped.push({ intent, reason: `it ${cancelNotReadyText(stage)}` });
         continue;
       }
       const claims = await cancelClaims(transport, intent, state.claims);

@@ -70,11 +70,11 @@ describe("the claim stake floor follows the cluster rent", () => {
     for (const rate of Object.values(RATES)) {
       rented(rate);
       const floor = 128n * rate;
-      const terms = (stake: bigint) => claimTerms({ claim_stake: stakeOf(stake), claim_secs: 60 }, false, transport);
+      const terms = (stake: bigint) => claimTerms({ claim_stake: stakeOf(stake), claim_secs: 60, review_secs: 0 }, false, transport);
       await expect(terms(floor)).resolves.toMatchObject({ stake: floor, floor });
       await expect(terms(floor - 1n)).rejects.toMatchObject({ issues: [{ path: "claim_stake", message: stakeBelowRent(floor) }] });
     }
-    await expect(claimTerms({ claim_stake: "0", claim_secs: 60 }, false, transport)).resolves.toMatchObject({ stake: 0n });
+    await expect(claimTerms({ claim_stake: "0", claim_secs: 60, review_secs: 0 }, false, transport)).resolves.toMatchObject({ stake: 0n });
   });
 
   it("says what the program says about a stake below it", () => {
@@ -115,7 +115,7 @@ describe("the claim stake floor follows the cluster rent", () => {
     const judge = (await generateKeyPairSigner()).address;
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge, specHash: SPEC, judgeFee: 0n } as const;
     await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    const open = (stake: bigint) => cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "60", "--stake", stakeOf(stake), "--yes"], { "owner.json": w.owner });
+    const open = (stake: bigint) => cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "60", "--stake", stakeOf(stake), "--yes"], { "owner.json": w.owner });
     rented(RATES.low);
     const low = 128n * RATES.low;
     const below = await open(low - 1n);

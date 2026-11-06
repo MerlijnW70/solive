@@ -60,7 +60,7 @@ describe("a claim list from a Ledger wallet", () => {
     await h.served[0]?.connect(near);
     const client = new Client({ name: "test", version: "0.0.0" });
     await client.connect(far);
-    const terms = { sell: "SOL", amount: "0.05", attestor: address(), spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600 };
+    const terms = { sell: "SOL", amount: "0.05", attestor: address(), spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     const result = await client.callTool({ name: tool("wallet_escrow"), arguments: terms });
     const value = result.structuredContent as Json;
     expect(result.isError, JSON.stringify(value)).toBe(true);

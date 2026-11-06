@@ -29,7 +29,10 @@ export type NotSettleableReason =
   | "not-owner"
   | "feedback-given"
   | "not-an-intent"
-  | "not-first-announcer";
+  | "not-first-announcer"
+  | "no-review"
+  | "review-running"
+  | "review-lapsed";
 
 export class NotSettleable extends SdkError {
   readonly code = "not-settleable";

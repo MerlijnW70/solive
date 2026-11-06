@@ -19,6 +19,7 @@ import {
 } from "@intent-engine/core/internal";
 import type { IntentAccount } from "./client-types.js";
 import type { AccountView, Transport } from "./transport.js";
+import { isOldBoard, isOldBook } from "./fair-reads.js";
 
 export const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 
@@ -55,7 +56,7 @@ export async function engineAccount(
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !head.every((b, i) => b === discriminator[i])) {
     throw new NotAnEngineAccount(address, `${address} is not an engine ${what}`);
   }
-  return checkAccountVersion(view.data);
+  return isOldBoard(view.data) || isOldBook(view.data) ? view.data : checkAccountVersion(view.data);
 }
 
 export async function loadIntent(transport: Transport, owner: Address, nonce: bigint): Promise<IntentAccount> {

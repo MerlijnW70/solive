@@ -21,7 +21,7 @@ const transport = {} as unknown as Transport;
 async function setup(worker: Address | null) {
   const owner = (await generateKeyPairSigner()).address;
   const intent = (await generateKeyPairSigner()).address;
-  const view = { board: owner, state: "held", worker, until: 1_600n, secondsLeft: 600n, stake: 5n, owner, list: null } as unknown as ClaimsView;
+  const view = { board: owner, state: "held", worker, until: 1_600n, secondsLeft: 600n, stake: 5n, owner, list: null, reviewSecs: 0, killFee: 0n, review: null } as unknown as ClaimsView;
   return { escrow: { owner, nonce: 0n, intent }, view, owner };
 }
 

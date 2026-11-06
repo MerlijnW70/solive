@@ -1,8 +1,9 @@
 import { createNoopSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
-import { formatAmount } from "@intent-engine/core";
+import { formatAmount, IntentStatus } from "@intent-engine/core";
 import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, heldClaimableUntil, readIntentAccounts, tokenOf } from "@intent-engine/core/internal";
-import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client/internal";
+import { cancelClaims, chainTime, loadIntent, NOTICE_SECS, tokenProgramOf } from "@intent-engine/client/internal";
+import { cancelStep, notYet, requestLines } from "../cancel-steps.js";
 import { closing, CostlyFunding, crankAction, expiring, type Funding, holdsShare, sharesHeld, UnfundedAccount, vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
@@ -27,7 +28,7 @@ export const prepareCancel = define({
   name: tool("prepare_cancel"),
   title: "Prepare a cancel",
   description:
-    "Build the transaction that cancels an open intent and returns what is left in escrow to the owner's token account. The intent account stays readable as cancelled and keeps its rent and bounty until whoever paid them closes it; if the owner paid them, set close to close it in the same transaction and get them back now. Only the owner can sign it.",
+    "Build the transaction that cancels an open intent and returns what is left in escrow to the owner's token account. A proof escrow with an announcement cancels in two steps: the first call builds the cancel request, and once its notice ends a call builds the cancel; stage says which this is, and a call during the notice or a running review is refused with the time left. The intent account stays readable as cancelled and keeps its rent and bounty until whoever paid them closes it; if the owner paid them, set close to close it in the same transaction and get them back now. Only the owner can sign it.",
   effect: "prepare",
   input: object({
     ...intentRef,
@@ -35,7 +36,9 @@ export const prepareCancel = define({
   }),
   output: object({
     intent: account(),
-    refund: amount("raw input units returned to the owner"),
+    stage: optional(choice(["now", "request"], "now: this transaction cancels; request: it requests the cancel, which lands once the notice ends")),
+    ready_at: optional(amount("with stage request: unix seconds from which the cancel itself can land, counted from now")),
+    refund: amount("raw input units returned to the owner; 0 for a request"),
     summary: list(text(), 16, "what signing does, in plain words"),
     warnings: list(text(), 8, "anything to check before signing"),
     prepared: preparedSchema,
@@ -43,6 +46,22 @@ export const prepareCancel = define({
   run: async ({ transport }, input) => {
     const { address, intent } = await loadIntent(transport, input.owner, input.nonce);
     const owner = createNoopSigner(input.owner);
+    const step = await cancelStep(transport, owner, address, intent.claims, intent.status === IntentStatus.Open);
+    if (step.request !== null) {
+      return {
+        intent: address,
+        stage: "request" as const,
+        ready_at: (await chainTime(transport)) + NOTICE_SECS,
+        refund: 0n,
+        summary: requestLines(step.state),
+        warnings: [],
+        prepared: preparedView(await prepare(transport, step.request, input.owner)),
+      };
+    }
+    if (step.state.stage !== "now") {
+      throw new AgentRefusal(step.state.stage === "review" ? "ReviewPending" : "CancelNoticeRunning", notYet(step.state));
+    }
+    const lapsed = step.state.review?.lapsed === true ? [`Pays: the holder of the claim its stake and the kill fee, since the judge's review of ${step.state.review.announcement} ended with no release or reject`] : [];
     const ref = {
       owner: input.owner,
       nonce: input.nonce,
@@ -78,8 +97,10 @@ export const prepareCancel = define({
           );
     return {
       intent: address,
+      stage: "now" as const,
       refund,
       summary: [
+        ...lapsed,
         `Cancels intent ${address} (nonce ${intent.nonce}); nobody can fill it afterwards`,
         ...terms.map((line) => `Cancelled terms: ${line}`),
         `Returns ${formatAmount(refund, decimals.inputDecimals)} of ${tokenOf(intent.inputMint, TOKEN_NAMES[intent.inputMint])} to your token account`,

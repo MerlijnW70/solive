@@ -91,7 +91,7 @@ describe("mint caps", () => {
     expect(client.explain(over)?.name).toBe("MintCapTotal");
 
     await client.cancel(w.owner, { owner: w.owner.address, nonce: first.nonce });
-    expect(created()?.accounts?.at(-3)).toEqual({ address: cap, role: AccountRole.WRITABLE });
+    expect(created()?.accounts?.at(-4)).toEqual({ address: cap, role: AccountRole.WRITABLE });
     expect(await outstanding()).toBe(200n);
     await client.close(w.owner, { owner: w.owner.address, nonce: first.nonce });
     expect(created()?.accounts?.at(-3)).toEqual({ address: INTENT_ENGINE_PROGRAM_ADDRESS, role: AccountRole.READONLY });

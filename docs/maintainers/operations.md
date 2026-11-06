@@ -166,7 +166,7 @@ Fills, releases, cancels, expiries and closes now name the optional mint cap too
    node packages/cli/dist/src/bin.js monitor --write-baseline monitoring/devnet.json --url devnet
    ```
 
-   `verifiable/intent_engine.so` is the CI artifact from step 1 and the hash printed has to equal `<hash>`. The baseline's `programHash` becomes `<hash>`; the client tests fail while the shipped file and `programHash` differ, so a release never ships a program other than the deployed one.
+   `verifiable/intent_engine.so` is the CI artifact from step 1 and the hash printed has to equal `<hash>`. The baseline's `programHash` becomes `<hash>`, and so does `SHIPPED_PROGRAM_HASH` in `packages/client/test/testing.test.ts`, which pins the shipped file; `scripts/pack-test.sh` fails while the shipped file and `programHash` differ, so a release never ships a program other than the deployed one.
 
 A build larger than the program's data account fails at `execute` with `account data too small for instruction`. `solana program show GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU --url devnet` prints that size as `Data Length`. Before executing, any key can grow it with `solana program extend GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU <bytes> --url devnet`, and pays the rent for the extra bytes.
 

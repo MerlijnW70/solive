@@ -33,7 +33,7 @@ async function job(workers?: Address[]) {
     return result.json();
   };
   const listed = workers === undefined ? [] : ["--workers", workers.join(",")];
-  await ok(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", String(MAX), "--stake", "0.05", ...listed, "--yes"]);
+  await ok(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", String(MAX), "--stake", "0.05", ...listed, "--yes"]);
   const refusedVerb = async (name: string, who: string, secs: number) => {
     const result = await run(["claims", name, "--keypair", who, ...ref, ...(name === "advance" || name === "settle" ? [] : ["--secs", String(secs)])]);
     expect(result.code).toBe(EXIT_FAILED);
@@ -98,7 +98,7 @@ describe("the claims commands and the tools refuse alike", () => {
     const j = await job();
     const taking = await j.ok(["claims", "take", "--keypair", "holder.json", ...j.ref, "--secs", String(MAX)]);
     expect(taking["sent"]).toBe(false);
-    expect((await j.tools.take(j.holder, MAX)).key).toBe(`${MAX}:50000000`);
+    expect((await j.tools.take(j.holder, MAX)).key).toBe(`${MAX}:50000000:0:0`);
     await j.ok(["claims", "take", "--keypair", "holder.json", ...j.ref, "--secs", "600", "--yes"]);
     const waiting = await j.ok(["claims", "standby", "--keypair", "other.json", ...j.ref, "--secs", String(MAX)]);
     expect(waiting["sent"]).toBe(false);

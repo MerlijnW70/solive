@@ -5,7 +5,7 @@ import { IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { getAnnouncementSize, getDeliveryBookSize } from "@intent-engine/core/internal";
 import { isSdkError, type ClaimsView } from "@intent-engine/client";
 import { createClient, pinnedFetch } from "@intent-engine/client/node";
-import { chainTime, loadCommittee, loadConfig, loadDeliveryBook, readSpec } from "@intent-engine/client/internal";
+import { announceProtection, chainTime, claimProtection, loadCommittee, loadConfig, loadDeliveryBook, protectionLines, readSpec, reviewBoardOf } from "@intent-engine/client/internal";
 import { newKeyFile } from "../../wallet.js";
 import { type AgentContext, define, specReach, specReadOf } from "../actions.js";
 import { rentFor, rentRate } from "../budget.js";
@@ -42,6 +42,9 @@ import { workerBrief } from "./worker-brief.js";
 export const WORKER_SENDS = 4n;
 
 export const WORKER_ON_DEVICE = "this wallet is a Ledger, which signs only a transaction its preview showed, and a worker's new key exists only once it is sent; fund a worker from a key file wallet";
+
+export const noReviewRoom = (intent: Address, reviewSecs: number): string =>
+  `escrow ${intent} expires too soon for a claim that leaves its judge the whole review window of ${reviewSecs} seconds, so the program refuses every claim; nothing was sent`;
 
 export const WORKER_CHANGED =
   "this worker's funding differs from its preview: its claim stake, rent, network fees or announce fee changed, or no approval was given; preview it again and show the user";
@@ -182,9 +185,14 @@ export const walletWorker = define({
     const board = await claimOf(ctx.transport, intent);
     claimable(intent, board, await chainTime(ctx.transport));
     const left = Number(held.expiresAt - now) - LANDING_SECONDS;
-    if (board !== null && left < 1) {
-      throw new AgentRefusal("WorkerUnfit", jobNotOpen(intent));
+    const secs = Math.min(board?.maxSecs ?? 0, left - (board?.reviewSecs ?? 0));
+    if (board !== null && secs < 1) {
+      throw new AgentRefusal("WorkerUnfit", board.reviewSecs > 0 && left >= 1 ? noReviewRoom(intent, board.reviewSecs) : jobNotOpen(intent));
     }
+    const book = await loadDeliveryBook(ctx.transport, intent);
+    const cancelAt = book === null || book.cancelAt === 0n ? null : book.cancelAt;
+    const protection = board === null ? announceProtection(null, signer.address, held.expiresAt, now, cancelAt) : claimProtection(reviewBoardOf(board), held.expiresAt, now + BigInt(secs), cancelAt);
+    const guarded = protectionLines(protection, sol);
     const key = await newKeyFile();
     const committee = await loadCommittee(ctx.transport, params.attestor);
     separateWorker(key.address, [signer.address, held.owner, params.attestor, ...(committee?.members ?? [])]);
@@ -194,14 +202,14 @@ export const walletWorker = define({
     const funding = await fundingOf(ctx, intent, stake, networkFee({ signers: probe.signers, priority_fee_lamports: probe.priorityLamports }));
     const guard = wallet.limits;
     checkSale(guard, NATIVE_MINT, 9, funding.total, now, await salesOf(wallet, now));
-    const approval = termsApproval({ action: "worker", wallet: signer.address, intent, ...funding });
+    const approval = termsApproval({ action: "worker", wallet: signer.address, intent, ...funding, review_secs: protection.reviewSecs, kill_fee: protection.killFee, arms: protection.arms });
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", WORKER_CHANGED);
     }
     const prepared = preparedView(await prepare(ctx.transport, [transferOf(funding.total)], signer.address));
     const shown = { intent, funding: sol(funding.total), approval, prepared };
     if (input.send !== true) {
-      return sent(ctx, signer, { ...shown, summary: fundingLines(funding, "a new key") }, false, call, { preview: PREVIEW_APPROVAL_NEXT });
+      return sent(ctx, signer, { ...shown, summary: [...fundingLines(funding, "a new key"), ...guarded] }, false, call, { preview: PREVIEW_APPROVAL_NEXT });
     }
     const dir = await workersFolder(wallet);
     const keypair = workerKeyPath(dir, key.address);
@@ -235,10 +243,10 @@ export const walletWorker = define({
       specHash: getBase16Decoder().decode(params.specHash).toLowerCase(),
       keypair,
       rpc: wallet.url,
-      claim: board === null ? undefined : { secs: Math.min(board.maxSecs, left), stake: sol(stake).replace(" SOL", "") },
+      claim: board === null ? undefined : { secs, stake: sol(stake).replace(" SOL", "") },
     });
     try {
-      return await sent(ctx, signer, { ...shown, summary: fundingLines(funding, key.address), worker: key.address, keypair, brief }, true, call, { done: WORKER_NEXT });
+      return await sent(ctx, signer, { ...shown, summary: [...fundingLines(funding, key.address), ...guarded], worker: key.address, keypair, brief }, true, call, { done: WORKER_NEXT });
     } catch (error) {
       if (refusedBeforeSending(error)) {
         await unmake();

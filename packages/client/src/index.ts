@@ -35,7 +35,7 @@ export type { ReclaimBook } from "./reclaim-books.js";
 export type { KeptAnnouncement } from "./reclaim-reasons.js";
 export type { Priority } from "./budget.js";
 export { type ActivityEvent, type ActivityOptions, type ActivityPage, type EscrowTerms, escrowTermsIn, TransactionUnread } from "./client-activity.js";
-export type { ClaimListView, ClaimsView } from "./client-claims.js";
+export type { ClaimListView, ClaimsView, ReviewView } from "./client-claims.js";
 export type { CommitteeCreatePlan } from "./client-committee.js";
 export type { CreateIntentPlan } from "./client-create.js";
 export {
@@ -100,6 +100,9 @@ export type {
 export { createClient } from "./client.js";
 export { type ConfirmField, ConfirmMismatch } from "./confirm-release.js";
 export type { EngineError } from "./errors.js";
+export { type CancelStage, type CancelState, CancelNotReady, type Collectable } from "./fair-close.js";
+export type { RejectBallot, RejectCommitteeInput, RejectInput, RejectPlan, RejectTarget } from "./fair-reject.js";
+export type { Protection } from "./protection.js";
 export { FetchFailed, type FetchFailure } from "./fetch-failed.js";
 export type { DeliveryOpeners, FirstOpening, FirstOpeningInput, Opening, Openings, OpeningsInput, SkippedAnnouncement, SkipReason } from "./first-opening.js";
 export type { FundedBy } from "./funding.js";

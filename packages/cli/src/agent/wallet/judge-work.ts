@@ -42,7 +42,7 @@ export const JUDGED_PASS = `every case passed in both engines, a receipt of this
 
 export const RECEIPT_MEANS = `where the receipt of this pass was saved; ${tool("wallet_attest")}, ${tool("wallet_attest_split")} and the committee tools sign only for work with a matching receipt`;
 
-export const JUDGED_FAIL = "the work failed the spec's cases, as cases and host list; approve nothing and tell the user which cases failed";
+export const JUDGED_FAIL = `the work failed the spec's cases, as cases and host list; approve nothing, tell the user which cases failed, and ${tool("wallet_reject")} rejects the delivery so its worker gets its stake back and no kill fee is owed`;
 
 export const JUDGED_INFRA = "infra: an engine could not finish or answer, as reason says, so this is no verdict on the work; approve nothing and judge again later";
 
@@ -108,7 +108,7 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
   return cases;
 }
 
-async function passReceipt(ctx: AgentContext, intent: Address, sha256: string, announcement: Address) {
+async function runReceipt(ctx: AgentContext, intent: Address, sha256: string, announcement: Address, outcome: "pass" | "fail") {
   const [signer, { held, params }] = await Promise.all([signerOf(ctx), proofEscrow(ctx, intent, "wallet_receipt")]);
   const ran = { judge: signer.address, owner: held.owner, nonce: held.nonce, intent, specSha256: Buffer.from(params.specHash).toString("hex"), deliveredSha256: sha256, announcement };
   const route = { sandbox: "viper", command: "viper", engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT } } as const;
@@ -116,7 +116,7 @@ async function passReceipt(ctx: AgentContext, intent: Address, sha256: string, a
   if (home === undefined) {
     return { receiptRefused: "this server has no wallet, so no receipt was saved" };
   }
-  return keptReceipt(home, { ...ran, outcome: "pass", cluster: await ctx.transport.genesisHash(), route });
+  return keptReceipt(home, { ...ran, outcome, cluster: await ctx.transport.genesisHash(), route });
 }
 
 type Fetched = { intent: Address; announcement: Address; worker: Address; sha256: string; opens_commitment: boolean; untrusted_text?: string; first?: { worker: Address; announcement: Address }; next: string };
@@ -193,7 +193,7 @@ async function workAt(ctx: AgentContext, input: { intent: Address; announcement?
 export const walletJudgeWork = define({
   name: tool("wallet_judge_work"),
   title: "Judge announced work in the ViperJS sandbox",
-  description: `Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and sha256. Reads at most ${FETCH_CAPS.tools} bytes, needs neither Docker nor WSL and sends nothing. Without judge cases, use judge --sandbox docker. A pass saves a judge receipt.`,
+  description: `Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and sha256. Reads at most ${FETCH_CAPS.tools} bytes, needs neither Docker nor WSL and sends nothing. Without judge cases, use judge --sandbox docker. Pass or fail saves a receipt.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
@@ -213,7 +213,8 @@ export const walletJudgeWork = define({
     cases: judgedSchema("the ViperJS sandbox"),
     host: judgedSchema(HOST_ENGINE),
     receipt: optional(text(RECEIPT_MEANS)),
-    receipt_refused: optional(text("why no receipt was saved for this pass, so a signature for it is refused")),
+    fail_receipt: optional(text(`with fail: the receipt of this failing run, which lets ${tool("wallet_reject")} reject the delivery`)),
+    receipt_refused: optional(text("why no receipt was saved for this pass or fail, so a signature or reject for it is refused")),
     sent: flag("always false: this tool sends nothing"),
     next: text(),
   }),
@@ -234,7 +235,12 @@ export const walletJudgeWork = define({
     const outcome = ruled.outcome === "interrupted" ? "infra" : ruled.outcome;
     const passed = outcome === "pass";
     const settles = work.opens_commitment && work.first !== undefined;
-    const kept = passed && settles && work.first !== undefined ? await passReceipt(ctx, work.intent, work.sha256, work.first.announcement) : undefined;
+    const kept =
+      passed && settles && work.first !== undefined
+        ? await runReceipt(ctx, work.intent, work.sha256, work.first.announcement, "pass")
+        : outcome === "fail" && work.opens_commitment
+          ? await runReceipt(ctx, work.intent, work.sha256, work.announcement, "fail")
+          : undefined;
     return {
       intent: work.intent,
       announcement: work.announcement,
@@ -247,7 +253,7 @@ export const walletJudgeWork = define({
       seed: BigInt(run.seed),
       cases: { total: viper.total, passed: viper.passed, failures: failuresOf(viper.failures) },
       host: { total: host.total, passed: host.passed, failures: failuresOf(host.failures) },
-      ...(kept?.receipt === undefined ? {} : { receipt: kept.receipt }),
+      ...(kept?.receipt === undefined ? {} : passed ? { receipt: kept.receipt } : { fail_receipt: kept.receipt }),
       ...(kept?.receiptRefused === undefined ? {} : { receipt_refused: kept.receiptRefused }),
       sent: false,
       next: outcome === "infra" ? JUDGED_INFRA : !passed ? JUDGED_FAIL : kept?.receiptRefused !== undefined ? kept.receiptRefused : settles ? JUDGED_PASS : work.next,

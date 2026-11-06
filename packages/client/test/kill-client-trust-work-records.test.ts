@@ -12,6 +12,7 @@ import { comparatorsUsedBy, verdicts } from "./kill-client-trust-work-sort.js";
 import { world } from "./svm.js";
 import { announced, LOCAL, nativeMint } from "./work.js";
 import { airdropped } from "./airdrop.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the record spec").digest());
@@ -90,7 +91,7 @@ describe("announcedBy", () => {
 
 describe("recordOf", () => {
   it("reads an escrow that is still open as open, and not as self-dealt", async () => {
-    const { client, fresh, escrow, transport, worksOf, reads } = await setup();
+    const { w, client, fresh, escrow, transport, worksOf, reads } = await setup();
     const [owner, judge, worker] = await Promise.all([fresh(), fresh(), fresh()]);
     const { intent } = await escrow(owner, judge.address);
     await announced(client, worker, intent, "a1".repeat(32));
@@ -100,7 +101,7 @@ describe("recordOf", () => {
   });
 
   it("reads a release of another announcement of the same wallet, that the given works leave out, as paid to someone else", async () => {
-    const { client, fresh, escrow, transport, worksOf, reads } = await setup();
+    const { w, client, fresh, escrow, transport, worksOf, reads } = await setup();
     const [owner, judge, worker] = await Promise.all([fresh(), fresh(), fresh()]);
     const { nonce, intent } = await escrow(owner, judge.address);
     const first = await announced(client, worker, intent, "a1".repeat(32));
@@ -118,7 +119,7 @@ describe("recordOf", () => {
   });
 
   it("says what it could not find when the node shows neither the release nor the announcement's history", async () => {
-    const { client, fresh, escrow, transport, worksOf, reads } = await setup();
+    const { w, client, fresh, escrow, transport, worksOf, reads } = await setup();
     const [owner, judge, worker] = await Promise.all([fresh(), fresh(), fresh()]);
     const { nonce, intent } = await escrow(owner, judge.address);
     const delivered = await announced(client, worker, intent, "a1".repeat(32));
@@ -134,7 +135,7 @@ describe("recordOf", () => {
   });
 
   it("reads a cancelled escrow whose account is gone as refunded, and one with no cancel, expiry or release as unknown", async () => {
-    const { client, fresh, escrow, transport, worksOf, reads } = await setup();
+    const { w, client, fresh, escrow, transport, worksOf, reads } = await setup();
     const [owner, judge, worker] = await Promise.all([fresh(), fresh(), fresh()]);
     const { nonce, intent } = await escrow(owner, judge.address);
     await announced(client, worker, intent, "a1".repeat(32));
@@ -143,7 +144,7 @@ describe("recordOf", () => {
     const open = await recordOf(gone, worker.address, works, await reads());
     expect(open.record).toMatchObject({ outcome: "unknown", selfDealt: false });
     expect(open.reasons).toEqual([`escrow ${intent} shows no release, cancel or expiry`]);
-    await client.cancel(owner, { owner: owner.address, nonce });
+    await cancelAfterNotice(client, w.chain.svm, owner, { owner: owner.address, nonce });
     const cancelled = await recordOf(gone, worker.address, works, await reads());
     expect(cancelled.record).toMatchObject({ outcome: "refunded", selfDealt: false });
     expect(cancelled.reasons).toEqual([]);

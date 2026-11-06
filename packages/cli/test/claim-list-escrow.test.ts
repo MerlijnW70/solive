@@ -81,7 +81,7 @@ async function setup() {
   return { client, wallet };
 }
 
-const terms = (attestor: Address) => ({ sell: "SOL", amount: "0.05", attestor, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600 });
+const terms = (attestor: Address) => ({ sell: "SOL", amount: "0.05", attestor, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0 });
 
 describe("wallet escrows on a sealed spec", () => {
   it("wallet_escrow lists the workers the sealed spec invites, leaving out the owner and the attestor, and settle returns the list's rent", async () => {
@@ -114,7 +114,7 @@ describe("wallet escrows on a sealed spec", () => {
     const [worker, mate] = [address(), address()];
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [wallet, worker]));
     h.specPages.set(OTHER_URL, await seal(encoded(SPEC), [wallet, mate]));
-    const plan = { sell: "SOL", attestor: wallet, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600 };
+    const plan = { sell: "SOL", attestor: wallet, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     const same = await ok(client, "wallet_escrow_plan", { ...plan, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }] });
     expect((same["summary"] as string[]).filter((line) => line.includes("Limits:"))).toEqual([sealedLimits([worker])]);
     const pieces = [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01", spec_url: OTHER_URL }];
@@ -167,7 +167,7 @@ describe("wallet escrows on a sealed spec", () => {
     const [worker, ...many] = Array.from({ length: 31 }, () => address());
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [wallet, worker ?? judge]));
     h.specPages.set(OTHER_URL, await seal(encoded(SPEC), [wallet, ...many]));
-    const plan = { sell: "SOL", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01", spec_url: OTHER_URL }] };
+    const plan = { sell: "SOL", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01", spec_url: OTHER_URL }] };
     const shown = await ok(client, "wallet_escrow_plan", plan);
     expect(shown["summary"]).toContain(`Network fees: ${solText(4n * SIGNATURE_FEE)} in all for the 4 transactions of this plan, piece 1 ${solText(SIGNATURE_FEE)}, piece 2 ${solText(3n * SIGNATURE_FEE)}`);
     const total = totalOf(shown["summary"]);

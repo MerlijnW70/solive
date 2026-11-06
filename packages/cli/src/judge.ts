@@ -406,12 +406,13 @@ async function checkAndSettle(
     ({ check, ruled, cleanup } = await runPlanned(plan, read, specBytes, checkFiles, sha256, signals));
   }
   const caught = signals.caught();
-  const passed = decided(combine([...(caught === undefined ? [] : [{ outcome: "interrupted", signal: caught } as const]), ...(ruled === undefined ? [] : [ruled])])).outcome === "pass";
+  const outcome = decided(combine([...(caught === undefined ? [] : [{ outcome: "interrupted", signal: caught } as const]), ...(ruled === undefined ? [] : [ruled])])).outcome;
+  const passed = outcome === "pass";
   if (passed && confirm !== undefined) {
     await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, payees: [payTo], keypair });
   }
   const ran = { judge: signer.address, owner: command.owner, nonce: command.nonce, intent: address, specSha256: specHash, deliveredSha256: sha256, announcement, route: routeOfPlan(plan) };
-  const kept = passed ? await keptReceipt(home, { ...ran, outcome: "pass", cluster: await transport.genesisHash() }) : undefined;
+  const kept = passed || outcome === "fail" ? await keptReceipt(home, { ...ran, outcome: passed ? "pass" : "fail", cluster: await transport.genesisHash() }) : undefined;
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;

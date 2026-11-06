@@ -66,7 +66,7 @@ describe("migrate rent and batches", () => {
 
   const legacyBoard = async (): Promise<Uint8Array> => {
     const intent = await created();
-    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
+    const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
     expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
     const board = outdated(dataOf(await claimBoardAddress(intent)).slice(0, LEGACY_BOARD_SPACE), VERSION_AT.board);
     new DataView(board.buffer).setBigUint64(HELD_AT, STAKE, true);

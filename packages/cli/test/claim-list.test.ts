@@ -105,7 +105,7 @@ async function post(s: Setup, invited: Address[]): Promise<Address> {
   return intent;
 }
 
-const open = (workers: readonly Address[]) => ["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--workers", workers.join(","), "--yes"];
+const open = (workers: readonly Address[]) => ["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--workers", workers.join(","), "--yes"];
 
 describe("a claim list on chain", () => {
   it("refuses an unlisted wallet's own claim_job and stand_by, with and without the list, while a listed worker claims and wallet_attest pays it", async () => {

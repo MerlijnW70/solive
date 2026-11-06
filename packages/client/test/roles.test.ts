@@ -20,6 +20,7 @@ import {
   buildFillAttested,
   buildFillIntent,
   buildUpdateEconomics,
+  findDeliveryBookPda,
   findEventAuthorityPda,
   findIntentPda,
   getCancelIntentInstructionAsync,
@@ -31,6 +32,7 @@ import { createClient, EscrowExpired, NotSettleable, type Transport } from "../s
 import { FEE_BPS, NOW, world } from "./svm.js";
 import { announced, type Delivered, sha } from "./work.js";
 import { airdropped } from "./airdrop.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/sdk.md`, "utf8") + "\n" + readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
@@ -317,6 +319,7 @@ describe("who can do what", () => {
     const cancel = await getCancelIntentInstructionAsync({
       owner: stranger,
       intent: job.intent,
+      book: (await findDeliveryBookPda({ intent: job.intent }))[0],
       inputMint: NATIVE_MINT,
       refundTo: await ata(stranger.address, NATIVE_MINT),
       eventAuthority,
@@ -377,7 +380,7 @@ describe("who can do what", () => {
     const input = { judge, payer: owner, intent: { owner: owner.address, nonce: job.nonce }, ...made, result: 1n };
     await expect(createClient({ url: LOCAL, transport: holding }).settleProof(input)).rejects.toThrow("held back");
     expect(held.length).toBeGreaterThan(0);
-    await client.cancel(owner, { owner: owner.address, nonce: job.nonce });
+    await cancelAfterNotice(client, w.chain.svm, owner, { owner: owner.address, nonce: job.nonce });
     await expect(client.settleProof(input)).rejects.toThrow(NotSettleable);
     expect(await failure(w.chain.transport.send(held, owner))).toBe("InvalidTransition");
     expect(await status(owner.address, job.nonce)).toBe(IntentStatus.Cancelled);

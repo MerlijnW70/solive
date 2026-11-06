@@ -8,7 +8,7 @@ import { deliveryReleased, releaseStanding, standingOutput } from "./standing.js
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { account, amount, choice, flag, integer, list, nullable, object, optional, text } from "../schema.js";
+import { account, amount, choice, flag, integer, list, nullable, object, optional, text, time } from "../schema.js";
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
@@ -58,6 +58,8 @@ export const RECEIPT_PARTIAL =
 export const stillUnreleased = (name: string) => `not released yet; call ${tool(name)} again with wait, in seconds, to wait for the release`;
 
 export const ALSO_MAX = 9;
+
+export const RECEIPT_EVENTS = 20;
 
 export const noneReleased = (name: string, count: number) => `none of the ${count} escrows is released yet; call ${tool(name)} again with wait, in seconds, to wait for the first release`;
 
@@ -240,8 +242,23 @@ const receiptOutput = object({
       "given with also: every named escrow in the order given, released or not, with whom each release paid",
     ),
   ),
+  rejected: optional(list(account(), RECEIPT_EVENTS, "announcements to this escrow its judge rejected; none of them can be paid")),
+  lapsed: optional(list(account(), RECEIPT_EVENTS, "announcements whose review the judge let end with no release or reject; their holder was paid its stake and the kill fee")),
+  cancel_at: optional(time("when the owner requested a cancel: from this time the cancel can land")),
   next: optional(text()),
 });
+
+export function fairFields(transactions: Parameters<typeof eventsIn>[0], intent: Address) {
+  const named = (name: string) => [...new Set(eventsIn(transactions).flatMap((event) => (event.name === name && (event.fields as Record<string, unknown>)["intent"] === intent ? [(event.fields as { announcement: Address }).announcement] : [])))].slice(0, RECEIPT_EVENTS);
+  const asked = eventsIn(transactions).find((event) => event.name === "CancelRequested" && event.fields.intent === intent);
+  const rejected = named("DeliveryRejected");
+  const lapsed = named("ReviewLapsed");
+  return {
+    ...(rejected.length === 0 ? {} : { rejected }),
+    ...(lapsed.length === 0 ? {} : { lapsed }),
+    ...(asked?.name === "CancelRequested" ? { cancel_at: asked.fields.cancelAt } : {}),
+  };
+}
 
 export const walletReceipt = define({
   name: tool("wallet_receipt"),
@@ -303,7 +320,8 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     if (held !== null && held.kind === Kind.AttestedResult && held.status === IntentStatus.Filled) {
       return { intent, released: false, complete: false, next: RELEASE_LANDING };
     }
-    return complete ? { intent, released: false, next: NOT_RELEASED } : { intent, released: false, complete: false, next: coverageOf(transport, RELEASE_UNKNOWN) };
+    const fair = fairFields(transactions, intent);
+    return complete ? { intent, released: false, ...fair, next: NOT_RELEASED } : { intent, released: false, ...fair, complete: false, next: coverageOf(transport, RELEASE_UNKNOWN) };
   }
   const { tx } = release;
   if (named !== undefined) {
@@ -333,6 +351,7 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     ...(paidWork === null ? {} : { delivered_sha256: paidWork.sha256, delivered_salt: paidWork.salt }),
     ...(wanted === undefined ? {} : { matches: wanted === paidWork?.sha256 }),
     ...standing,
+    ...fairFields([tx, ...transactions], intent),
   };
   if (release.event.name === "IntentSplit") {
     mint ??= await heldMint(transport, intent);

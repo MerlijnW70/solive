@@ -9,7 +9,6 @@ import {
   claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
-  decodeClaimBoardAccount,
   deliverySecrets,
   isLocalWorkUrl,
   isMemoUrl,
@@ -20,8 +19,10 @@ import {
 } from "@intent-engine/core/internal";
 import { chainTime, engineAccount } from "./accounts.js";
 import { NotDeliverable, UrlTooLong } from "./announce-errors.js";
+import { readBoard } from "./fair-reads.js";
+import { announceProtection, type Protection } from "./protection.js";
 import { recipientsFor, secretSource, type SecretInput } from "./announce-keys.js";
-import { type AnnouncementView, loadAnnouncement } from "./announcement-reads.js";
+import { type AnnouncementView, loadAnnouncement, loadDeliveryBook } from "./announcement-reads.js";
 import type { ClientContext } from "./client-types.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { hex, proofAt } from "./job-proofs.js";
@@ -38,6 +39,7 @@ export type AnnounceInput = SecretInput & {
   intent: IntentRef;
   sha256: string;
   url: string;
+  force?: boolean;
 };
 
 export type AnnouncementPlan = Plan & {
@@ -50,6 +52,7 @@ export type AnnouncementPlan = Plan & {
   sealedTo: SealRecipient[];
   maxUrl: number;
   existing: AnnouncementView | null;
+  protection: Protection;
 };
 
 export type Announced = {
@@ -70,16 +73,16 @@ export function sha256Bytes(sha256: string): Uint8Array {
 
 async function claimAccounts(transport: Transport, intent: Address, claims: number, worker: Address) {
   if (claims !== CLAIMS_OPEN) {
-    return { board: false, claimList: false, accounts: {} };
+    return { board: false, claimList: false, accounts: {}, stored: null };
   }
   const board = await claimBoardAddress(intent);
-  const stored = decodeClaimBoardAccount(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  const stored = readBoard(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   const slot = claimSlot(stored, await chainTime(transport));
   if (slot.state === "held" && slot.worker !== worker) {
     throw new NotDeliverable(intent, "claim-held", `is claimed by ${slot.worker} until ${slot.until}, so only that worker can announce until then; nothing was sent`);
   }
   const listed = stored.listed !== 0;
-  return { board: true, claimList: listed, accounts: { claims: board, ...(listed ? { claimList: await claimListAddress(intent) } : {}) } };
+  return { board: true, claimList: listed, accounts: { claims: board, ...(listed ? { claimList: await claimListAddress(intent) } : {}) }, stored };
 }
 
 export async function announcementPlan(context: ClientContext, input: AnnounceInput): Promise<AnnouncementPlan> {
@@ -106,6 +109,12 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
   const attestor = proof.params.attestor;
   const { committee, recipients, sync } = await recipientsFor(transport, attestor, intent);
   const claims = await claimAccounts(transport, intent, proof.intent.claims, worker.address);
+  const book = await loadDeliveryBook(transport, intent);
+  const cancelAt = book === null || book.cancelAt === 0n ? null : book.cancelAt;
+  const protection = announceProtection(claims.stored, worker.address, proof.intent.expiresAt, now, cancelAt);
+  if (cancelAt !== null && now >= cancelAt && !protection.arms && input.force !== true) {
+    throw new NotDeliverable(intent, "cancel-due", `has a cancel request whose notice ended at ${cancelAt}, so its owner can cancel it at once and this announcement arms no review; nothing was sent; the SDK option force, or force on solive_wallet_deliver, announces anyway`);
+  }
   const fee = config.announceFee > 0;
   const maxUrl = maxSealedUrl({
     recipients: recipients.length,
@@ -149,6 +158,7 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
     sealedTo: recipients,
     maxUrl,
     existing,
+    protection,
   };
 }
 

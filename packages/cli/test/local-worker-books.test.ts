@@ -7,7 +7,7 @@ import { testSignature } from "@intent-engine/client/testing";
 import { BOOK_ESCROW_OPEN, bookKept, bookLive, booksClosed, booksKeptLine, bookUnclosed, bookUnread } from "../src/agent/wallet/worker-books.js";
 import { h, NOW, setNow } from "./harness.js";
 import { approved, UNJUDGED } from "./approved.js";
-import { commandNamed, hireWith, lamportsOf, makeWorker, ok, plantBook, removeWorkFiles, run, server, sha, SOLUTION, startHirer, workFile } from "./local-worker-kit.js";
+import { cancelledOver, commandNamed, hireWith, lamportsOf, makeWorker, ok, plantBook, removeWorkFiles, run, server, sha, SOLUTION, startHirer, workFile } from "./local-worker-kit.js";
 
 const REFUTE_WINDOW = 30n * 86_400n;
 
@@ -55,7 +55,7 @@ describe("a local worker's delivery book", () => {
     const job = await announced();
     expect(bookOf(job.book)).toMatchObject({ payer: job.worker, live: 1n });
     expect(job.rent).toBeGreaterThan(0n);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: job.worker });
     expect(preview["summary"]).toContain(booksClosed([job.book], job.rent));
     expect(preview["kept"]).toEqual([]);
@@ -96,7 +96,7 @@ describe("a local worker's delivery book", () => {
     const second = await makeWorker(hirer, job.intent);
     await deliver(second.brief);
     expect(bookOf(job.book)).toMatchObject({ payer: job.worker, live: 2n });
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const kept = bookKept(job.book, job.intent, job.rent, bookLive(1n), job.keypair);
     const first = await ok(hirer, "wallet_worker", { return_leftovers: job.worker, send: true });
     expect(first).toMatchObject({ sent: true, key_deleted: false });
@@ -115,7 +115,7 @@ describe("a local worker's delivery book", () => {
 
   it("still returns the SOL when a book's close is refused, and keeps the key with that book listed", async () => {
     const job = await announced();
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const live = h.through as NonNullable<typeof h.through>;
     const [announcement] = (await announcementsBy(live, job.worker)).announcements;
     let refused = 0;
@@ -148,7 +148,7 @@ describe("a local worker's delivery book", () => {
   it("closes more books than fit one transaction in batches, and returns all their rent", async () => {
     const job = await hireWith(hirer, wallet, false);
     const made = await makeWorker(hirer, job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const planted = [];
     for (let n = 0; n < MANY_BOOKS; n += 1) {
       planted.push(await plantBook(made.worker));
@@ -184,7 +184,7 @@ describe("a local worker's delivery book", () => {
     await run(commandNamed(made.brief, "deliver").map((word, at, args) => (word === "<your" ? artifact : args[at - 1] === "--intent" ? other.intent : word)).filter((word) => word !== "file>"));
     const book = await deliveryBookAddress(other.intent);
     expect(bookOf(book)).toMatchObject({ payer: made.worker, live: 1n });
-    await ok(hirer, "wallet_cancel", { nonce: own.nonce, close: false, send: true });
+    await cancelledOver(hirer, own.nonce);
     const done = await ok(hirer, "wallet_worker", { return_leftovers: made.worker, send: true });
     expect(done).toMatchObject({ sent: true, key_deleted: false });
     expect(done["kept"]).toContain(bookKept(book, other.intent, lamportsOf(book), BOOK_ESCROW_OPEN, made.keypair));
@@ -195,7 +195,7 @@ describe("a local worker's delivery book", () => {
   it("keeps the key and lists a book it paid for that cannot be read", async () => {
     const job = await hireWith(hirer, wallet, false);
     const made = await makeWorker(hirer, job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const { book } = await plantBook(made.worker);
     const view = h.svm.getAccount(book);
     if (!view.exists) {
@@ -215,7 +215,7 @@ describe("a local worker's delivery book", () => {
 
   it("reads the books again before deleting the key, and keeps it when the book's close did not land", async () => {
     const job = await announced();
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const live = h.through as NonNullable<typeof h.through>;
     const [announcement] = (await announcementsBy(live, job.worker)).announcements;
     expect(announcement?.intent).toBe(job.intent);

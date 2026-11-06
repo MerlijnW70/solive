@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT } from "@intent-engine/core";
 import { buildClaimJob } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
+import { NOTICE_SECS } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { claimedByOther, NO_CLAIM_HELD } from "../src/agent/job-claims.js";
 import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
@@ -59,7 +60,7 @@ describe("a worker without the claim on a job that takes claims", () => {
   let payerKey: string;
 
   const escrow = async (claims: boolean) =>
-    ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: SPEC_HASH, ...(claims ? { claim_stake: "0.05", claim_secs: 3600 } : {}) }));
+    ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: SPEC_HASH, ...(claims ? { claim_stake: "0.05", claim_secs: 3600, review_secs: 0 } : {}) }));
 
   const announce = async (worker: KeyPairSigner, intent: Address) => {
     useKey(worker);
@@ -146,7 +147,11 @@ describe("a worker without the claim on a job that takes claims", () => {
     await announce(worker, lapsed["intent"] as Address);
     h.files.set(defaultWallet(HOME), payerKey);
     for (const job of [cancelled, lost]) {
-      expect(await ok(client, "wallet_cancel", { nonce: job["nonce"], send: true })).toMatchObject({ sent: true });
+      expect(await ok(client, "wallet_cancel", { nonce: job["nonce"], send: true })).toMatchObject({ sent: true, stage: "request" });
+    }
+    setNow(h.svm.getClock().unixTimestamp + NOTICE_SECS);
+    for (const job of [cancelled, lost]) {
+      expect(await ok(client, "wallet_cancel", { nonce: job["nonce"], send: true })).toMatchObject({ sent: true, stage: "now" });
     }
     setNow(NOW + 366n * 86_400n);
     useKey(worker);

@@ -84,7 +84,7 @@ async function post(s: Setup, invited: Address[], claims: boolean): Promise<Addr
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: s.w.owner, params, inputMint: s.w.inputMint, outputMint: s.w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
   if (claims) {
-    await s.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": s.w.owner });
+    await s.run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": s.w.owner });
   }
   return intent;
 }

@@ -202,7 +202,7 @@ describe("signing with a Ledger", () => {
 
   it("claims open with a Ledger path is accepted and reaches the device", async () => {
     const ledger = device(key, []);
-    const result = await run(["claims", "open", "--keypair", "usb://ledger", "--nonce", "0", "--max-secs", "60", "--stake", "1"], ledger);
+    const result = await run(["claims", "open", "--review-secs", "0", "--keypair", "usb://ledger", "--nonce", "0", "--max-secs", "60", "--stake", "1"], ledger);
     expect(result.err).not.toContain("cannot sign with the Ledger");
     expect(ledger.opened).toBeGreaterThan(0);
   });
@@ -232,7 +232,7 @@ describe("signing with a Ledger", () => {
       ["deliver", "--intent", owner, "--sha256", "ab".repeat(32), "--work-url", "https://" + "example.org/work"],
       ["claims", "take", "--owner", owner, "--nonce", "0", "--secs", "60"],
       ["claims", "drop", "--owner", owner, "--nonce", "0"],
-      ["claims", "open", "--nonce", "0", "--max-secs", "60", "--stake", "1"],
+      ["claims", "open", "--review-secs", "0", "--nonce", "0", "--max-secs", "60", "--stake", "1"],
       ["claims", "standby", "--owner", owner, "--nonce", "0", "--secs", "60"],
       ["claims", "leave", "--owner", owner, "--nonce", "0"],
       ["claims", "advance", "--owner", owner, "--nonce", "0"],

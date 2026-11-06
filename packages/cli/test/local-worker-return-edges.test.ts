@@ -10,7 +10,7 @@ import { boardUnread, claimHeldOpen, settleLine, STANDBY_WORKER_AT, workerStakes
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { h, NOW, setNow } from "./harness.js";
 import { device, deviceKey, found } from "./ledger-device.js";
-import { call, commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, run, server, SOLUTION, STAKE, startHirer, workFile } from "./local-worker-kit.js";
+import { cancelledOver, call, commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, run, server, SOLUTION, STAKE, startHirer, workFile } from "./local-worker-kit.js";
 import { airdropped } from "./airdrop.js";
 
 const LEVELS = [44, 501, 2];
@@ -85,7 +85,7 @@ describe("a local worker's leftovers at the edges", () => {
     const { worker, brief, keypair } = await made(job.intent);
     const artifact = workFile(SOLUTION);
     await run(commandNamed(brief, "deliver").map((word) => (word === "<your" ? artifact : word)).filter((word) => word !== "file>"));
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const [announcement] = h.svm.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS).filter(({ data }) => sameBytes(data.slice(0, 8), ANNOUNCEMENT_DISCRIMINATOR) && sameBytes(data.slice(40, 72), getAddressEncoder().encode(worker)));
     if (announcement === undefined) {
       throw new Error("the worker announced nothing");
@@ -128,7 +128,7 @@ describe("a local worker's leftovers at the edges", () => {
     it("previews a return that takes one transaction", async () => {
       const job = await hire(false);
       const { worker } = await made(job.intent);
-      await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+      await cancelledOver(hirer, job.nonce);
       const ledger = await onDevice();
       expect(await ok(ledger, "wallet_worker", { return_leftovers: worker })).toMatchObject({ worker, sent: false, key_deleted: false });
     });

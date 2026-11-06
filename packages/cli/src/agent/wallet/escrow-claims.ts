@@ -1,6 +1,6 @@
 import type { Address, Instruction } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { buildClaimsWithList, buildOpenClaims, buildOpenClaimsListed, claimantChunks, isSealed, sealedTo } from "@intent-engine/core/internal";
+import { buildExtendClaimants, buildOpenClaims, buildOpenClaimsListed, claimantChunks, isSealed, sealedTo } from "@intent-engine/core/internal";
 import { pinnedFetch } from "@intent-engine/client/node";
 import { loadCommittee } from "@intent-engine/client/internal";
 import { FETCH_CAPS, fetchBytes } from "../../delivery-fetch.js";
@@ -22,7 +22,7 @@ export const claimsUnread = (problem: string): string =>
 export const NO_LISTED_WORKER =
   "the spec at spec_url is sealed to no wallet besides the owner and the attestor, so nobody could claim the job; seal it to the workers you invite, or escrow without claim_stake and claim_secs";
 
-export type ClaimTerms = { maxSecs: number; stake: bigint; floor?: bigint };
+export type ClaimTerms = { maxSecs: number; stake: bigint; floor?: bigint; reviewSecs?: number; killFee?: bigint };
 
 export type Claimants = Address[] | undefined;
 
@@ -77,10 +77,10 @@ export const sealedLimits = (workers: readonly Address[]): string =>
 export const listedLines = (workers: Claimants): string[] => (workers === undefined ? [] : [sealedLimits(workers)]);
 
 export const claimsAfter = (sends: number): string =>
-  `Sends: the claims and their list in ${sends === 1 ? "1 more transaction" : `${sends} more transactions`} once the escrow lands, since they do not fit beside it; the escrow takes no claim until they land`;
+  `Sends: the rest of the claim list in ${sends === 1 ? "1 more transaction" : `${sends} more transactions`} once the escrow lands, since it does not fit beside it; the claims open with the escrow, so nobody can announce before them, and the escrow takes no claim or delivery until the list is complete`;
 
 export const claimsUnopened = (nonce: unknown, terms: ClaimTerms, workers: readonly Address[], problem: string): string =>
-  `the escrow is live, but its claims did not all open (${problem}); open or finish them with intent-engine claims open --keypair <this wallet's key file> --nonce ${String(nonce)} --max-secs ${terms.maxSecs} --stake ${formatAmount(terms.stake, 9)} --workers ${workers.join(",")}`;
+  `the escrow is live and its claims are open, but their list is not complete (${problem}), so nobody can claim or deliver yet; finish it with intent-engine claims open --keypair <this wallet's key file> --nonce ${String(nonce)} --max-secs ${terms.maxSecs} --stake ${formatAmount(terms.stake, 9)} --review-secs ${terms.reviewSecs ?? 0} --kill-fee ${formatAmount(terms.killFee ?? 0n, 9)} --workers ${workers.join(",")}, which adds the missing wallets; claims list refuses here, since the list exists`;
 
 type Offer = Parameters<typeof offered>;
 
@@ -157,13 +157,15 @@ async function followedByClaims(
   signer: WalletSigner,
 ): Promise<Record<string, unknown>> {
   let first = 0n;
+  const chunks = claimantChunks(workers);
+  const opensFirst: AfterCreate = async (owner, intent) => [await buildOpenClaimsListed({ owner, intent, ...claims, size: workers.length, workers: [] })];
   const made = (await offered(ctx, call, { ...single({ ...input, priced: (lamports) => {
         first = lamports;
-      } }), after: undefined }, terms, done)) as Record<string, unknown>;
-  const sends = claimantChunks(workers).length;
+      } }), after: opensFirst }, terms, done)) as Record<string, unknown>;
+  const sends = chunks.length;
   const priced = (fees: bigint) => input.priced?.(first + fees, 1 + sends);
   const summary = [...((made["summary"] as string[]) ?? []), claimsAfter(sends)];
-  const build = () => buildClaimsWithList({ owner: signer, intent: made["intent"] as Address, ...claims, workers });
+  const build = async () => Promise.all(chunks.map(async (part) => [await buildExtendClaimants({ owner: signer, intent: made["intent"] as Address, workers: part })]));
   if (made["sent"] !== true) {
     priced(await followUpFees(ctx, await build(), signer));
     return { ...made, summary };

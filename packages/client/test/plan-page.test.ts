@@ -19,6 +19,7 @@ import { checkedQuery, PAY_TO_NOT_ATTESTED, RECLAIM_BATCH } from "../src/interna
 import { createTestWorld } from "../src/testing.js";
 import { PLAN_SECTION } from "./doc-sections.js";
 import { checkCase, delivered, escrow, proofParams, sha, statusOf, workUrl } from "./plan-driver.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
@@ -45,6 +46,10 @@ const WRITES = [
   "feedback",
   "createCommittee",
   "unwrap",
+  "requestCancel",
+  "reject",
+  "rejectCommittee",
+  "collect",
 ] as const;
 
 const CLAIMS = {
@@ -181,7 +186,7 @@ describe("the plan section of the client page", () => {
     for (let i = 0; i <= RECLAIM_BATCH; i++) {
       const job = await escrow(world);
       await delivered(world, job.intent, worker);
-      await world.client.cancel(job.owner, job.intent);
+      await cancelAfterNotice(world.client, world.svm, job.owner, job.intent);
     }
     const plan = await world.client.plan.reclaim({ worker });
     expect(plan.batches.map((batch) => batch.length)).toEqual([RECLAIM_BATCH, 1]);

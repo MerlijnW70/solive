@@ -54,8 +54,12 @@ describe("the lines about claims and their sends", () => {
     const [a, b] = [(await generateKeyPairSigner()).address, (await generateKeyPairSigner()).address];
     expect(sealedLimits([a])).toBe(`Limits: claims to the 1 wallet the sealed spec invites, leaving out the owner and the attestor: ${a}; the program refuses a claim or stand-by from any other`);
     expect(sealedLimits([a, b])).toBe(`Limits: claims to the 2 wallets the sealed spec invites, leaving out the owner and the attestor: ${a}, ${b}; the program refuses a claim or stand-by from any other`);
-    expect(claimsAfter(1)).toBe("Sends: the claims and their list in 1 more transaction once the escrow lands, since they do not fit beside it; the escrow takes no claim until they land");
-    expect(claimsAfter(3)).toBe("Sends: the claims and their list in 3 more transactions once the escrow lands, since they do not fit beside it; the escrow takes no claim until they land");
+    expect(claimsAfter(1)).toBe(
+      "Sends: the rest of the claim list in 1 more transaction once the escrow lands, since it does not fit beside it; the claims open with the escrow, so nobody can announce before them, and the escrow takes no claim or delivery until the list is complete",
+    );
+    expect(claimsAfter(3)).toBe(
+      "Sends: the rest of the claim list in 3 more transactions once the escrow lands, since it does not fit beside it; the claims open with the escrow, so nobody can announce before them, and the escrow takes no claim or delivery until the list is complete",
+    );
   });
 });
 

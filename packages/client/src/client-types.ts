@@ -13,6 +13,8 @@ import type { CreateIntentPlan } from "./client-create.js";
 import type { CommitteeCreatePlan } from "./client-committee.js";
 import type { IntentRef } from "./intent-ref.js";
 import type { Plan } from "./plan.js";
+import type { CancelState, Collectable } from "./fair-close.js";
+import type { RejectBallot, RejectCommitteeInput, RejectInput, RejectPlan, RejectTarget } from "./fair-reject.js";
 import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-split.js";
 import type { FirstOpening, FirstOpeningInput, Openings, OpeningsInput } from "./first-opening.js";
 import type { ClaimHeldInput, ClaimHeldPlan } from "./held-claim.js";
@@ -183,6 +185,10 @@ export type ClientPlans = {
   feedback(input: FeedbackInput): Promise<Plan>;
   createCommittee(input: CreateCommitteeInput): Promise<CommitteeCreatePlan>;
   unwrap(signer: TransactionSigner): Promise<Plan>;
+  requestCancel(signer: TransactionSigner, intent: IntentRef): Promise<Plan>;
+  reject(input: RejectInput): Promise<RejectPlan>;
+  rejectCommittee(input: RejectCommitteeInput): Promise<RejectPlan>;
+  collect(payer: TransactionSigner, intent: IntentRef): Promise<Plan & Collectable>;
 };
 
 export type Client = {
@@ -238,6 +244,12 @@ export type Client = {
   refute(input: RefuteInput): Promise<Refuted>;
   reclaim(input: ReclaimInput): Promise<Reclaimed>;
   closeBook(intent: IntentRef, by: TransactionSigner): Promise<Signature>;
+  cancelState(intent: IntentRef): Promise<CancelState>;
+  requestCancel(signer: TransactionSigner, intent: IntentRef): Promise<Signature>;
+  rejectBallot(input: RejectTarget): Promise<RejectBallot>;
+  reject(input: RejectInput): Promise<Signature>;
+  rejectCommittee(input: RejectCommitteeInput): Promise<Signature>;
+  collect(payer: TransactionSigner, intent: IntentRef): Promise<Signature>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";

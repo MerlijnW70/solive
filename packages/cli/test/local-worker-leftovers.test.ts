@@ -26,6 +26,7 @@ import {
   tokensAt,
   WALLET,
   workerFiles,
+  cancelledOver,
 } from "./local-worker-kit.js";
 
 const WRAPPED = 5_000_000n;
@@ -61,7 +62,7 @@ describe("a local worker's leftovers", () => {
     const other = await hire(true);
     const { worker, brief, keypair } = await made(own.intent);
     await run(claimsOn(commandNamed(brief, "claims", "take"), wallet, other.nonce));
-    await ok(hirer, "wallet_cancel", { nonce: own.nonce, close: false, send: true });
+    await cancelledOver(hirer, own.nonce);
     const held = lamportsOf(worker);
     expect((await call(hirer, "wallet_worker", { return_leftovers: worker, send: true })).value).toMatchObject({ code: "WorkerBusy", hint: claimHeldOpen(worker, other.intent) });
     expect(lamportsOf(worker)).toBe(held);
@@ -104,7 +105,7 @@ describe("a local worker's leftovers", () => {
     const { worker, brief, keypair } = await made(job.intent);
     await run(commandNamed(brief, "claims", "take"));
     const held = lamportsOf(worker);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     expect(lamportsOf(worker)).toBe(held + STAKE);
     expect(await ok(hirer, "wallet_worker", { return_leftovers: worker, send: true })).toMatchObject({ sent: true, key_deleted: true });
     expect(lamportsOf(worker)).toBe(0n);
@@ -143,7 +144,7 @@ describe("a local worker's leftovers", () => {
   it("returns wrapped SOL and names it as possible pay, but keeps the key and names every other token it cannot move, whatever the job's token", async () => {
     const job = await hire(false);
     const { worker, keypair } = await made(job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const test = await tokensAt(worker, 7n);
     const wrapped = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const space = BigInt(getTokenSize());
@@ -179,7 +180,7 @@ describe("a local worker's leftovers", () => {
     expect((await call(hirer, "wallet_worker", { return_leftovers: other })).value).toMatchObject({ code: "NotFound", hint: noWorker(other) });
     h.files.set(join(dir, `${wallet}.json`), h.files.get(WALLET) as string);
     h.files.set(workerJobPath(dir, wallet), h.files.get(workerJobPath(dir, worker)) as string);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const before = lamportsOf(wallet);
     expect((await call(hirer, "wallet_worker", { return_leftovers: wallet, send: true })).value).toMatchObject({ code: "NotFound", hint: noWorker(wallet) });
     expect(lamportsOf(wallet)).toBe(before);
@@ -188,7 +189,7 @@ describe("a local worker's leftovers", () => {
   it("reads the worker's balance again before deleting its key, and keeps it when the sweep did not land", async () => {
     const job = await hire(false);
     const { worker, keypair } = await made(job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const live = h.through as NonNullable<typeof h.through>;
     h.through = { ...live, sendWire: async () => testSignature("dropped") };
     const dropping = await server();

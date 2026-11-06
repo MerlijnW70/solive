@@ -121,7 +121,7 @@ describe("claim list survivors", () => {
   it("opens a single-part list without a parts line and reports it sent", async () => {
     sent.length = 0;
     const owner = await generateKeyPairSigner();
-    const done = (await openListed({ maxSecs: 60, stake: 0n, workers: [ADDRESS], yes: true }, owner, transport, ADDRESS, ADDRESS, "Opens: it")) as {
+    const done = (await openListed({ maxSecs: 60, stake: 0n, reviewSecs: 0, killFee: 0n, workers: [ADDRESS], yes: true }, owner, transport, ADDRESS, ADDRESS, ["Opens: it"])) as {
       summary: string[];
       sent: boolean;
       signature: string;

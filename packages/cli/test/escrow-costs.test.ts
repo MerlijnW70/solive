@@ -85,7 +85,7 @@ describe("the costs an escrow preview names", () => {
   });
 
   it("totals what wallet_escrow takes, and the total matches the drop in this wallet's SOL after each send", async () => {
-    const args = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH, claim_stake: "0.01", claim_secs: 600 };
+    const args = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH, claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     for (const round of [0, 1]) {
       const preview = await ok(client, "wallet_escrow", args);
       const summary = preview["summary"] as string[];
@@ -126,10 +126,10 @@ describe("the costs an escrow preview names", () => {
   it("leaves out the claims advice when the call opens claims", async () => {
     const base = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH };
     expect((await ok(client, "wallet_escrow", base))["warnings"]).toContain(SPEC_NO_ANSWER);
-    const claimed = (await ok(client, "wallet_escrow", { ...base, claim_stake: "0.01", claim_secs: 600 }))["warnings"];
+    const claimed = (await ok(client, "wallet_escrow", { ...base, claim_stake: "0.01", claim_secs: 600, review_secs: 0 }))["warnings"];
     expect(claimed).toContain(SPEC_ANSWER_OUT);
     expect(JSON.stringify(claimed)).not.toContain(CLAIMS_ADVICE);
-    const plan = { sell: "SOL", attestor: wallet, spec_hash: SPEC_HASH, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }], claim_stake: "0.01", claim_secs: 600 };
+    const plan = { sell: "SOL", attestor: wallet, spec_hash: SPEC_HASH, pieces: [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01" }], claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     expect(JSON.stringify(await ok(client, "wallet_escrow_plan", plan))).not.toContain(CLAIMS_ADVICE);
   });
 });

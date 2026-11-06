@@ -443,7 +443,7 @@ server.close();
 
 `client.plan` builds what each write sends and sends nothing, for an app that signs through a wallet adapter, a multisig or a bundle service.
 
-- `client.plan` has one method per write: `createIntent`, `cancel`, `fill`, `expire`, `close`, `settleProof`, `settleCommittee`, `settleSplit`, `claimHeld`, `announce`, `refute`, `reclaim`, `closeBook`, `feedback`, `createCommittee` and `unwrap`.
+- `client.plan` has one method per write: `createIntent`, `cancel`, `fill`, `expire`, `close`, `settleProof`, `settleCommittee`, `settleSplit`, `claimHeld`, `announce`, `refute`, `reclaim`, `closeBook`, `feedback`, `createCommittee`, `unwrap`, `requestCancel`, `reject`, `rejectCommittee` and `collect`.
 - A plan names the `payer`, the `setup` instructions that land first, the `instructions`, the signers each one needs in `setupSigners` and `signers`, and the `lookupTables` it relies on, which are none.
 - `setupSigners` and `signers` list, for each instruction, the wallets that must sign the transaction that carries it, the `payer` among them whenever an instruction needs its signature; the `payer` also signs each transaction as its fee payer, and `settleProof` lists no judge, whose verdict travels as a signed message.
 - `plan.createIntent` returns a `CreateIntentPlan`: a `Plan` that also names the `intent`, its `nonce`, `expiresAt` and `payTo`.

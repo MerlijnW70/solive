@@ -57,7 +57,7 @@ describe("close-legacy on a line account and the escrow behind it", () => {
 
   const outdatedBoard = async (take: boolean) => {
     const intent = await createIntent(["--spec-hash", "ab".repeat(32)]);
-    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
+    const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
     expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
     if (take) {
       const taken = await cli(["claims", "take", "--keypair", "worker.json", "--owner", w.owner.address, "--nonce", "0", "--secs", "600", "--yes"], keys);

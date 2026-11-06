@@ -73,7 +73,7 @@ describe("approval tools on a Ledger wallet", () => {
 
   it("wallet_claim previews the message hash the device then signs, and takes the claim", async () => {
     const d = await onDevice();
-    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": d.owner });
+    const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": d.owner });
     expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
     await previewThenSend(d, "wallet_claim", { owner: d.owner.address, nonce: "0", action: "take", secs: 600 });
     expect(h.svm.getAccount(await claimBoardAddress(d.intent)).exists).toBe(true);

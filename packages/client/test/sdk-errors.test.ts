@@ -45,6 +45,7 @@ import {
   ReplyTooLarge,
   WrongReplyLength,
   TransactionUnread,
+  CancelNotReady,
   NoMessageSigner,
   NotAMint,
   NotASignature,
@@ -129,6 +130,7 @@ const SAMPLES: { [C in SdkErrorCode]: () => SdkErrors[C] } = {
   "reply-too-large": () => new ReplyTooLarge("getProgramAccounts", 1_000_000),
   "wrong-reply-length": () => new WrongReplyLength("getMultipleAccounts", 3, 2),
   "transaction-unread": () => new TransactionUnread(SIG),
+  "cancel-not-ready": () => new CancelNotReady({ intent: WALLET, stage: "request", announced: true, cancelAt: null, review: null, readyAt: null, secondsLeft: 0n, migrates: false }),
 };
 
 const exported: unknown[] = [...Object.values(core as Record<string, unknown>), ...Object.values(client as Record<string, unknown>)];

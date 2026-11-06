@@ -1,6 +1,7 @@
 import { type Address, getAddressEncoder, type Instruction, type TransactionSigner } from "@solana/kit";
 import { IntentStatus } from "@intent-engine/core";
-import { buildCloseDeliveryBook, decodeDeliveryBookAccount, DELIVERY_BOOK_DISCRIMINATOR, deliveryBookAddress, getDeliveryBookSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { buildCloseDeliveryBook, DELIVERY_BOOK_DISCRIMINATOR, deliveryBookAddress, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { BOOK_SIZES, readBook } from "./fair-reads.js";
 import { readableIntent } from "./job-proofs.js";
 import type { EngineAccount } from "./rpc-shapes.js";
 import type { Transport } from "./transport.js";
@@ -30,8 +31,9 @@ export async function booksPaidBy(transport: Transport, payer: Address): Promise
   if (transport.engineAccounts === undefined) {
     return null;
   }
-  const found = await transport.engineAccounts({ discriminator: DELIVERY_BOOK_DISCRIMINATOR, dataSize: getDeliveryBookSize(), match: [{ offset: BOOK_PAYER_AT, address: payer }] });
-  return found.filter(({ data }) => payerIs(data, payer));
+  const scan = transport.engineAccounts.bind(transport);
+  const found = await Promise.all(BOOK_SIZES.map((dataSize) => scan({ discriminator: DELIVERY_BOOK_DISCRIMINATOR, dataSize, match: [{ offset: BOOK_PAYER_AT, address: payer }] })));
+  return found.flat().filter(({ data }) => payerIs(data, payer));
 }
 
 const isBook = (view: { owner: Address; data: Uint8Array }): boolean =>
@@ -70,7 +72,7 @@ export async function closableBooks(
   }
   const decoded = (await candidates(transport, [...after.keys()], payers)).flatMap((found) => {
     try {
-      return [{ ...found, stored: decodeDeliveryBookAccount(found.data) }];
+      return [{ ...found, stored: readBook(found.data) }];
     } catch {
       return [];
     }

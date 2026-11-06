@@ -36,7 +36,7 @@ async function claimedJob(): Promise<Claimed> {
     nonce: 0n,
     expiresAt: NOW + 3_600n,
   });
-  const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
+  const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
   expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
   const worker = await keyed();
   const url = ["https://work.example.org", "honest", "count.mjs"].join("/");

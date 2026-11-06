@@ -6,6 +6,7 @@ import { connect, FirstOpeningRefused, NotSettleable, type SimpleClient } from "
 import { notFirstAnnouncer } from "../src/internal.js";
 import { funded, onDevnet, world, type World } from "./svm.js";
 import { keyed, sha, tokensOf, workUrl } from "./work.js";
+import { NO_CLAIMS_UNPROTECTED } from "../src/internal.js";
 
 const WORK = sha("the delivered work");
 const SPEC = sha("the acceptance spec");
@@ -48,7 +49,7 @@ describe("the simple release pays the first announcement that opens to the work"
     const seller = await at(worker);
     const sent = w.chain.sent.length;
     const previewed = await seller.deliver({ escrow, sha256: WORK, url: workUrl(), preview: true });
-    expect(previewed.summary).toBe(`Deliver work ${WORK} at ${workUrl()} for escrow ${escrow}`);
+    expect(previewed.summary).toBe(`Deliver work ${WORK} at ${workUrl()} for escrow ${escrow}; Unprotected: ${NO_CLAIMS_UNPROTECTED}`);
     expect(previewed.instructions.length).toBeGreaterThan(0);
     expect(w.chain.sent).toHaveLength(sent);
     const made = await seller.deliver({ escrow, sha256: WORK.toUpperCase(), url: workUrl() });

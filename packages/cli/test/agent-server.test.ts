@@ -205,6 +205,7 @@ describe("tool annotations", () => {
         "solive_wallet_auction",
         "solive_wallet_cancel",
         "solive_wallet_claim",
+        "solive_wallet_reject",
         "solive_wallet_profile",
         "solive_wallet_committee_create",
         "solive_wallet_committee_release",

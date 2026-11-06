@@ -26,8 +26,10 @@ import {
 } from "@intent-engine/core/internal";
 import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
-import { claimAt, claimBoard, refusedBy } from "./agent/claim-line.js";
+import { claimProtection, escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine, protectionLines, reviewBoardOf } from "@intent-engine/client/internal";
+import { claimAt, claimBoard, heldFor, lineWarning, refusedBy, reviewHeld } from "./agent/claim-line.js";
+import { collectReview, reviewable } from "./fair-commands.js";
+import { reviewLine, reviewPastExpiry } from "./fair-lines.js";
 import { previewed } from "./admin-commands.js";
 import { finishList, listAccount, listExists, listLate, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
@@ -48,6 +50,7 @@ type ClaimCommand = Extract<
       | "claims-take"
       | "claims-drop"
       | "claims-settle"
+      | "claims-collect"
       | "claims-standby"
       | "claims-leave"
       | "claims-advance"
@@ -56,8 +59,6 @@ type ClaimCommand = Extract<
       | "profile-close";
   }
 >;
-
-const NONE = "11111111111111111111111111111111" as Address;
 
 const sol = (lamports: bigint) => `${formatAmount(lamports, 9)} SOL`;
 
@@ -85,6 +86,9 @@ const claimsShown = (intent: Address, view: ClaimsView) => ({
   seconds_left: view.secondsLeft,
   stake: view.stake,
   max_secs: view.maxSecs,
+  review_secs: view.reviewSecs,
+  kill_fee: view.killFee,
+  review: view.review,
   owner: view.owner,
   cooldown: view.cooldown,
   line: view.line,
@@ -132,7 +136,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   }
   const signer = await transactionSigner(runtime, command.keypair);
   if (command.name === "claims-open") {
-    const { address: intent } = await ownOrder(transport, signer.address, command.nonce);
+    const { address: intent, intent: held } = await ownOrder(transport, signer.address, command.nonce);
     const board = await claimBoardAddress(intent);
     const existing = await client.claims({ owner: signer.address, nonce: command.nonce });
     if (existing !== null) {
@@ -141,16 +145,17 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
       }
       throw new FlowRefused(`escrow ${intent} already takes claims on board ${board}`);
     }
-    const floor = command.stake > 0n ? await claimFloor(transport) : undefined;
-    if (floor !== undefined && command.stake < floor) {
+    const floor = command.stake > 0n || command.killFee > 0n ? await claimFloor(transport) : undefined;
+    if (floor !== undefined && command.stake > 0n && command.stake < floor) {
       throw new FlowRefused(stakeBelowRent(floor));
     }
-    const opens = `Opens: claims on escrow ${intent}; a worker holds the job for up to ${command.maxSecs} seconds by staking ${sol(command.stake)}`;
+    await reviewable(transport, intent, command, floor, held.expiresAt - (await client.chainTime()));
+    const opens = [`Opens: claims on escrow ${intent}; a worker holds the job for up to ${command.maxSecs} seconds by staking ${sol(command.stake)}`, reviewLine(command.reviewSecs, command.killFee)];
     if (command.workers !== undefined) {
       return openListed({ ...command, workers: command.workers, floor }, signer, transport, intent, board, opens);
     }
-    const instruction = await buildOpenClaims({ owner: signer, intent, maxSecs: command.maxSecs, stake: command.stake, floor });
-    const summary = [opens, `Pays rent: ${signer.address}, for the claims board ${board}`];
+    const instruction = await buildOpenClaims({ owner: signer, intent, maxSecs: command.maxSecs, stake: command.stake, reviewSecs: command.reviewSecs, killFee: command.killFee, floor });
+    const summary = [...opens, `Pays rent: ${signer.address}, for the claims board ${board}`];
     return previewed(transport, [instruction], signer, { intent, board, summary }, command.yes);
   }
   if (command.name === "claims-list") {
@@ -205,6 +210,8 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
       return advanceLine(command, signer, transport, client, intent, view, shown);
     case "claims-settle":
       return settleClaims(command, signer, transport, client, intent, view, shown);
+    case "claims-collect":
+      return collectReview(command, signer, transport, intent, shown);
   }
 }
 
@@ -238,7 +245,8 @@ async function standBy(
   admit: () => Promise<void>,
 ) {
   const now = await client.chainTime();
-  if ((await escrowOpen(client, command.owner, command.nonce, now)) === null) {
+  const expiresAt = await escrowOpen(client, command.owner, command.nonce, now);
+  if (expiresAt === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so nobody can stand by for it`);
   }
   await fillsStopped(client, command.owner, command.nonce, intent);
@@ -257,6 +265,7 @@ async function standBy(
   const summary = [
     `Stands by: for escrow ${intent} as entry ${seq}, place ${view.line.waiting + 1} in its line; when the job reaches this worker it holds it for ${command.secs} seconds`,
     `Locks: a stake of ${sol(view.stake)} and the entry's rent, moved onto the claim when the job reaches this worker, or returned when it leaves the line`,
+    ...lineWarning(view, expiresAt),
   ];
   const instruction = await buildStandBy({ worker, intent, seq, secs: command.secs, ...listAccount(view.list) });
   return previewed(transport, [instruction], worker, { ...shown, seq, summary }, command.yes);
@@ -344,7 +353,10 @@ async function takeClaim(
     throw new FlowRefused(lineWaiting(intent, view.line.waiting));
   }
   if (refused === "ClaimHeld") {
-    throw new FlowRefused(heldBy(intent, board.worker, board.until - now));
+    throw new FlowRefused(`${heldBy(intent, board.worker, heldFor(view, now))}${reviewHeld(view)}`);
+  }
+  if (refused === "ReviewPastExpiry") {
+    throw new FlowRefused(reviewPastExpiry(intent, command.secs, view.reviewSecs, expiresAt));
   }
   const cooling = claimCooldown(board, now);
   if (refused === "ClaimCooldown" && cooling !== null) {
@@ -362,6 +374,7 @@ async function takeClaim(
     `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only ${worker.address} can be paid`,
     `Stakes: ${sol(view.stake)}, returned when a release pays this worker or it drops the claim, and lost to the owner if the claim lapses first`,
     ...(slot.state === "lapsed" ? [`Ends: the lapsed claim of ${slot.worker}, whose stake goes to the owner ${view.owner}`] : []),
+    ...protectionLines(claimProtection(reviewBoardOf(view), expiresAt, until, null), sol),
   ];
   const instruction = await buildClaimJob({ worker, intent, owner: view.owner, secs: command.secs, ...listAccount(view.list) });
   return previewed(transport, [instruction], worker, { ...shown, summary }, command.yes);
@@ -378,13 +391,13 @@ async function settleClaims(
 ) {
   const now = await client.chainTime();
   const open = (await escrowOpen(client, command.owner, command.nonce, now)) !== null;
-  const board = { owner: view.owner, worker: view.worker ?? NONE, until: view.until, held: view.stake };
+  const board = { ...claimBoard(view), until: view.until };
   let receiver: Address | null;
   try {
     receiver = stakeReceiverOnSettle(board, now, open);
   } catch (error) {
     if (isSdkError(error, "intent-core-error") && view.worker !== null) {
-      throw new FlowRefused(`${heldBy(intent, view.worker, view.until - now)}; settle once it lapses or the escrow closes`);
+      throw new FlowRefused(`${heldBy(intent, view.worker, heldFor(view, now))}${reviewHeld(view)}; settle once it lapses or the escrow closes`);
     }
     throw error;
   }
@@ -393,6 +406,7 @@ async function settleClaims(
   }
   const summary = [
     receiver === null ? "Moves: no stake; nobody holds the claim" : `Moves: the stake of ${sol(view.stake)} to ${receiver}`,
+    ...(view.review !== null && receiver === view.worker ? [`Pays: the kill fee of ${sol(view.killFee)} to ${receiver} too, since the judge neither released nor rejected its delivery by ${view.review.until}`] : []),
     ...(open ? [] : [`Closes: the claims board ${view.board}${view.list === null ? "" : ` and its claim list ${view.list.address}`}, returning ${view.list === null ? "its" : "their"} rent to the owner ${view.owner}`]),
     `Pays the fee: ${payer.address}`,
   ];

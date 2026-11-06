@@ -34,7 +34,7 @@ describe("claims list on the command line", () => {
     ({ intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: EXPIRES }));
   });
 
-  const opened = () => cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
+  const opened = () => cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
   const list = (workers: readonly Address[], ...rest: string[]) => cli(["claims", "list", "--keypair", "owner.json", "--nonce", "0", "--workers", workers.join(","), ...rest], keys);
   const shown = async () => ((await cli(["claims", "show", "--owner", w.owner.address, "--nonce", "0"], {})).json() as Json)["claim_list"];
 

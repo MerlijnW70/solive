@@ -6,7 +6,6 @@ import {
   claimBoardAddress,
   CLAIMS_OPEN,
   claimSlot,
-  decodeClaimBoardAccount,
   delivery,
   deliveryKeyOf,
   keyFingerprintV4,
@@ -24,6 +23,7 @@ import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { hex, type Proof, proofAt } from "./job-proofs.js";
 import { profileKeyOf, usableKey } from "./profile-key.js";
 import type { Transport } from "./transport.js";
+import { readBoard } from "./fair-reads.js";
 
 export type DeliveryOpeners = DeliveryOpener | readonly DeliveryOpener[];
 
@@ -119,7 +119,7 @@ async function claimHolder(transport: Transport, proof: Proof): Promise<Address 
   if (proof.intent.claims !== CLAIMS_OPEN) {
     return null;
   }
-  const board = decodeClaimBoardAccount(await engineAccount(transport, await claimBoardAddress(proof.address), CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  const board = readBoard(await engineAccount(transport, await claimBoardAddress(proof.address), CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   const slot = claimSlot(board, await chainTime(transport));
   return slot.state === "held" ? slot.worker : null;
 }

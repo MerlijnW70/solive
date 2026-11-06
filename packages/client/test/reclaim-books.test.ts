@@ -6,6 +6,7 @@ import { createClient } from "../src/index.js";
 import { BOOK_BATCH, budgeted, PACKET_DATA_SIZE, RECLAIM_BATCH, transactionBytes } from "../src/internal.js";
 import { world } from "./svm.js";
 import { fundedSigner, keyed, LOCAL, nativeMint, sha, specHash, workUrl } from "./work.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const WORK = sha("the work whose book closes");
 
@@ -26,7 +27,7 @@ async function jobs(count: number) {
     const escrow = await client.createIntent({ signer: owner, params, inputMint: NATIVE_MINT, outputMint: w.outputMint });
     const payer = await fundedSigner(w);
     const announced = await client.announce({ worker, payer, intent: escrow.intent, sha256: WORK, url: workUrl() });
-    await client.cancel(owner, { owner: owner.address, nonce: escrow.nonce });
+    await cancelAfterNotice(client, w.chain.svm, owner, { owner: owner.address, nonce: escrow.nonce });
     made.push({ intent: escrow.intent, announcement: announced.announcement, book: await deliveryBookAddress(escrow.intent), payer: payer.address });
   }
   return { w, client, worker, made };

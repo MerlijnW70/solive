@@ -12,7 +12,7 @@ const NOT_TOKENS: readonly string[] = [
   ...["agent_create", "prepare_agent_create"].flatMap((name) => [`${name}.id`, `${name}.nonce`, `${name}.min_result`, `${name}.max_result`]),
   ...["prepare_create", "prepare_signed_intent"].flatMap((name) => [`${name}.nonce`, `${name}.min_result`, `${name}.max_result`]),
   ...["preview_signed_intent", "submit_signed_intent"].flatMap((name) => [`${name}.epoch`, `${name}.nonce`, `${name}.min_result`, `${name}.max_result`]),
-  ...["get_claims", "get_intent", "get_receipt", "prepare_cancel", "prepare_crank", "quote", "wallet_cancel", "wallet_claim", "wallet_receipt", "wallet_wait"].map((name) => `${name}.nonce`),
+  ...["get_claims", "get_intent", "get_receipt", "prepare_cancel", "prepare_crank", "quote", "wallet_cancel", "wallet_claim", "wallet_receipt", "wallet_reject", "wallet_wait"].map((name) => `${name}.nonce`),
   ...["get_mandate", "prepare_mandate", "prepare_revoke_mandate"].map((name) => `${name}.id`),
   ...["wallet_attest", "wallet_attest_split", "wallet_committee_release", "wallet_committee_vote"].flatMap((name) => [`${name}.nonce`, `${name}.result`]),
   "wallet_escrow.min_result",

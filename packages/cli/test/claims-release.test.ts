@@ -68,7 +68,7 @@ const OTHER_WORK = "e4".repeat(32);
 const heldBy = (worker: Address) => ({ code: "ClaimHeld", hint: expect.stringContaining(`is claimed by ${worker}`) });
 
 async function claimed(client: Client, wallet: Address, attestor: Address) {
-  const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600 }));
+  const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600, review_secs: 0 }));
   const intent = escrow["intent"] as Address;
   const nonce = escrow["nonce"] as string;
   const worker = await funded();
@@ -100,17 +100,17 @@ describe("claims from the wallet tools", () => {
     const base = { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH };
     const wires = h.wires.length;
     expect((await call(client, "wallet_escrow", { ...base, claim_stake: "0.05" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_secs", message: CLAIMS_TOGETHER }] });
-    expect((await call(client, "wallet_escrow", { ...base, claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: CLAIMS_TOGETHER }] });
-    expect((await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, claim_stake: "0.05", claim_secs: 60 })).value).toMatchObject({
+    expect((await call(client, "wallet_escrow", { ...base, claim_secs: 60, review_secs: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: CLAIMS_TOGETHER }] });
+    expect((await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, claim_stake: "0.05", claim_secs: 60, review_secs: 0 })).value).toMatchObject({
       code: "InvalidInput",
       issues: [{ path: "claim_stake", message: CLAIMS_NEED_SPEC }],
     });
-    expect((await call(client, "wallet_escrow", { ...base, claim_stake: "101", claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake" }] });
+    expect((await call(client, "wallet_escrow", { ...base, claim_stake: "101", claim_secs: 60, review_secs: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake" }] });
     for (const claim_stake of ["0.000000001", "0.000890879"]) {
-      expect((await call(client, "wallet_escrow", { ...base, claim_stake, claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: stakeBelowRent(FLOOR) }] });
+      expect((await call(client, "wallet_escrow", { ...base, claim_stake, claim_secs: 60, review_secs: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: stakeBelowRent(FLOOR) }] });
     }
     expect(stakeBelowRent(FLOOR)).toContain("0 or at least 0.00089088");
-    const preview = await ok(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600 });
+    const preview = await ok(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600, review_secs: 0 });
     expect(preview["summary"]).toContain(claimsLine(3600, "0.05", false));
     expect(claimsLine(3600, "0.05", false)).toContain("a worker can hold the job for up to 3600 seconds by staking 0.05 SOL");
     expect(preview["warnings"]).toContain(SPEC_ANSWER_OUT);
@@ -118,7 +118,7 @@ describe("claims from the wallet tools", () => {
     expect(SPEC_NO_ANSWER).toContain("give claim_stake and claim_secs to open claims");
     expect(SPEC_NO_ANSWER).not.toContain("intent-engine");
     expect(h.wires.length).toBe(wires);
-    const sent = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600 }));
+    const sent = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600, review_secs: 0 }));
     expect(h.wires.length).toBe(wires + 1);
     expect(await ok(client, "get_claims", { owner: wallet, nonce: sent["nonce"] })).toMatchObject({
       takes_claims: true,
@@ -184,13 +184,13 @@ describe("claims from the wallet tools", () => {
         { name: "page", amount: "0.03" },
       ],
     };
-    expect((await call(client, "wallet_escrow_plan", { ...plan, spec_hash: undefined, spec_url: undefined, claim_stake: "0.05", claim_secs: 60 })).value).toMatchObject({
+    expect((await call(client, "wallet_escrow_plan", { ...plan, spec_hash: undefined, spec_url: undefined, claim_stake: "0.05", claim_secs: 60, review_secs: 0 })).value).toMatchObject({
       code: "InvalidInput",
       issues: [{ path: "pieces.0.spec_hash", message: CLAIMS_NEED_SPEC }],
     });
-    expect((await call(client, "wallet_escrow_plan", { ...plan, claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake" }] });
-    expect((await call(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.0001", claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: stakeBelowRent(FLOOR) }] });
-    const preview = await ok(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600 });
+    expect((await call(client, "wallet_escrow_plan", { ...plan, claim_secs: 60, review_secs: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake" }] });
+    expect((await call(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.0001", claim_secs: 60, review_secs: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: stakeBelowRent(FLOOR) }] });
+    const preview = await ok(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600, review_secs: 0 });
     const summary = preview["summary"] as string[];
     expect(summary).toContain(claimsLine(3600, "0.05", true));
     expect(summary).toContain(`${PIECE_ONE}: Publishes: the acceptance spec's url ${SPEC_URL}, in a memo the owner signs`);
@@ -202,7 +202,7 @@ describe("claims from the wallet tools", () => {
     const other = (await funded()).address;
     const hired = await ok(client, "wallet_escrow_plan", { ...plan, attestor: other });
     expect(hired["warnings"]).toContain(noJudgeKey(other));
-    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600 }));
+    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600, review_secs: 0 }));
     for (const piece of sent["pieces"] as Json[]) {
       expect(await ok(client, "get_claims", { owner: wallet, nonce: piece["nonce"] })).toMatchObject({ takes_claims: true, stake: STAKE.toString(), max_secs: 3600 });
     }

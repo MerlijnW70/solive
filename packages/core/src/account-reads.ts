@@ -6,8 +6,12 @@ import {
   type Committee,
   type Config,
   type DeliveryBook,
+  CLAIM_BOARD_DISCRIMINATOR,
+  DELIVERY_BOOK_DISCRIMINATOR,
   getAnnouncementDecoder,
   getClaimBoardDecoder,
+  getClaimBoardSize,
+  getDeliveryBookSize,
   getClaimListDecoder,
   getCommitteeDecoder,
   getConfigDecoder,
@@ -28,7 +32,11 @@ import {
   type UserState,
 } from "../generated/client/index.js";
 import { NotAnEngineAccount } from "./errors.js";
+import { FIRST_VERSION, V1_BOOK_SPACE, V2_BOARD_SPACE, V2_BOARD_VERSION } from "./migrate.js";
 import { AccountVersionError, accountLayoutOf, checkAccountVersion } from "./versions.js";
+
+const OLDER_BOARD_VERSION_AT = 8 + 124;
+const OLDER_BOOK_VERSION_AT = 8 + 80;
 
 function laidOutAs<T extends ReadonlyUint8Array>(name: string, data: T): T {
   if (accountLayoutOf(data)?.name !== name) {
@@ -63,6 +71,30 @@ export function decodeCommitteeAccount(data: ReadonlyUint8Array): Committee {
 
 export function decodeClaimBoardAccount(data: ReadonlyUint8Array): ClaimBoard {
   return getClaimBoardDecoder().decode(checkAccountVersion(laidOutAs("claim board", data)));
+}
+
+const widened = (data: ReadonlyUint8Array, space: number): Uint8Array => {
+  const out = new Uint8Array(space);
+  out.set(data.subarray(0, Math.min(data.length, space)));
+  return out;
+};
+
+const tagged = (data: ReadonlyUint8Array, tag: ReadonlyUint8Array): boolean => tag.every((b, i) => data[i] === b);
+
+export function isOlderBoard(data: ReadonlyUint8Array): boolean {
+  return tagged(data, CLAIM_BOARD_DISCRIMINATOR) && data.length === V2_BOARD_SPACE && data[OLDER_BOARD_VERSION_AT] === V2_BOARD_VERSION;
+}
+
+export function isOlderBook(data: ReadonlyUint8Array): boolean {
+  return tagged(data, DELIVERY_BOOK_DISCRIMINATOR) && data.length === V1_BOOK_SPACE && data[OLDER_BOOK_VERSION_AT] === FIRST_VERSION;
+}
+
+export function decodeClaimBoardOrOlder(data: ReadonlyUint8Array): ClaimBoard {
+  return isOlderBoard(data) ? getClaimBoardDecoder().decode(widened(data, getClaimBoardSize())) : decodeClaimBoardAccount(data);
+}
+
+export function decodeDeliveryBookOrOlder(data: ReadonlyUint8Array): DeliveryBook {
+  return isOlderBook(data) ? getDeliveryBookDecoder().decode(widened(data, getDeliveryBookSize())) : decodeDeliveryBookAccount(data);
 }
 
 export function decodeStandbyAccount(data: ReadonlyUint8Array): Standby {

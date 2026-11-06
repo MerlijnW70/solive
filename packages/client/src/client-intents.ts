@@ -6,6 +6,7 @@ import { chainTime, createdAccount } from "./accounts.js";
 import { NotFillable } from "./client-errors.js";
 import type { ClientContext, FillInput } from "./client-types.js";
 import { cancelClaims } from "./client-claims.js";
+import { CancelNotReady, cancelStateAt } from "./fair-close.js";
 import { type IntentRef, loadIntentRef } from "./intent-ref.js";
 import { type Plan, planOf } from "./plan.js";
 import { tokenAccountIfMissing, wrapIfShort } from "./setup.js";
@@ -18,6 +19,10 @@ export function intentPlans({ transport, mint, config }: ClientContext) {
     const { address, intent } = await loadIntentRef(transport, ref);
     if (intent.owner !== signer.address) {
       throw new InvalidInput("signer", "conflict", notOwnerCancel(address, intent.owner, signer.address));
+    }
+    const state = await cancelStateAt(transport, address, intent.claims, intent.status === IntentStatus.Open);
+    if (state.stage !== "now") {
+      throw new CancelNotReady(state);
     }
     const { tokenProgram } = await mint(intent.inputMint);
     const refund = await tokenAccountIfMissing(transport, signer, signer.address, intent.inputMint, tokenProgram);

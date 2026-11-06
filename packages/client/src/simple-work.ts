@@ -4,6 +4,8 @@ import { NoMessageSigner } from "./announce-errors.js";
 import { isSaltSigner } from "./announce-keys.js";
 import { NotSettleable } from "./client-errors.js";
 import { notOwnerCancel } from "./client-intents.js";
+import { CancelNotReady, NOTICE_SECS } from "./fair-close.js";
+import { protectionLines } from "./protection.js";
 import { intentAt } from "./jobs.js";
 import { outcome, type SimpleContext } from "./simple-orders.js";
 import { sha256Given, workReads } from "./simple-reads.js";
@@ -56,10 +58,10 @@ export function workSends(ctx: SimpleContext) {
     if (!isSaltSigner(worker)) {
       throw new NoMessageSigner(worker.address);
     }
-    const summary = `Deliver work ${sha256} at ${input.url} for escrow ${input.escrow}`;
     const work = { worker, intent: input.escrow, sha256, url: input.url };
+    const plan = await ctx.client.plan.announce(work);
+    const summary = [`Deliver work ${sha256} at ${input.url} for escrow ${input.escrow}`, ...protectionLines(plan.protection, (lamports) => `${formatAmount(lamports, 9)} SOL`)].join("; ");
     if (input.preview === true) {
-      const plan = await ctx.client.plan.announce(work);
       return { summary, instructions: [...plan.setup, ...plan.instructions] };
     }
     const { signature, announcement, seq } = await ctx.client.announce(work);
@@ -99,6 +101,14 @@ export function workSends(ctx: SimpleContext) {
     const { intent, mint } = await held(address);
     if (intent.owner !== ctx.signer.address) {
       throw new InvalidInput("escrow", "conflict", notOwnerCancel(address, intent.owner, ctx.signer.address));
+    }
+    const state = await ctx.client.cancelState(address);
+    if (state.stage === "request") {
+      const asked = `Request a cancel of ${address}: work was announced to it, so it can be cancelled ${NOTICE_SECS} seconds after this request lands; cancel again then`;
+      return outcome(ctx, input, asked, async (client) => ({ signature: await client.requestCancel(ctx.signer, address), intent: address, nonce: intent.nonce }));
+    }
+    if (state.stage !== "now") {
+      throw new CancelNotReady(state);
     }
     const refund = await vaultBalance(ctx.client.transport, address);
     const summary = `Cancel ${address} and return ${wholeTokens(refund, mint.decimals, intent.inputMint)} to ${ctx.signer.address}`;

@@ -4,6 +4,7 @@ import { NATIVE_MINT } from "@intent-engine/core";
 import { buildCloseAnnouncement, deliveryBookAddress, refutationAddress, signCommitteeVote, signMessageBytes } from "@intent-engine/core/internal";
 import { createTestWorld, type TestWallet, type TestWorld } from "../src/testing.js";
 import { checkCase, delivered, escrow, sha, statusOf, workUrl } from "./plan-driver.js";
+import { cancelAfterNotice } from "./notice.js";
 
 async function announcedTo(world: TestWorld, attestor?: Address) {
   const job = await escrow(world, attestor);
@@ -126,7 +127,7 @@ describe("every release write is its plan, sent", () => {
         const job = await escrow(w);
         const worker = await w.wallet();
         await delivered(w, job.intent, worker);
-        await w.client.cancel(job.owner, job.intent);
+        await cancelAfterNotice(w.client, w.svm, job.owner, job.intent);
         return { ...job, worker };
       },
       plan: (client, { worker }) => client.plan.reclaim({ worker }),
@@ -144,7 +145,7 @@ describe("every release write is its plan, sent", () => {
         const job = await escrow(w);
         const worker = await w.wallet();
         const made = await delivered(w, job.intent, worker);
-        await w.client.cancel(job.owner, job.intent);
+        await cancelAfterNotice(w.client, w.svm, job.owner, job.intent);
         await w.client.send([await buildCloseAnnouncement({ by: worker, announcement: made.announcement, intent: job.intent, rentTo: worker.address })], worker);
         return { ...job, closer: await w.wallet() };
       },

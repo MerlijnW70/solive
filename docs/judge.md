@@ -390,6 +390,22 @@ Once a claim lapses, anyone can run `claims advance`, which forfeits the lapsed 
 intent-engine claims standby --keypair worker.json --owner $env:OWNER --nonce $env:NONCE --secs 3600 --yes
 ```
 
+## Fair closing
+
+Claims carry review terms. `--review-secs` is the judge's window after the holder's first announcement, by default `86400`; `--kill-fee` is SOL the owner locks on the claims board, by default the stake. `--review-secs 0` turns the review off. Claims open only before the first announcement, and `solive_wallet_escrow` opens them in the create transaction.
+
+An announcement by the live holder arms the review when the whole window still fits before expiry. Until it ends the owner cannot cancel. `claims take`, `deliver` and their MCP tools say before sending whether a delivery is protected.
+
+The judge ends a review with a release or a reject. A reject needs a receipt of a failing judge run, or `--without-receipt <reason>`, and returns the holder's stake:
+
+```powershell
+intent-engine reject --keypair judge.json --owner $env:OWNER --nonce $env:NONCE --announcement $env:ANNOUNCEMENT --sha256 $env:WORK --yes
+```
+
+A committee member signs a reject vote with the same command and `--out`; `reject --vote <file>` relays a quorum. Over MCP, `solive_wallet_reject` does both.
+
+A review that ends with no release or reject pays the holder its stake and the kill fee: `claims collect`, or `solive_wallet_claim` with action `collect`, sends it. Cancelling an escrow with an announcement takes two calls of `cancel` or `solive_wallet_cancel`: the first requests it, the second cancels once the `86400`-second notice and any review end.
+
 ## Next
 
 - [How the judge works](maintainers/judge-internals.md)

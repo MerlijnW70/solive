@@ -40,6 +40,7 @@ import {
   VoteRejected,
 } from "./client-errors.js";
 import { ConfirmMismatch } from "./confirm-release.js";
+import { CancelNotReady } from "./fair-close.js";
 import { SpecSealed, SpecUnreadable } from "./job-specs.js";
 import { LedgerError, LedgerPathError } from "./ledger-path.js";
 import { FetchFailed } from "./fetch-failed.js";
@@ -98,6 +99,7 @@ declare module "@intent-engine/core" {
     "reply-too-large": ReplyTooLarge;
     "wrong-reply-length": WrongReplyLength;
     "transaction-unread": TransactionUnread;
+    "cancel-not-ready": CancelNotReady;
   }
 }
 
@@ -184,4 +186,9 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
     meaning: "the node answered a call for several entries with a list of another length, so no entry of it is trusted",
   },
   "transaction-unread": { error: TransactionUnread, fields: ["signature"], meaning: "the node did not serve the transaction, so what it created is unknown" },
+  "cancel-not-ready": {
+    error: CancelNotReady,
+    fields: ["intent", "stage", "readyAt"],
+    meaning: "the escrow cannot be cancelled yet: stage request means its owner requests a cancel first, notice and review mean it waits until readyAt",
+  },
 };

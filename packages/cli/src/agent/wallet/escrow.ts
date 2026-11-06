@@ -12,7 +12,7 @@ import { InvalidInput, account, amount, flag, hex32, integer, list, object, opti
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, oneAtATime, signerOf, termsApproval } from "./guard.js";
 import { createFeesOf, offerFields, type Token } from "./offer.js";
 import { costLines, escrowCosts, pieceCostLines } from "./costs.js";
-import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimTerms, refuseMalformedRun, refuseMalformedText, refuseWrongSpec, specPreflight, wrongSpecLines } from "./escrow-terms.js";
+import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimTerms, escrowExpiresIn, refuseMalformedRun, refuseMalformedText, refuseWrongSpec, specPreflight, wrongSpecLines } from "./escrow-terms.js";
 import { pieceUploadPlans, planLines, readerLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
 import { type Claimants, claimantsOf, listedLines, offeredWithClaims, previewFees, specReader } from "./escrow-claims.js";
 
@@ -80,7 +80,7 @@ export const walletEscrow = define({
     spec_hash: optional(hex32(`64 hex: the sha256 of the acceptance spec the attestor must verify; ${SPEC_MUST}. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result; never put the answer or its sha256 in the spec of work others could compute`)),
     spec_url: optional(text(`where the acceptance spec is published, ${MEMO_URL_RULE}; needs spec_hash. Recorded in a memo this wallet signs with the escrow`)),
     judge_fee: optional(text("whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount")),
-    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
+    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}, plus review_secs when claims open`)),
     record_mint: optional(text("a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
     ...uploadInputs,
     ...claimInputs,
@@ -108,6 +108,7 @@ export const walletEscrow = define({
       checkedText(input.spec_text, specHash, "spec_text");
     }
     const claims = await claimTerms(input, false, ctx.transport);
+    const expiresIn = escrowExpiresIn(input.expires_in, claims, ESCROW_EXPIRES_IN);
     if (claims !== undefined && specHash === undefined) {
       throw new InvalidInput([{ path: "claim_stake", message: CLAIMS_NEED_SPEC }]);
     }
@@ -152,8 +153,8 @@ export const walletEscrow = define({
         attestor: input.attestor,
         spec_hash: specHash ?? null,
         spec_url: input.spec_url ?? null,
-        expires_in: input.expires_in ?? ESCROW_EXPIRES_IN,
-        claims: claims === undefined ? null : { stake: claims.stake, max_secs: claims.maxSecs },
+        expires_in: expiresIn,
+        claims: claims === undefined ? null : { stake: claims.stake, max_secs: claims.maxSecs, review_secs: claims.reviewSecs, kill_fee: claims.killFee },
         workers: workers ?? null,
         spec: preflight ?? null,
         allow_wrong_spec: input.allow_wrong_spec === true,
@@ -170,14 +171,14 @@ export const walletEscrow = define({
           ...(specHash === undefined ? {} : { spec_hash: specHash }),
           ...(input.judge_fee === undefined ? {} : { judge_fee: judgeFee }),
         },
-        expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+        expires_at: now + BigInt((expiresIn) + LANDING_SECONDS),
         ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
         approval,
       };
     }, JOB_LIVE, listed, signer);
     const summary = [
       ...explainedSetup((escrowed["summary"] as string[]) ?? [], buy),
-      ...(claims === undefined ? [] : [claims.line, ...listedLines(workers)]),
+      ...(claims === undefined ? [] : [...claims.lines, ...listedLines(workers)]),
       ...(settled === undefined ? [] : [await feeLine(ctx, settled), ...costLines(costs, network, settled.amount, 1, sends)]),
       ...(upload === undefined || escrowed["sent"] === true ? [] : [uploadLine(upload)]),
     ];
@@ -282,7 +283,7 @@ export const walletEscrowPlan = define({
       "the pieces, in order",
       2,
     ),
-    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds each escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
+    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds each escrow stays open once sent; default ${ESCROW_EXPIRES_IN}, plus review_secs when claims open`)),
     record_mint: optional(text("a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
     ...claimInputs,
     ...allowWrongSpec,
@@ -317,6 +318,7 @@ export const walletEscrowPlan = define({
     const signer = await signerOf(ctx);
     oneAtATime(signer);
     const claims = await claimTerms(input, true, ctx.transport);
+    const expiresIn = escrowExpiresIn(input.expires_in, claims, ESCROW_EXPIRES_IN);
     const sold = mintNamed(input.sell, wallet.url, "sell");
     const buy = recordedMint(sold, wallet.url, input.record_mint);
     const [token, now, { config }] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport), loadConfig(ctx.transport)]);
@@ -369,7 +371,7 @@ export const walletEscrowPlan = define({
         attestor: piece.attestor,
         ...(piece.specHash === undefined ? {} : { spec_hash: piece.specHash }),
       },
-      expires_at: at + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+      expires_at: at + BigInt((expiresIn) + LANDING_SECONDS),
       ...(piece.specUrl === undefined ? {} : { spec_url: piece.specUrl }),
       ...(bound === undefined ? {} : { approval: bound }),
     });
@@ -409,8 +411,8 @@ export const walletEscrowPlan = define({
       owner: signer.address,
       sell: sold,
       buy,
-      expires_in: input.expires_in ?? ESCROW_EXPIRES_IN,
-      claims: claims === undefined ? null : { stake: claims.stake, max_secs: claims.maxSecs },
+      expires_in: expiresIn,
+      claims: claims === undefined ? null : { stake: claims.stake, max_secs: claims.maxSecs, review_secs: claims.reviewSecs, kill_fee: claims.killFee },
       allow_wrong_spec: input.allow_wrong_spec === true,
       pieces: planned.map((piece, i) => ({
         name: piece.name,
@@ -453,7 +455,7 @@ export const walletEscrowPlan = define({
         ),
         ...pieceCostLines(costs, network, total),
         ...(input.send === true ? [] : planLines(uploads)),
-        ...(claims === undefined ? [] : [claims.line, ...pieceLimits(planned, lists)]),
+        ...(claims === undefined ? [] : [...claims.lines, ...pieceLimits(planned, lists)]),
         ...explainedSetup(first["summary"] as string[], buy).map((line) => `${PIECE_ONE}: ${line}`),
       ],
       warnings: [...(first["warnings"] as string[]).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))), ...unlisted, ...preflights],

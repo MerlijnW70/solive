@@ -2,7 +2,7 @@ import type { Address, TransactionPartialSigner } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { type AnnounceInput, type ReclaimBook, type RefuteInput, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { loadAnnouncement, loadDeliveryBook, mintOf, secretInputOf } from "@intent-engine/client/internal";
+import { loadAnnouncement, loadDeliveryBook, mintOf, protectionLines, secretInputOf } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, keptLines, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
@@ -63,6 +63,8 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
     commitment: plan.commitment,
     salt: plan.salt,
     sealed_to: plan.sealedTo.map(walletOf),
+    protected: plan.protection.arms,
+    ...(plan.protection.reviewUntil === null ? {} : { review_until: plan.protection.reviewUntil }),
     ...(keptAt === undefined ? {} : { secrets: keptAt }),
     summary: [
       `Announces: the work with sha256 ${sha256} to the proof escrow ${intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${worker.address} and the salt ${plan.salt}`,
@@ -70,6 +72,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
       `Pays: the announcement's rent and the fee${announceFeePaid(fee)}, from ${payer.address}; the rent returns to it when the announcement closes${announceFeeKept(fee)}`,
       ...(plan.setup.length === 0 ? [] : [`Syncs first, in its own transaction: the key snapshot of committee ${plan.attestor}, which its announcements are sealed to`]),
       ...(keptAt === undefined ? [] : [`Keeps: the delivery secrets in ${keptAt}, which refute reads; this wallet cannot sign messages, so they cannot be derived again`]),
+      ...protectionLines(plan.protection, (lamports) => `${formatAmount(lamports, SOL_DECIMALS)} SOL`),
     ],
     warnings: [
       ...(invited === undefined || invited.includes(worker.address) ? [] : [deliverNotInvited(worker.address, intent)]),

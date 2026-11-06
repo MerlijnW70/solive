@@ -4,7 +4,7 @@ import { Kind } from "@intent-engine/core";
 import { decodeParams } from "@intent-engine/core/internal";
 import type { Transport } from "@intent-engine/client";
 import { intentAt } from "@intent-engine/client/internal";
-import { readReceipt, ReceiptRefused, type Route, type StoreOptions, type Stored } from "./judge-receipt.js";
+import { FAIL_RECEIPT_KIND, RECEIPT_KIND, readReceipt, type ReceiptOutcome, ReceiptRefused, type Route, type StoreOptions, type Stored } from "./judge-receipt.js";
 import { sanitized } from "./untrusted-text.js";
 import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
@@ -24,8 +24,8 @@ export const CURRENT_PINS: Pins = { wasmSha256: VIPER_WASM_SHA256, commit: VIPER
 
 export const EMPTY_REASON = "the override needs a reason: a non-empty text saying why this signature needs no passing judge run";
 
-export const uncheckedWarning = (target: Target, reason: string): string =>
-  `signed without a judge receipt: nothing checked that a judge run on this machine passed the work with sha256 ${target.deliveredSha256}, announced in ${target.announcement}, against the spec ${target.specSha256} of escrow ${target.intent}; the reason given: ${reason}`;
+export const uncheckedWarning = (target: Target, reason: string, want: ReceiptOutcome = "pass"): string =>
+  `signed without a judge receipt: nothing checked that a judge run on this machine ${want === "pass" ? "passed" : "failed"} the work with sha256 ${target.deliveredSha256}, announced in ${target.announcement}, against the spec ${target.specSha256} of escrow ${target.intent}; the reason given: ${reason}`;
 
 const differs = (field: string, held: string, want: string): string => `the judge receipt records ${field} ${held}, not ${want}`;
 
@@ -45,9 +45,11 @@ function routeMismatch(route: Route, pins: Pins): string | undefined {
   return undefined;
 }
 
-export function mismatchOf(receipt: Stored, target: Target, judges: readonly Address[], pins: Pins = CURRENT_PINS): string | undefined {
-  if (receipt.outcome !== "pass") {
-    return `the judge receipt records the outcome ${receipt.outcome}, and only a pass authorizes a signature`;
+export function mismatchOf(receipt: Stored, target: Target, judges: readonly Address[], pins: Pins = CURRENT_PINS, want: ReceiptOutcome = "pass"): string | undefined {
+  if (receipt.outcome !== want) {
+    return want === "pass"
+      ? `the judge receipt records the outcome ${receipt.outcome}, and only a pass authorizes a signature`
+      : `the judge receipt records the outcome ${receipt.outcome}, and only a fail authorizes a reject`;
   }
   const fields: [string, string, string][] = [
     ["the cluster", receipt.cluster, target.cluster],
@@ -69,19 +71,19 @@ export function mismatchOf(receipt: Stored, target: Target, judges: readonly Add
   return routeMismatch(receipt.route, pins);
 }
 
-export async function authorize(home: string, target: Target, judges: readonly Address[], override: string | undefined, options: StoreOptions = {}): Promise<Authority> {
+export async function authorize(home: string, target: Target, judges: readonly Address[], override: string | undefined, options: StoreOptions = {}, want: ReceiptOutcome = "pass"): Promise<Authority> {
   if (override !== undefined) {
     const reason = sanitized(override.trim(), REASON_LIMIT);
     if (reason === "") {
       throw new ReceiptRefused("missing", EMPTY_REASON);
     }
-    return { by: "override", unchecked: { reason, warning: uncheckedWarning(target, reason) } };
+    return { by: "override", unchecked: { reason, warning: uncheckedWarning(target, reason, want) } };
   }
   let worst: ReceiptRefused | undefined;
   for (const judge of judges) {
     try {
-      const receipt = await readReceipt(home, { cluster: target.cluster, judge, intent: target.intent, announcement: target.announcement, deliveredSha256: target.deliveredSha256 }, options);
-      const mismatch = mismatchOf(receipt, target, [judge]);
+      const receipt = await readReceipt(home, { cluster: target.cluster, judge, intent: target.intent, announcement: target.announcement, deliveredSha256: target.deliveredSha256 }, options, want === "fail" ? FAIL_RECEIPT_KIND : RECEIPT_KIND);
+      const mismatch = mismatchOf(receipt, target, [judge], CURRENT_PINS, want);
       if (mismatch === undefined) {
         return { by: "receipt", judge };
       }
@@ -94,7 +96,7 @@ export async function authorize(home: string, target: Target, judges: readonly A
     }
   }
   if (worst === undefined || worst.problem === "missing") {
-    throw new ReceiptRefused("missing", `no judge receipt on this machine says a judge run of ${judges.join(" or ")} passed the work with sha256 ${target.deliveredSha256}, announced in ${target.announcement}, for escrow ${target.intent}`);
+    throw new ReceiptRefused("missing", `no judge receipt on this machine says a judge run of ${judges.join(" or ")} ${want === "pass" ? "passed" : "failed"} the work with sha256 ${target.deliveredSha256}, announced in ${target.announcement}, for escrow ${target.intent}`);
   }
   throw worst;
 }
@@ -113,14 +115,16 @@ export async function proofSpecOf(transport: Transport, intent: Address): Promis
   return params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0) ? undefined : getBase16Decoder().decode(params.specHash).toLowerCase();
 }
 
-export async function authorizeEscrow(home: string | undefined, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined): Promise<Authority> {
+export async function authorizeEscrow(home: string | undefined, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined, want: ReceiptOutcome = "pass"): Promise<Authority> {
   const specSha256 = await proofSpecOf(transport, at.intent);
   if (home === undefined || specSha256 === undefined) {
     throw new ReceiptRefused("missing", `escrow ${at.intent} is not an open proof escrow this wallet judges, so no judge receipt can match it`);
   }
-  return authorize(home, { ...at, specSha256, cluster: await transport.genesisHash() }, judges, override);
+  return authorize(home, { ...at, specSha256, cluster: await transport.genesisHash() }, judges, override, {}, want);
 }
 
 export const CLI_RECEIPT_NEXT = `run judge on this work first, which saves a receipt when the check passes, or pass ${OVERRIDE_FLAG} <reason> to sign without one; nothing was signed or sent`;
 
 export const cliRefusal = (error: ReceiptRefused): string => `${error.why}; ${CLI_RECEIPT_NEXT}`;
+
+export const CLI_REJECT_NEXT = `run judge on this work first, which saves a receipt when the check fails, or pass ${OVERRIDE_FLAG} <reason> to reject without one; nothing was signed or sent`;

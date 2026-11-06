@@ -20,7 +20,7 @@ export async function jobCommand(command: JobCommand, _runtime: Runtime, transpo
       const filtered = command.attestor !== undefined || command.mint !== undefined || command.minPay !== undefined || command.unclaimed === true;
       return {
         jobs: jobs.map(
-          ({ netPay, payable, takesClaims, claimedBy, claimEnds, waiting, freezeAuthority, pays, ...job }) => ({
+          ({ netPay, payable, takesClaims, claimedBy, claimEnds, waiting, reviewSecs, killFee, reviewUntil, freezeAuthority, pays, ...job }) => ({
             ...job,
             net_pay: netPay,
             payable,
@@ -28,6 +28,9 @@ export async function jobCommand(command: JobCommand, _runtime: Runtime, transpo
             claimed_by: claimedBy,
             claim_ends: claimEnds,
             waiting,
+            review_secs: reviewSecs,
+            kill_fee: killFee,
+            review_until: reviewUntil,
             ...freezeFields(freezeAuthority, job.owner),
           }),
         ),

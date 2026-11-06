@@ -8,7 +8,7 @@ import { sol } from "../src/agent/wallet/costs.js";
 import { NOTHING_LEFT, settleLine } from "../src/agent/wallet/worker-return.js";
 import { bookKept, bookLive } from "../src/agent/wallet/worker-books.js";
 import { h, NOW, setNow } from "./harness.js";
-import { commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, rentOf, run, server, SOLUTION, STAKE, startHirer, tokensAt, workFile } from "./local-worker-kit.js";
+import { cancelledOver, commandNamed, forced, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, rentOf, run, server, SOLUTION, STAKE, startHirer, tokensAt, workFile } from "./local-worker-kit.js";
 import { airdropped } from "./airdrop.js";
 
 const WRAPPED = 5_000_000n;
@@ -97,7 +97,7 @@ describe("a local worker's leftovers, counted exactly", () => {
   it("previews nothing to send for a worker that holds nothing, keeps its key on preview, and deletes it on send", async () => {
     const job = await hire(false);
     const { worker, keypair } = await made(job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     drained(worker);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: worker });
     expect(preview).toMatchObject({ returned: sol(0n), kept: [], sent: false, key_deleted: false, next: NOTHING_LEFT });
@@ -112,7 +112,7 @@ describe("a local worker's leftovers, counted exactly", () => {
   it("counts the rent of the wrapped SOL account it closes, and keeps the key when another token stays, even once that token is gone", async () => {
     const job = await hire(false);
     const { worker, keypair } = await made(job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const test = await tokensAt(worker, 7n);
     const wrapped = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const space = BigInt(getTokenSize());
@@ -141,7 +141,7 @@ describe("a local worker's leftovers, counted exactly", () => {
     const { worker, brief } = await made(job.intent);
     const artifact = workFile(SOLUTION);
     await run(commandNamed(brief, "deliver").map((word) => (word === "<your" ? artifact : word)).filter((word) => word !== "file>"));
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const held = lamportsOf(worker);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: worker });
     expect(preview).toMatchObject({ returned: sol(held + rentOf(getAnnouncementSize()) + rentOf(getDeliveryBookSize())), kept: [] });
@@ -156,7 +156,7 @@ describe("a local worker's leftovers, counted exactly", () => {
       const artifact = workFile(new TextEncoder().encode(`export default () => ${n};\n`), `work-${n}.mjs`);
       await run(deliver.map((word) => (word === "<your" ? artifact : word)).filter((word) => word !== "file>"));
     }
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     const held = lamportsOf(worker);
     const preview = await ok(hirer, "wallet_worker", { return_leftovers: worker });
     const book = await deliveryBookAddress(job.intent);

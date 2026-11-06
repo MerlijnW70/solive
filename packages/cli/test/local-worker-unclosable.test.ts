@@ -6,7 +6,7 @@ import { DEVNET_TEST_MINT, findAssociatedTokenAddress } from "@intent-engine/cor
 import { TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { OTHER_CLOSE_AUTHORITY, FROZEN, unclosable, WITHHELD_FEES } from "../src/agent/wallet/worker-return.js";
 import { h } from "./harness.js";
-import { hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, startHirer } from "./local-worker-kit.js";
+import { cancelledOver, hireWith, lamportsOf, makeWorker, ok, removeWorkFiles, startHirer } from "./local-worker-kit.js";
 
 type Plant = { owner: Address; mint: Address; state?: AccountState; closeAuthority?: Address; program?: Address; tail?: Uint8Array };
 
@@ -34,7 +34,7 @@ describe("a local worker's leftovers with an account that cannot close", () => {
   const ended = async () => {
     const job = await hireWith(hirer, wallet, false);
     const made = await makeWorker(hirer, job.intent);
-    await ok(hirer, "wallet_cancel", { nonce: job.nonce, close: false, send: true });
+    await cancelledOver(hirer, job.nonce);
     return made;
   };
 

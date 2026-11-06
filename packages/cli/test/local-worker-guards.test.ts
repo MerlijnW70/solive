@@ -130,7 +130,7 @@ describe("the local worker's guards", () => {
     const bare = await ok(hirer, "wallet_escrow", await approved(hirer, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
     const other = (await generateKeyPairSigner()).address;
     h.specPages.set(SPEC_URL, SPEC);
-    await run(["claims", "open", "--keypair", WALLET, "--url", "devnet", "--nonce", bare["nonce"] as string, "--max-secs", "3600", "--stake", "0.01", "--workers", other, "--yes"]);
+    await run(["claims", "open", "--review-secs", "0", "--keypair", WALLET, "--url", "devnet", "--nonce", bare["nonce"] as string, "--max-secs", "3600", "--stake", "0.01", "--workers", other, "--yes"]);
     const funded = lamportsOf(wallet);
     const intent = bare["intent"] as Address;
     expect((await call(hirer, "wallet_worker", { intent, send: true })).value).toMatchObject({ code: "WorkerUnfit", hint: jobListed(intent) });

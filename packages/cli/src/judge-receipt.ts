@@ -9,8 +9,12 @@ import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 import { settingsDir } from "./wallet.js";
 
 export const RECEIPT_KIND = "judge-receipt";
+export const FAIL_RECEIPT_KIND = "judge-fail-receipt";
+
+export type ReceiptKind = typeof RECEIPT_KIND | typeof FAIL_RECEIPT_KIND;
 export const RECEIPT_VERSION = 1;
 export const RECEIPT_DIR = "receipts";
+export const FAIL_RECEIPT_DIR = "fail-receipts";
 export const KEY_FILE = "key";
 export const KEY_BYTES = 32;
 export const MAX_RECEIPT_BYTES = 65_536;
@@ -36,9 +40,13 @@ export const routeOfPlan = (plan: Plan): Route => ({
 
 export type Place = { cluster: string; judge: Address; intent: Address; announcement: Address; deliveredSha256: string };
 
+export type ReceiptOutcome = "pass" | "fail";
+
 export type Receipt = Place & { outcome: "pass"; owner: Address; nonce: bigint; specSha256: string; route: Route };
 
 export type Stored = Omit<Receipt, "outcome"> & { outcome: string };
+
+export type FailReceipt = Omit<Receipt, "outcome"> & { outcome: "fail" };
 
 export type StoreOptions = { uid?: number | undefined; dirUid?: number | undefined };
 
@@ -54,10 +62,12 @@ export class ReceiptRefused extends Error {
   }
 }
 
-export const receiptsDir = (home: string): string => join(settingsDir(home), RECEIPT_DIR);
+export const receiptsDir = (home: string, kind: ReceiptKind = RECEIPT_KIND): string => join(settingsDir(home), kind === RECEIPT_KIND ? RECEIPT_DIR : FAIL_RECEIPT_DIR);
 
-export const receiptName = (at: Place): string =>
-  `${createHash("sha256").update(JSON.stringify([RECEIPT_KIND, at.cluster, at.judge, at.intent, at.announcement, at.deliveredSha256])).digest("hex")}.json`;
+export const receiptName = (at: Place): string => nameFor(at, RECEIPT_KIND);
+
+const nameFor = (at: Place, kind: ReceiptKind): string =>
+  `${createHash("sha256").update(JSON.stringify([kind, at.cluster, at.judge, at.intent, at.announcement, at.deliveredSha256])).digest("hex")}.json`;
 
 export const receiptPath = (home: string, at: Place): string => join(receiptsDir(home), receiptName(at));
 
@@ -91,10 +101,10 @@ async function checkedDir(path: string, uid: number | undefined, loose: number):
   }
 }
 
-async function storeDir(home: string, create: boolean, options: StoreOptions): Promise<string> {
+async function storeDir(home: string, create: boolean, options: StoreOptions, kind: ReceiptKind = RECEIPT_KIND): Promise<string> {
   const uid = dirUidOf(options);
   const settings = settingsDir(home);
-  const dir = receiptsDir(home);
+  const dir = receiptsDir(home, kind);
   if (create) {
     await mkdir(settings, { recursive: true, mode: DIR_MODE });
   }
@@ -188,7 +198,7 @@ async function macKey(dir: string, create: boolean, options: StoreOptions): Prom
   return read();
 }
 
-const macOf = (key: Uint8Array, body: string): string => createHmac("sha256", key).update(`${RECEIPT_KIND}\n${body}`).digest("hex");
+const macOf = (key: Uint8Array, body: string, kind: ReceiptKind = RECEIPT_KIND): string => createHmac("sha256", key).update(`${kind}\n${body}`).digest("hex");
 
 const routeBody = (route: Route) => ({
   sandbox: route.sandbox,
@@ -198,8 +208,8 @@ const routeBody = (route: Route) => ({
   ...(route.engine === undefined ? {} : { engine: { wasm_sha256: route.engine.wasmSha256, commit: route.engine.commit } }),
 });
 
-const bodyOf = (receipt: Stored) => ({
-  kind: RECEIPT_KIND,
+const bodyOf = (receipt: Stored, kind: ReceiptKind = RECEIPT_KIND) => ({
+  kind,
   version: RECEIPT_VERSION,
   outcome: receipt.outcome,
   cluster: receipt.cluster,
@@ -213,19 +223,30 @@ const bodyOf = (receipt: Stored) => ({
   route: routeBody(receipt.route),
 });
 
-export const sealReceipt = (key: Uint8Array, receipt: Stored): string => {
-  const body = JSON.stringify(bodyOf(receipt));
-  return `${JSON.stringify({ ...bodyOf(receipt), mac: macOf(key, body) })}\n`;
+export const sealReceipt = (key: Uint8Array, receipt: Stored, kind: ReceiptKind = RECEIPT_KIND): string => {
+  const body = JSON.stringify(bodyOf(receipt, kind));
+  return `${JSON.stringify({ ...bodyOf(receipt, kind), mac: macOf(key, body, kind) })}\n`;
 };
 
 export async function writeReceipt(home: string, receipt: Receipt, options: StoreOptions = {}): Promise<string> {
   if ((receipt.outcome as string) !== "pass") {
     throw new ReceiptRefused("unwritable", `a receipt records only a pass, not ${String(receipt.outcome)}`);
   }
-  const dir = await storeDir(home, true, options);
+  return writeSealed(home, receipt, RECEIPT_KIND, options);
+}
+
+export async function writeFailReceipt(home: string, receipt: FailReceipt, options: StoreOptions = {}): Promise<string> {
+  if ((receipt.outcome as string) !== "fail") {
+    throw new ReceiptRefused("unwritable", `a fail receipt records only a fail, not ${String(receipt.outcome)}`);
+  }
+  return writeSealed(home, receipt, FAIL_RECEIPT_KIND, options);
+}
+
+async function writeSealed(home: string, receipt: Stored, kind: ReceiptKind, options: StoreOptions): Promise<string> {
+  const dir = await storeDir(home, true, options, kind);
   const key = await macKey(dir, true, options);
-  const path = join(dir, receiptName(receipt));
-  const temp = await writePrivate(dir, Buffer.from(sealReceipt(key, receipt)));
+  const path = join(dir, nameFor(receipt, kind));
+  const temp = await writePrivate(dir, Buffer.from(sealReceipt(key, receipt, kind)));
   try {
     await rename(temp, path);
   } catch (error) {
@@ -235,11 +256,12 @@ export async function writeReceipt(home: string, receipt: Receipt, options: Stor
   return path;
 }
 
-export async function keptReceipt(home: string, receipt: Receipt, options: StoreOptions = {}): Promise<{ receipt?: string; receiptRefused?: string }> {
+export async function keptReceipt(home: string, receipt: Receipt | FailReceipt, options: StoreOptions = {}): Promise<{ receipt?: string; receiptRefused?: string }> {
   try {
-    return { receipt: await writeReceipt(home, receipt, options) };
+    return { receipt: receipt.outcome === "fail" ? await writeFailReceipt(home, receipt, options) : await writeReceipt(home, receipt, options) };
   } catch (error) {
-    return { receiptRefused: `no receipt was saved for this pass, so a later attest or vote is refused: ${error instanceof Error ? error.message : String(error)}` };
+    const after = receipt.outcome === "pass" ? "a later attest or vote" : "a later reject";
+    return { receiptRefused: `no receipt was saved for this ${receipt.outcome}, so ${after} is refused: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
 
@@ -282,7 +304,7 @@ function routeOf(value: unknown): Route | undefined {
   };
 }
 
-export function parsedReceipt(text: string, key: Uint8Array, path: string): Stored {
+export function parsedReceipt(text: string, key: Uint8Array, path: string, kind: ReceiptKind = RECEIPT_KIND): Stored {
   const tampered = (why: string): never => {
     throw new ReceiptRefused("tampered", notPrivateFile(path, why));
   };
@@ -296,13 +318,13 @@ export function parsedReceipt(text: string, key: Uint8Array, path: string): Stor
     return tampered("carries no receipt mac");
   }
   const { mac, ...body } = parsed;
-  const want = Buffer.from(macOf(key, JSON.stringify(body)), "hex");
+  const want = Buffer.from(macOf(key, JSON.stringify(body), kind), "hex");
   const given = Buffer.from(mac as string, "hex");
   if (given.length !== want.length || !timingSafeEqual(given, want)) {
     return tampered("does not carry the mac this user's receipt key gives it: it was changed after the judge wrote it, or another key wrote it");
   }
-  if (!sameKeys(body, BODY_KEYS, BODY_KEYS) || body["kind"] !== RECEIPT_KIND || body["version"] !== RECEIPT_VERSION) {
-    return tampered(`is not a version ${RECEIPT_VERSION} ${RECEIPT_KIND}`);
+  if (!sameKeys(body, BODY_KEYS, BODY_KEYS) || body["kind"] !== kind || body["version"] !== RECEIPT_VERSION) {
+    return tampered(`is not a version ${RECEIPT_VERSION} ${kind}`);
   }
   const addresses = (["cluster", "judge", "owner", "intent", "announcement"] as const).every((name) => typeof body[name] === "string");
   const route = routeOf(body["route"]);
@@ -327,10 +349,10 @@ export function parsedReceipt(text: string, key: Uint8Array, path: string): Stor
   };
 }
 
-export async function readReceipt(home: string, at: Place, options: StoreOptions = {}): Promise<Stored> {
-  const dir = await storeDir(home, false, options);
+export async function readReceipt(home: string, at: Place, options: StoreOptions = {}, kind: ReceiptKind = RECEIPT_KIND): Promise<Stored> {
+  const dir = await storeDir(home, false, options, kind);
   const key = await macKey(dir, false, options);
-  const path = join(dir, receiptName(at));
+  const path = join(dir, nameFor(at, kind));
   const bytes = await readPrivate(path, MAX_RECEIPT_BYTES, options);
-  return parsedReceipt(bytes.toString("utf8"), key, path);
+  return parsedReceipt(bytes.toString("utf8"), key, path, kind);
 }

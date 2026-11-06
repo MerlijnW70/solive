@@ -86,6 +86,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `Ledger` | no | the wallet's Ledger did not sign: it was rejected on the device, or the device is locked, unplugged or not in the Solana app; nothing was sent, and the hint says which |
 | `NoFeePayer` | no | the wallet is a Ledger, which signs only the release message, and the server was started without --fee-payer, the key file that signs and pays the release transaction |
 | `DeviceUnpreviewed` | no | the wallet is a Ledger, which signs only the transaction a preview of the same arguments showed by message_hash: no such preview is kept, it expired, or this tool sends several at once; preview again, or send each piece with its own preview |
+| `NotRejectable` | no | this delivery cannot be rejected now: the escrow is not open, the announcement is paid or rejected already, its review ended, or this wallet is not its judge, as the hint says; nothing was sent |
+| `NothingToCollect` | yes | no review of this wallet's delivery has lapsed on this escrow: none was armed, or it is still running, as the hint says; nothing was sent |
 | `HistoryTooLong` | no | the history a Ledger judge's check depends on could not be read in full, so the release is refused rather than decided from part of it; use an RPC node that keeps the full ledger |
 
 ## Engine program
@@ -247,11 +249,11 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6152 | `ClaimsAfterDelivery` | no | claims open only before the first announcement on an escrow |
 | 6153 | `ReviewTerms` | no | a review window is 0 or 3600 to 604800 seconds, and a kill fee needs a review window and a stake and is at most 100 SOL |
 | 6154 | `ReviewPastExpiry` | no | this claim leaves no whole review window before the escrow expires; claim for fewer seconds |
-| 6155 | `ReviewPending` | yes | the judge's review of the holder's delivery is still running; try again once it ends |
-| 6156 | `ReviewLapsed` | no | the review window has ended, so this announcement can no longer be rejected |
+| 6155 | `ReviewPending` | yes | the judge's review of the holder's delivery is still running; the judge can release or reject until it ends, and a cancel after that pays the holder its stake and the kill fee |
+| 6156 | `ReviewLapsed` | no | the review window has ended, so this announcement can no longer be rejected; the holder collects its stake and the kill fee with solive_wallet_claim action collect or claims collect |
 | 6157 | `DeliveryNotPending` | no | only an announcement that is neither paid nor rejected can be rejected |
-| 6158 | `CancelNoticeRequired` | no | this escrow has an announcement, so its owner first requests a cancel and waits the notice |
-| 6159 | `CancelNoticeRunning` | yes | the cancel notice is still running; try again once it ends |
+| 6158 | `CancelNoticeRequired` | no | this escrow has an announcement, so its owner first requests a cancel: solive_wallet_cancel or the CLI cancel sends the request, and the same call cancels once the notice ends |
+| 6159 | `CancelNoticeRunning` | yes | the cancel notice is still running, and the judge can still release the work; cancel again once it ends |
 | 6160 | `CancelAlreadyRequested` | no | a cancel was already requested for this escrow; wait for its notice to end |
 
 ## Token programs
@@ -325,3 +327,4 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `reply-too-large` | `ReplyTooLarge` | `method`, `maxReplyBytes` | the node's HTTP reply to a call was longer than the client's maxReplyBytes, so the client stopped reading it |
 | `wrong-reply-length` | `WrongReplyLength` | `method`, `asked`, `answered` | the node answered a call for several entries with a list of another length, so no entry of it is trusted |
 | `transaction-unread` | `TransactionUnread` | `signature` | the node did not serve the transaction, so what it created is unknown |
+| `cancel-not-ready` | `CancelNotReady` | `intent`, `stage`, `readyAt` | the escrow cannot be cancelled yet: stage request means its owner requests a cancel first, notice and review mean it waits until readyAt |

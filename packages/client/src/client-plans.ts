@@ -7,6 +7,8 @@ import { intentPlans } from "./client-intents.js";
 import { committeeSettlement, proofSettlement } from "./client-settle.js";
 import { splitPayer, splitSettlement } from "./client-split.js";
 import { claimHeldPlan } from "./held-claim.js";
+import { collectPlan, requestCancelPlan } from "./fair-close.js";
+import { rejectPlans } from "./fair-reject.js";
 import type { Client, ClientContext, ClientPlans } from "./client-types.js";
 import { planOf, type Sends, submit, submitted } from "./plan.js";
 import { BOOK_BATCH, batched, type ReclaimBook } from "./reclaim-books.js";
@@ -15,6 +17,7 @@ import { feedbackInstructions } from "./reputation.js";
 export function clientPlans(context: ClientContext): ClientPlans {
   const intents = intentPlans(context);
   const announcements = announcementPlans(context);
+  const rejects = rejectPlans(context);
   return {
     createIntent: (input) => createIntentPlan(context, input),
     cancel: intents.cancel,
@@ -32,6 +35,10 @@ export function clientPlans(context: ClientContext): ClientPlans {
     feedback: async (input) => planOf({ payer: input.owner.address, instructions: await feedbackInstructions(context.transport, input) }),
     createCommittee: committeePlans(context).createCommittee,
     unwrap: intents.unwrap,
+    requestCancel: requestCancelPlan(context),
+    reject: rejects.reject,
+    rejectCommittee: rejects.rejectCommittee,
+    collect: collectPlan(context),
   };
 }
 
@@ -52,6 +59,10 @@ export type PlanWrites = Pick<
   | "feedback"
   | "createCommittee"
   | "unwrap"
+  | "requestCancel"
+  | "reject"
+  | "rejectCommittee"
+  | "collect"
 >;
 
 export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
@@ -109,5 +120,9 @@ export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
       return { committee: planned.committee, signature: await submitted(send, planned, input.payer) };
     },
     unwrap: async (signer) => submitted(send, await plan.unwrap(signer), signer),
+    requestCancel: async (signer, intent) => submit(send, await plan.requestCancel(signer, intent), signer),
+    reject: async (input) => submit(send, await plan.reject(input), input.payer ?? input.judge),
+    rejectCommittee: async (input) => submit(send, await plan.rejectCommittee(input), input.relayer),
+    collect: async (payer, intent) => submit(send, await plan.collect(payer, intent), payer),
   };
 }

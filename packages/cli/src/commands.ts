@@ -1,8 +1,6 @@
 import {
   buildAdvanceEpoch,
   buildAdvanceNonce,
-  buildCancelIntent,
-  buildCloseIntent,
   committeeFloors,
   decodeUserStateAccount,
   findIntentPda,
@@ -12,7 +10,7 @@ import {
   nextEpoch,
 } from "@intent-engine/core/internal";
 import { solverTableAccounts, tick } from "@intent-engine/solver";
-import { cancelClaims, chainTime, clusterDomain, createdAccount, loadConfig, loadIntent, tokenAccountIfMissing, tokenProgramOf } from "@intent-engine/client/internal";
+import { chainTime, clusterDomain, createdAccount, loadConfig, loadIntent, tokenProgramOf } from "@intent-engine/client/internal";
 import { agentServer } from "./agent/mcp.js";
 import { servedActions } from "./agent/everyday.js";
 import { claimsOf } from "./agent/claims.js";
@@ -24,7 +22,7 @@ import { relayOf } from "./agent/relay.js";
 import { type Command, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
 import { balances, CLI_SMALL_START, CLI_START, defaultMints, setup } from "./wallet.js";
-import { FlowRefused, ownOrder } from "./flows.js";
+import { FlowRefused } from "./flows.js";
 import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring, holdsShare, sharesHeld } from "./crank.js";
 import { withPriority } from "./compute.js";
@@ -49,6 +47,8 @@ import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
 import { floatCommand } from "./float-commands.js";
 import { closeLegacy } from "./legacy-commands.js";
+import { cliCancel } from "./cancel-steps.js";
+import { rejectCommand } from "./fair-commands.js";
 import { migrate } from "./migrate-commands.js";
 import { newerVersion, updateOf } from "./update-notice.js";
 
@@ -196,26 +196,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
       return { address, ...quoteOf(intent, command.at ?? runtime.now()) };
     }
-    case "cancel": {
-      const owner = await transactionSigner(runtime, command.keypair);
-      const { address, intent } = await ownOrder(transport, owner.address, command.nonce);
-      const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint), capped: intent.capped };
-      const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
-      const claims = await cancelClaims(transport, address, intent.claims);
-      const instructions = [
-        ...refund.create,
-        await buildCancelIntent({ ...ref, owner, ...(claims === undefined ? {} : { claims }) }),
-        ...(command.close ? [await buildCloseIntent({ ...ref, owner: owner.address, cranker: owner, rentPayer: intent.rentPayer })] : []),
-      ];
-      const summary = [
-        `Cancels intent ${address} (nonce ${command.nonce}); nobody can fill it afterwards`,
-        `Returns what is left in escrow to ${refund.address}, the owner's token account for ${intent.inputMint}`,
-        ...(refund.create.length > 0 ? [`Creates ${refund.address} first, since it is missing; the owner pays its rent`] : []),
-        ...(claims?.stakeTo === undefined || claims.stakeTo === null ? [] : [claims.stakeTo === owner.address ? `Takes the stake of the lapsed claim on this job, which the worker forfeited` : `Returns the claim stake to ${claims.stakeTo}, the worker who held this job`]),
-        ...(command.close ? [`Closes the intent in the same transaction and returns its rent and bounty to ${intent.rentPayer}, who paid them; it can no longer be read afterwards`] : []),
-      ];
-      return previewed(transport, instructions, owner, { intent: address, summary }, command.yes);
-    }
+    case "cancel":
+      return cliCancel(command, runtime, transport);
     case "expire": {
       const cranker = await transactionSigner(runtime, command.keypair);
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
@@ -282,6 +264,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "claims-take":
     case "claims-drop":
     case "claims-settle":
+    case "claims-collect":
     case "claims-standby":
     case "claims-leave":
     case "claims-advance":
@@ -289,6 +272,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "profile-set":
     case "profile-close":
       return claimsCommand(command, runtime, transport);
+    case "reject":
+      return rejectCommand(command, runtime, transport);
     case "treasury": {
       const listed = command.mints === null ? await intentInputMints(transport) : { mints: command.mints, unreadable: [] };
       const view = await treasuryView(transport, listed.mints, listed.unreadable);

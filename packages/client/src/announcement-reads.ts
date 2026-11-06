@@ -4,7 +4,6 @@ import {
   type Announcement,
   ANNOUNCEMENT_DISCRIMINATOR,
   decodeAnnouncementAccount,
-  decodeDeliveryBookAccount,
   decodeRefutationAccount,
   delivery,
   DELIVERY_BOOK_DISCRIMINATOR,
@@ -18,6 +17,7 @@ import {
 } from "@intent-engine/core/internal";
 import { chainTime, createdAccount } from "./accounts.js";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
+import { readBook } from "./fair-reads.js";
 import { intentAt } from "./job-proofs.js";
 import type { EngineAccount, Transport } from "./transport.js";
 
@@ -48,7 +48,7 @@ export type AnnouncementView = {
   lamports: bigint;
 };
 
-export type DeliveryBookView = { address: Address; intent: Address; payer: Address; nextSeq: bigint; live: bigint };
+export type DeliveryBookView = { address: Address; intent: Address; payer: Address; nextSeq: bigint; live: bigint; cancelAt: bigint };
 
 export type AnnouncementList = {
   intent: Address;
@@ -131,8 +131,8 @@ export async function loadDeliveryBook(transport: Transport, intent: Address): P
   if (!tagged(view.data, DELIVERY_BOOK_DISCRIMINATOR)) {
     throw new NotAnEngineAccount(address, `${address} is not an engine delivery book`);
   }
-  const stored = decodeDeliveryBookAccount(view.data);
-  return { address, intent: stored.intent, payer: stored.payer, nextSeq: stored.nextSeq, live: stored.live };
+  const stored = readBook(view.data);
+  return { address, intent: stored.intent, payer: stored.payer, nextSeq: stored.nextSeq, live: stored.live, cancelAt: stored.cancelAt };
 }
 
 type Field = { offset: number; address: Address };

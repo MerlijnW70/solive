@@ -164,6 +164,6 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6155 | `ReviewPending` | yes | the judge's review of the holder's delivery is still running |
 | 6156 | `ReviewLapsed` | no | the review window has ended, so this announcement can no longer be rejected |
 | 6157 | `DeliveryNotPending` | no | only an announcement that is neither paid nor rejected can be rejected |
-| 6158 | `CancelNoticeRequired` | no | this escrow has an announcement, so its owner first requests a cancel and waits the notice |
-| 6159 | `CancelNoticeRunning` | yes | the cancel notice is still running |
+| 6158 | `CancelNoticeRequired` | no | this escrow has an announcement, so its owner first requests a cancel: solive_wallet_cancel or the CLI cancel sends the request, and the same call cancels once the notice ends |
+| 6159 | `CancelNoticeRunning` | yes | the cancel notice is still running, and the judge can still release the work |
 | 6160 | `CancelAlreadyRequested` | no | a cancel was already requested for this escrow |

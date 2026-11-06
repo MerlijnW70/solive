@@ -27,7 +27,7 @@ describe("PX-2 the claim list an escrow previews and the one it sends", () => {
     const wallet = (await call(client, "wallet_setup")).value["address"] as Address;
     h.watched.push(wallet);
     const [judge, worker, intruder] = [address(), address(), address()];
-    const terms = { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600 };
+    const terms = { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(SPEC), spec_url: SPEC_URL, claim_stake: "0.01", claim_secs: 600, review_secs: 0 };
     h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), [wallet, judge, worker]));
     const preview = await call(client, "wallet_escrow", terms);
     expect(preview.error, JSON.stringify(preview.value)).toBe(false);

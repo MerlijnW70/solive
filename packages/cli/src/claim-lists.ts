@@ -55,16 +55,16 @@ async function inParts(transport: Transport, sends: Instruction[][], signer: Tra
 }
 
 export async function openListed(
-  claims: { maxSecs: number; stake: bigint; workers: readonly Address[]; yes: boolean; floor?: bigint | undefined },
+  claims: { maxSecs: number; stake: bigint; reviewSecs: number; killFee: bigint; workers: readonly Address[]; yes: boolean; floor?: bigint | undefined },
   signer: TransactionPartialSigner,
   transport: Transport,
   intent: Address,
   board: Address,
-  opens: string,
+  opens: readonly string[],
 ): Promise<object> {
   const claimList = await claimListAddress(intent);
-  const sends = await buildClaimsWithList({ owner: signer, intent, maxSecs: claims.maxSecs, stake: claims.stake, workers: claims.workers, floor: claims.floor });
-  const summary = [opens, limitsLine(claims.workers), ...partsLine(sends.length), `Pays rent: ${signer.address}, for the claims board ${board} and the claim list ${claimList}`];
+  const sends = await buildClaimsWithList({ owner: signer, intent, maxSecs: claims.maxSecs, stake: claims.stake, reviewSecs: claims.reviewSecs, killFee: claims.killFee, workers: claims.workers, floor: claims.floor });
+  const summary = [...opens, limitsLine(claims.workers), ...partsLine(sends.length), `Pays rent: ${signer.address}, for the claims board ${board} and the claim list ${claimList}`];
   return inParts(transport, sends, signer, { intent, board, claim_list: claimList, summary }, claims.yes);
 }
 

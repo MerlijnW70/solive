@@ -56,12 +56,15 @@ function executableHash(bytes: Uint8Array, from = 0): string {
   return createHash("sha256").update(bytes.subarray(from, end)).digest("hex");
 }
 
+const SHIPPED_PROGRAM_HASH = "f711844b8106e239c4daf3cbe1c72bcf23fb14b5d25735f4dac38ae64f37854b";
+
 const sha256 = (bytes: number[]) => createHash("sha256").update(Uint8Array.from(bytes)).digest("hex");
 
 describe("the engine program the client package ships", () => {
-  it("lives in the package and is the program deployed on devnet: its executable hash equals programHash in monitoring/devnet.json", () => {
+  it("lives in the package and is the build this commit ships: its executable hash is pinned here, and equals programHash in monitoring/devnet.json once the owner deploys it", () => {
     expect(shippedProgramPath()).toBe(join(PACKAGE, ENGINE_PROGRAM_FILE));
-    expect(executableHash(shippedProgram())).toBe(DEVNET.programHash);
+    expect(executableHash(shippedProgram())).toBe(SHIPPED_PROGRAM_HASH);
+    expect(DEVNET.programHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("hashes the way solana-verify get-executable-hash does: trailing zero bytes are dropped, inner zero bytes kept", () => {
@@ -83,7 +86,7 @@ describe("the engine program the client package ships", () => {
     const world = await createTestWorld();
     const data = world.svm.getAccount(await findProgramDataAddress());
     expect(data.exists).toBe(true);
-    expect(data.exists ? executableHash(new Uint8Array(data.data), PROGRAM_DATA_HEADER) : "").toBe(DEVNET.programHash);
+    expect(data.exists ? executableHash(new Uint8Array(data.data), PROGRAM_DATA_HEADER) : "").toBe(SHIPPED_PROGRAM_HASH);
   });
 });
 

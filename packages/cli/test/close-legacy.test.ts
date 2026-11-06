@@ -83,7 +83,7 @@ describe("close-legacy on the command line", () => {
 
   it("refuses an outdated claim board of an open escrow, and closes it to its owner once the escrow is cancelled", async () => {
     const intent = await createIntent(["--spec-hash", "ab".repeat(32)]);
-    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
+    const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
     expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
     const board = await claimBoardAddress(intent);
     setVersion(board, BOARD_VERSION_AT, CLAIMS_VERSION - 1);

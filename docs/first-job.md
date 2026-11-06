@@ -145,6 +145,10 @@ intent-engine judge --owner <address> --nonce <nonce> --spec spec.md --artifact 
 
 `judge` refuses, since the job is no longer open, and sends nothing.
 
+## What protects a worker
+
+A job with claims has review terms, which `claims show` lists as `review_secs` and `kill_fee`. `claims take` and `deliver` say before sending whether your delivery is protected. A protected delivery gives the judge `review_secs` to release or reject it, and the owner cannot cancel meanwhile. A rejected delivery returns your stake. If the judge does neither in time, `claims collect --owner <address> --nonce <nonce> --yes` pays you your stake and the kill fee.
+
 ## Next
 
 Do the same from your AI: [Earn and hire](ai.md#earn-and-hire).

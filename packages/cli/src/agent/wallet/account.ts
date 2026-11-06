@@ -112,7 +112,7 @@ export const walletIntents = define({
 export const walletCancel = define({
   name: tool("wallet_cancel"),
   title: "Cancel a wallet intent",
-  description: `Cancels one of the user's open orders by its nonce (order number): the locked tokens and the order's rent deposit return to this wallet, with SOL as wrapped SOL. ${PREVIEW_FIRST}`,
+  description: `Cancels one of the user's open orders by its nonce (order number): the locked tokens and the order's rent deposit return to this wallet, with SOL as wrapped SOL. Announced work makes it two steps: a request, then a send once its notice ends; stage says which. ${PREVIEW_FIRST}`,
   effect: "submit",
   input: object({
     nonce: amount("the intent's nonce, from wallet_intents"),
@@ -121,7 +121,9 @@ export const walletCancel = define({
   }),
   output: object({
     intent: account(),
-    refund: amount("raw input units returned to the wallet"),
+    stage: optional(choice(["now", "request"], "now: this send cancels; request: it requests the cancel, and a send from ready_at cancels")),
+    ready_at: optional(amount("with stage request: unix seconds from which the cancel can land, counted from now")),
+    refund: amount("raw input units returned to the wallet; 0 for a request"),
     summary: list(text(), 18),
     warnings: list(text(), 8),
     ...deviceOutput,
@@ -134,7 +136,10 @@ export const walletCancel = define({
     const view = (await prepareCancel.run(ctx, { owner: signer.address, nonce: input.nonce, close: input.close ?? true } as never, call)) as Record<
       string,
       unknown
-    > & { intent: Address; summary: string[] };
+    > & { intent: Address; summary: string[]; stage?: string; ready_at?: bigint };
+    if (view.stage === "request") {
+      return sent(ctx, signer, view, input.send, call, { done: `cancel requested; call ${tool("wallet_cancel")} again from ${String(view.ready_at)} to cancel` });
+    }
     const left = await boardLeft(ctx.transport, signer.address, input.nonce, view.intent);
     return sent(ctx, signer, { ...view, summary: [...view.summary, ...leavesBoard(left)] }, input.send, call, {
       done: thenSettle(`cancelled; ${tool("wallet_balance")} to see the refund`, left),

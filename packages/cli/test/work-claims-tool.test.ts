@@ -60,7 +60,7 @@ async function job() {
     const result = await cli(args, keys);
     expect([result.code, result.err]).toEqual([EXIT_OK, ""]);
   };
-  await run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
+  await run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
   const client = await connect();
   const wallet = (await call(client, "wallet_setup")).value["address"] as Address;
   const escrow = { owner: w.owner.address, nonce: "0" };

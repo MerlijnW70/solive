@@ -81,9 +81,9 @@ The server without a wallet holds no keys, so it has `solive_prepare_deliver` in
 
 ## Where a spec is uploaded
 
-After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per COST_STEP_BYTES of spec, the mirror's cost step in `services/specs/src/limits.ts`, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
+After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public: anyone can read it. The mirror keeps it while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored.
 
-The preview says what will happen, a preview uploads nothing, and the upload adds up to SPEC_READ_MS, the budget in `packages/client/src/spec-sources.ts`, to the send's answer. Its retries count against the mirror's rate limit.
+The preview says what will happen, a preview uploads nothing, and the upload adds up to 20000 ms to the send's answer. Its retries count against the mirror's rate limit.
 
 - With `spec_url`, it uploads the bytes at that url when they hash to `spec_hash` and are not sealed.
 - With `spec_text`, a wrong hash is refused before anything is sent. It is uploaded unless `spec_url` is sealed or cannot be read.

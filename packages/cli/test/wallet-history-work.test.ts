@@ -24,6 +24,9 @@ const URL_OF_WORK = "https://" + "example.org/work-0b5c8e2f";
 const ESCROWED = LAMPORTS_PER_SOL / 20n;
 
 const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+const NO_ANNOUNCEMENT = "11111111111111111111111111111111" as Address;
+const ANNOUNCEMENT_BYTES = 32;
+const beforeFairClose = (body: Uint8Array) => body.slice(0, body.length - ANNOUNCEMENT_BYTES);
 
 function preset(at: Address): void {
   const space = BigInt(getMintSize());
@@ -152,7 +155,7 @@ describe("wallet_history of the claims a wallet took or dropped", () => {
       nonce: 0n,
       expiresAt: NOW + 3_600n,
     });
-    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
+    const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
     expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
     const client = await connect();
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
@@ -173,7 +176,7 @@ describe("wallet_history of the claims a wallet took or dropped", () => {
       landed("rival-take", 19n, [claimed(lost, rival)]),
       landed("forfeit", 18n, [moved(forfeited, w.owner.address, 1)]),
       landed("take-forfeited", 17n, [claimed(forfeited, wallet)]),
-      landed("drop", 16n, [tag(getClaimDroppedEventEncoder().encode({ intent: dropped, worker: wallet, refunded: stake }))]),
+      landed("drop", 16n, [tag(beforeFairClose(Uint8Array.from(getClaimDroppedEventEncoder().encode({ intent: dropped, worker: wallet, refunded: stake, announcement: NO_ANNOUNCEMENT }))))]),
       landed("take-dropped", 15n, [claimed(dropped, wallet)]),
       landed("refund", 14n, [moved(returned, wallet, 0)]),
       landed("take-returned", 13n, [claimed(returned, wallet)]),

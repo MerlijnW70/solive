@@ -39,7 +39,7 @@ async function job() {
     expect(result.code).toBe(EXIT_FAILED);
     return result.err;
   };
-  await ok(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
+  await ok(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
   const show = async () => ok(["claims", "show", ...ref]);
   const sol = (address: Address) => h.svm.getBalance(address) ?? 0n;
   const standBy = (who: string, secs: string, yes = true) => ok(["claims", "standby", "--keypair", who, ...ref, "--secs", secs, ...(yes ? ["--yes"] : [])]);

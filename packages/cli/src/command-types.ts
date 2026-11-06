@@ -176,7 +176,9 @@ export type Command =
       confirmUrl?: string | undefined;
     })
   | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
-  | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint; workers: Address[] | undefined })
+  | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint; reviewSecs: number; killFee: bigint; workers: Address[] | undefined })
+  | (Keyed & { name: "claims-collect"; yes: boolean; owner: Address; nonce: bigint })
+  | (Keyed & { name: "reject"; yes: boolean; owner: Address; nonce: bigint; announcement: Address; sha256: string; votes: string[]; out: string | undefined; encryptionKeypairs?: string[] | undefined; withoutReceipt?: string | undefined })
   | (Keyed & { name: "claims-list"; yes: boolean; nonce: bigint; workers: Address[] })
   | (Keyed & { name: "claims-take"; yes: boolean; owner: Address; nonce: bigint; secs: number })
   | (Keyed & { name: "claims-drop"; yes: boolean; owner: Address; nonce: bigint })

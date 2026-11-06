@@ -15,6 +15,7 @@ import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { NO_JOB_MATCHES } from "../src/job-commands.js";
 import { cli, FEE_BPS, funded, h, NOW, transport, world } from "./harness.js";
+import { NO_CLAIMS_UNPROTECTED } from "@intent-engine/client/internal";
 
 describe("cli against the deployed engine", () => {
   let owner: KeyPairSigner;
@@ -29,6 +30,7 @@ describe("cli against the deployed engine", () => {
     `Announces: the work with sha256 ${sha256} to the proof escrow ${plan.intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${worker} and the salt ${plan.salt}`,
     `Seals: the salt and the url ${url} to ${judge} (the key derived from its wallet), so only they can open it`,
     `Pays: the announcement's rent and the fee, from ${worker}; the rent returns to it when the announcement closes`,
+    `Unprotected: ${NO_CLAIMS_UNPROTECTED}`,
   ];
 
   it("lists open proof escrows as jobs and announces a delivery to the judge, previewing unless --yes", async () => {
@@ -63,6 +65,9 @@ describe("cli against the deployed engine", () => {
           claimed_by: null,
           claim_ends: null,
           waiting: 0,
+      review_secs: 0,
+      kill_fee: "0",
+      review_until: null,
           freeze_authority: null,
         },
       ],

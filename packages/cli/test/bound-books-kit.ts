@@ -11,7 +11,8 @@ import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { EXIT_OK, main } from "../src/main.js";
-import { h, NOW, runtime, transport } from "./harness.js";
+import { NOTICE_SECS } from "@intent-engine/client/internal";
+import { h, NOW, runtime, setNow, transport } from "./harness.js";
 import type { Device } from "./ledger-device.js";
 
 export type Json = Record<string, unknown>;
@@ -54,8 +55,18 @@ export async function escrowTo(owner: KeyPairSigner, attestor: Address, inputMin
   return intent;
 }
 
+export function passNotice(seconds: bigint = NOTICE_SECS): void {
+  setNow(h.svm.getClock().unixTimestamp + seconds);
+}
+
 export async function cancelled(owner: KeyPairSigner, nonce = 0n): Promise<void> {
-  await createClient({ url: "http://cluster", transport }).cancel(owner, { owner: owner.address, nonce });
+  const client = createClient({ url: "http://cluster", transport });
+  const ref = { owner: owner.address, nonce };
+  if ((await client.cancelState(ref)).stage === "request") {
+    await client.requestCancel(owner, ref);
+    passNotice();
+  }
+  await client.cancel(owner, ref);
 }
 
 export async function feeOf(fee: bigint): Promise<Address> {

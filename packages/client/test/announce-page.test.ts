@@ -30,6 +30,7 @@ import {
 } from "../src/index.js";
 import { world, type World } from "./svm.js";
 import { announced, fundedSigner, keyed, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
+import { cancelAfterNotice } from "./notice.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
@@ -166,7 +167,7 @@ describe("the announcement sentences of the full client page", () => {
     const listAll = accounts.engineAccounts as NonNullable<typeof accounts.engineAccounts>;
     const hiding = createClient({ url: LOCAL, transport: { ...accounts, engineTransactions: refuse, engineAccounts: async (filter) => (await listAll(filter)).filter(({ address }) => address !== list.announcements[1]?.address) } });
     expect(await hiding.announcements(intent)).toMatchObject({ complete: false, closed: false, missing: [2n] });
-    await client.cancel(owner, { owner: owner.address, nonce });
+    await cancelAfterNotice(client, w.chain.svm, owner, { owner: owner.address, nonce });
     expect(await blind.announcements(intent)).toMatchObject({ complete: false, closed: true, missing: [] });
   });
 
@@ -309,14 +310,14 @@ describe("the announcement sentences of the full client page", () => {
     expect(w.chain.svm.getAccount(refutation).exists).toBe(true);
     const second = await escrowTo(judge.signer.address, w);
     await announced(second.client, early, second.intent, WORK);
-    await second.client.cancel(second.owner, { owner: second.owner.address, nonce: second.nonce });
+    await cancelAfterNotice(second.client, w.chain.svm, second.owner, { owner: second.owner.address, nonce: second.nonce });
     const reclaimed = await client.reclaim({ worker: early });
     expect(reclaimed.closed).toHaveLength(2);
     expect(reclaimed).toMatchObject({ books: [await deliveryBookAddress(second.intent)], unclosed: [] });
     expect((await client.announcements(second.intent)).announcements).toEqual([]);
     const third = await escrowTo(judge.signer.address, w);
     const last = await announced(third.client, early, third.intent, WORK);
-    await third.client.cancel(third.owner, { owner: third.owner.address, nonce: third.nonce });
+    await cancelAfterNotice(third.client, w.chain.svm, third.owner, { owner: third.owner.address, nonce: third.nonce });
     await client.send([await buildCloseAnnouncement({ by: early, announcement: last.announcement, intent: third.intent, rentTo: early.address })], early);
     await client.closeBook(third.intent, owner);
     expect(w.chain.svm.getAccount(await deliveryBookAddress(third.intent)).exists).toBe(false);

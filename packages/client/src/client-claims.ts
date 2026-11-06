@@ -9,7 +9,6 @@ import {
   claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
-  decodeClaimBoardAccount,
   decodeClaimListAccount,
   decodeStandbyAccount,
   INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -27,6 +26,7 @@ import {
 } from "@intent-engine/core/internal";
 import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView, engineAccount, MissingAccount } from "./accounts.js";
 import { ClaimHeldBy } from "./client-errors.js";
+import { isOldBoard, readBoard } from "./fair-reads.js";
 import type { AccountView, Transport } from "./transport.js";
 
 export type ClaimListView = { address: Address; size: number; workers: Address[]; complete: boolean };
@@ -43,11 +43,16 @@ export type ClaimsView = {
   cooldown: { worker: Address; until: bigint } | null;
   line: { head: number; tail: number; waiting: number };
   list: ClaimListView | null;
+  reviewSecs: number;
+  killFee: bigint;
+  review: ReviewView | null;
 };
+
+export type ReviewView = { announcement: Address; until: bigint; secondsLeft: bigint; lapsed: boolean };
 
 export type LineEntry = { seq: number; entry: Address; worker: Address | null; secs: number | null };
 
-export type JobClaim = { takesClaims: boolean; claimedBy: Address | null; claimEnds: bigint | null; waiting: number };
+export type JobClaim = { takesClaims: boolean; claimedBy: Address | null; claimEnds: bigint | null; waiting: number; reviewSecs: number; killFee: bigint; reviewUntil: bigint | null };
 
 async function engineData(transport: Transport, address: Address, discriminator: ArrayLike<number>): Promise<Uint8Array | null> {
   return engineDataOf(address, await createdAccount(transport, address), discriminator);
@@ -60,7 +65,7 @@ function engineDataOf(address: Address, view: AccountView | null, discriminator:
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !Array.from(discriminator).every((b, i) => view.data[i] === b)) {
     throw new NotAnEngineAccount(address, `${address} is not the engine account it should be`);
   }
-  return checkAccountVersion(view.data);
+  return isOldBoard(view.data) ? view.data : checkAccountVersion(view.data);
 }
 
 function claimListOf(address: Address, view: AccountView | null): ClaimListView {
@@ -73,7 +78,7 @@ function claimListOf(address: Address, view: AccountView | null): ClaimListView 
 }
 
 const listedIntent = (data: Uint8Array | null): Address | null => {
-  const stored = data === null ? null : decodeClaimBoardAccount(data);
+  const stored = data === null ? null : readBoard(data);
   return stored === null || stored.listed === 0 ? null : stored.intent;
 };
 
@@ -91,21 +96,35 @@ async function withLists(transport: Transport, views: (ClaimsView | null)[], dat
   return views.map((view, i) => (view === null ? null : { ...view, list: lists.get(i) ?? null }));
 }
 
+export function reviewOf(stored: { worker: Address; reviewAnn: Address; reviewUntil: bigint }, now: bigint): ReviewView | null {
+  if (stored.reviewUntil === 0n || stored.worker === NONE) {
+    return null;
+  }
+  const left = stored.reviewUntil - now;
+  return { announcement: stored.reviewAnn, until: stored.reviewUntil, secondsLeft: left > 0n ? left : 0n, lapsed: left <= 0n };
+}
+
+const NONE = "11111111111111111111111111111111" as Address;
+
 function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView {
-  const stored = decodeClaimBoardAccount(data);
+  const stored = readBoard(data);
   const slot = claimSlot(stored, now);
+  const left = stored.until - now;
   return {
     board,
     state: slot.state,
     worker: slot.state === "free" ? null : slot.worker,
     until: slot.state === "free" ? 0n : stored.until,
-    secondsLeft: slot.state === "held" ? stored.until - now : 0n,
+    secondsLeft: slot.state === "held" && left > 0n ? left : 0n,
     stake: stored.stake,
     maxSecs: stored.maxSecs,
     owner: stored.owner,
     cooldown: claimCooldown(stored, now),
     line: { head: stored.head, tail: stored.tail, waiting: lineLength(stored) },
     list: null,
+    reviewSecs: stored.reviewSecs,
+    killFee: stored.killFee,
+    review: reviewOf(stored, now),
   };
 }
 
@@ -131,7 +150,8 @@ export async function loadClaimsOf(transport: Transport, intents: readonly Addre
 export function jobClaimOf(claims: ClaimsView | null): JobClaim {
   const waiting = claims?.line.waiting ?? 0;
   const takesClaims = claims !== null;
-  return claims?.state === "held" ? { takesClaims, claimedBy: claims.worker, claimEnds: claims.until, waiting } : { takesClaims, claimedBy: null, claimEnds: null, waiting };
+  const terms = { reviewSecs: claims?.reviewSecs ?? 0, killFee: claims?.killFee ?? 0n, reviewUntil: claims?.review?.until ?? null };
+  return claims?.state === "held" ? { takesClaims, claimedBy: claims.worker, claimEnds: claims.until, waiting, ...terms } : { takesClaims, claimedBy: null, claimEnds: null, waiting, ...terms };
 }
 
 export async function loadLine(transport: Transport, intent: Address, line: { head: number; tail: number }, max = MAX_LINE_ENTRIES): Promise<LineEntry[]> {
@@ -176,7 +196,7 @@ export async function cancelClaims(transport: Transport, intent: Address, claims
   if (data === null) {
     return { board, stakeTo: null };
   }
-  return { board, stakeTo: stakeReceiverOnCancel(decodeClaimBoardAccount(data), await chainTime(transport)) };
+  return { board, stakeTo: stakeReceiverOnCancel(readBoard(data), await chainTime(transport)) };
 }
 
 export type ReleaseClaims = { accounts: { claims?: Address; stakeTo?: Address }; stake: bigint };
@@ -186,7 +206,7 @@ export async function releaseClaims(transport: Transport, intent: Address, claim
     return { accounts: {}, stake: 0n };
   }
   const board = await claimBoardAddress(intent);
-  const view = decodeClaimBoardAccount(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  const view = readBoard(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   try {
     const stakeTo = stakeReceiverOnRelease(view, await chainTime(transport), payees);
     return stakeTo === null ? { accounts: { claims: board }, stake: 0n } : { accounts: { claims: board, stakeTo }, stake: view.held };

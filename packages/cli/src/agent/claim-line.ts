@@ -18,7 +18,8 @@ import {
   standByRefusal,
 } from "@intent-engine/core/internal";
 import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
-import { type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
+import { collectable, collectInstruction, type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
+import { collectLines } from "../fair-lines.js";
 import { handedTo, stoppedFills } from "../claim-commands.js";
 import { listAccount } from "../claim-lists.js";
 import { rentFor, rentRate, SIGNATURE_FEE } from "./budget.js";
@@ -42,8 +43,16 @@ export function claimBoard(view: ClaimsView): BoardView {
     ...(view.cooldown === null ? {} : { droppedBy: view.cooldown.worker }),
     head: view.line.head,
     tail: view.line.tail,
+    reviewUntil: view.review?.until ?? 0n,
+    reviewSecs: view.reviewSecs,
+    killFee: view.killFee,
   };
 }
+
+export const heldFor = (view: ClaimsView, now: bigint): bigint => (view.review !== null ? view.review.secondsLeft : view.until > now ? view.until - now : 0n);
+
+export const reviewHeld = (view: ClaimsView): string =>
+  view.review === null ? "" : `, as the judge reviews its delivery ${view.review.announcement} until ${view.review.until}`;
 
 export const claimAt = (view: ClaimsView, now: bigint): ClaimSlot => claimSlot(claimBoard(view), now);
 
@@ -113,13 +122,13 @@ export const thenSettle = (done: string, left: string | undefined): string => (l
 export async function settleStep(client: Client, transport: Transport, escrow: Escrow, view: ClaimsView, payer: Address): Promise<LineStep> {
   const [state, now] = await Promise.all([escrowState(client, escrow.owner, escrow.nonce), client.chainTime()]);
   const open = state === "open";
-  const board = { owner: view.owner, worker: view.worker ?? NONE, until: view.until, held: view.stake };
+  const board = { owner: view.owner, worker: view.worker ?? NONE, until: view.until, held: view.stake, reviewUntil: view.review?.until ?? 0n };
   let receiver: Address | null;
   try {
     receiver = stakeReceiverOnSettle(board, now, open);
   } catch (error) {
     if (isSdkError(error, "intent-core-error") && view.worker !== null) {
-      throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.until - now} more seconds, so there is nothing to settle; nothing was sent`);
+      throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${heldFor(view, now)} more seconds${reviewHeld(view)}, so there is nothing to settle; nothing was sent`);
     }
     throw error;
   }
@@ -130,6 +139,7 @@ export async function settleStep(client: Client, transport: Transport, escrow: E
   const closed = view.list === null ? `the claims board ${view.board}` : `the claims board ${view.board} and its claim list ${view.list.address}`;
   const summary = [
     receiver === null ? "Moves: no stake; nobody holds the claim" : `Moves: the claim stake of ${sol(view.stake)} to ${receiver}`,
+    ...(view.review !== null && receiver === view.worker ? [`Pays: the kill fee of ${sol(view.killFee)} to ${receiver} too, since the judge neither released nor rejected its delivery ${view.review.announcement} by ${view.review.until}`] : []),
     ...(open ? [] : [`Closes: ${closed}, returning ${view.list === null ? "its " : ""}${sol(rent)} of rent to the owner ${view.owner}`]),
     feeLine(payer),
   ];
@@ -138,7 +148,28 @@ export async function settleStep(client: Client, transport: Transport, escrow: E
   return { instruction, summary, key: `settle:${open}:${receiver}:${view.stake}`, done };
 }
 
+export async function collectStep(transport: Transport, intent: Address, payer: Address): Promise<LineStep> {
+  const found = await collectable(transport, intent).catch((error: unknown) => {
+    throw isSdkError(error, "not-settleable") ? new AgentRefusal("NothingToCollect", error.message) : error;
+  });
+  return {
+    instruction: await collectInstruction(found),
+    summary: [...collectLines(found), feeLine(payer)],
+    key: `collect:${found.worker}:${found.stake}:${found.killFee}`,
+    done: `collected; the stake and the kill fee went to ${found.worker}`,
+  };
+}
+
 export type Admit = () => Promise<void>;
+
+async function escrowExpiry(client: Client, escrow: Escrow): Promise<bigint> {
+  return (await client.intent({ owner: escrow.owner, nonce: escrow.nonce }))?.intent.expiresAt ?? 0n;
+}
+
+export const lineWarning = (view: ClaimsView, expiresAt: bigint): string[] =>
+  view.reviewSecs === 0
+    ? [`Unprotected: the escrow's claims open no review window, so a delivery from this claim arms no review and the owner can cancel after a notice`]
+    : [`Warns: a claim handed over from the line arms a review only for a delivery announced by ${expiresAt - BigInt(view.reviewSecs)}, ${view.reviewSecs} seconds before the escrow expires; reaching the job later leaves the delivery unprotected`];
 
 export async function openEscrow(client: Client, escrow: Escrow, closed: string): Promise<void> {
   if ((await escrowState(client, escrow.owner, escrow.nonce)) !== "open") {
@@ -166,6 +197,7 @@ export async function standbyStep(client: Client, transport: Transport, escrow: 
   const summary = [
     `Stands by: for escrow ${escrow.intent} as entry ${seq}, place ${view.line.waiting + 1} in its line; when the job reaches this wallet ${worker.address} it holds the claim for ${secs} seconds`,
     `Locks: a stake of ${sol(view.stake)} and ${sol(rent)} of the entry's rent from this wallet; the stake moves onto the claim when the job reaches it, the rent returns then, and both return when it leaves the line`,
+    ...lineWarning(view, view.reviewSecs === 0 ? 0n : await escrowExpiry(client, escrow)),
     feeLine(worker.address),
   ];
   const instruction = await buildStandBy({ worker, intent: escrow.intent, seq, secs, ...listAccount(view.list) });
@@ -202,7 +234,7 @@ export async function advanceStep(client: Client, transport: Transport, escrow: 
   const now = await client.chainTime();
   const refused = refusedBy(() => checkAdvance(claimBoard(view), now));
   if (refused === "ClaimHeld" && view.worker !== null) {
-    throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.until - now} more seconds, so the line waits; nothing was sent`);
+    throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${heldFor(view, now)} more seconds${reviewHeld(view)}, so the line waits; nothing was sent`);
   }
   if (refused === "LineEmpty") {
     throw new AgentRefusal("LineEmpty", `nobody stands by for escrow ${escrow.intent}; nothing was sent`);

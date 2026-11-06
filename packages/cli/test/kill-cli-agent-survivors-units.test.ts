@@ -107,6 +107,9 @@ describe("standbyStep", () => {
       cooldown: null,
       line: { head: 0, tail: 1, waiting: 1 },
       list: null,
+      reviewSecs: 0,
+      killFee: 0n,
+      review: null,
       ...over,
     }) as ClaimsView;
 

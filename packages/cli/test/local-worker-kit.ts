@@ -14,7 +14,8 @@ import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK, main } from "../src/main.js";
-import { cli, DOMAIN, h, runtime, world } from "./harness.js";
+import { NOTICE_SECS } from "@intent-engine/client/internal";
+import { cli, DOMAIN, h, runtime, setNow, world } from "./harness.js";
 import { approved } from "./approved.js";
 
 export type Json = Record<string, unknown> & { [key: string]: any };
@@ -61,6 +62,15 @@ export async function call(client: Client, name: string, args: object = {}): Pro
   return { error: result.isError === true, value: result.structuredContent as Json };
 }
 
+export async function cancelledOver(client: Client, nonce: unknown): Promise<Json> {
+  const first = await ok(client, "wallet_cancel", { nonce, close: false, send: true });
+  if (first["stage"] !== "request") {
+    return first;
+  }
+  setNow(h.svm.getClock().unixTimestamp + NOTICE_SECS);
+  return ok(client, "wallet_cancel", { nonce, close: false, send: true });
+}
+
 export async function ok(client: Client, name: string, args: object = {}): Promise<Json> {
   const { error, value } = await call(client, name, args);
   expect(error, JSON.stringify(value)).toBe(false);
@@ -80,7 +90,7 @@ export async function startHirer(): Promise<{ hirer: Client; wallet: Address }> 
 
 export async function hireWith(client: Client, attestor: Address, claims: boolean) {
   h.specPages.set(SPEC_URL, SPEC);
-  const terms = { sell: "SOL", amount: "0.05", attestor, spec_hash: sha(SPEC), spec_url: SPEC_URL, ...(claims ? { claim_stake: "0.01", claim_secs: 3600 } : {}) };
+  const terms = { sell: "SOL", amount: "0.05", attestor, spec_hash: sha(SPEC), spec_url: SPEC_URL, ...(claims ? { claim_stake: "0.01", claim_secs: 3600, review_secs: 0 } : {}) };
   const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", terms));
   return { intent: escrow["intent"] as Address, nonce: escrow["nonce"] as string };
 }

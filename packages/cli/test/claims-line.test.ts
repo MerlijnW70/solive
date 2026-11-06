@@ -6,7 +6,9 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, formatAmount, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { getStandbySize } from "@intent-engine/core/internal";
+import type { ClaimsView } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
+import { lineWarning } from "../src/agent/claim-line.js";
 import { SIGNATURE_FEE } from "../src/agent/budget.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -66,7 +68,7 @@ async function job() {
     const result = await cli(args, keys);
     expect([result.code, result.err]).toEqual([EXIT_OK, ""]);
   };
-  await run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
+  await run(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"]);
   const client = await connect();
   const wallet = (await call(client, "wallet_setup")).value["address"] as Address;
   const escrow = { owner: w.owner.address, nonce: "0" };
@@ -94,6 +96,7 @@ describe("the stand-by line from wallet_claim", () => {
     expect(preview["summary"]).toEqual([
       `Stands by: for escrow ${j.intent} as entry 0, place 1 in its line; when the job reaches this wallet ${j.wallet} it holds the claim for 900 seconds`,
       `Locks: a stake of 0.05 SOL and ${formatAmount(entryRent(), 9)} SOL of the entry's rent from this wallet; the stake moves onto the claim when the job reaches it, the rent returns then, and both return when it leaves the line`,
+      ...lineWarning({ reviewSecs: 0 } as ClaimsView, 0n),
       `${FEE} ${j.wallet}`,
     ]);
     const before = sol(j.wallet);

@@ -13,7 +13,7 @@ import {
   type Transport,
 } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { chainTime, confirmOnBoth, type ConfirmTarget, loadAnnouncement, loadDeliveryBook, memoized, secretInputOf, unmemoized } from "@intent-engine/client/internal";
+import { chainTime, confirmOnBoth, type ConfirmTarget, loadAnnouncement, loadDeliveryBook, memoized, protectionLines, secretInputOf, unmemoized } from "@intent-engine/client/internal";
 import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
 import { ALREADY_ANNOUNCED, type AnnounceFee, announceFeeKept, announceFeeOf, announceFeePaid, SIGNATURE_FORMAT, signatureBytes } from "../../delivery-shared.js";
 import { execute } from "../../flows.js";
@@ -146,8 +146,8 @@ export async function deliveryCosts(transport: Transport, intent: Address): Prom
   return { fee, bookRent: book === null ? rentFor(getDeliveryBookSize(), await rentRate(transport)) : 0n };
 }
 
-const deliverApproval = (wallet: Address, intent: Address, sha256: string, url: string, costs: DeliveryCosts, sync: boolean): string =>
-  termsApproval({ action: "deliver", wallet, intent, sha256, url, announce_fee: costs.fee?.lamports ?? 0n, fee_to: costs.fee?.to ?? null, book_rent: costs.bookRent, sync });
+const deliverApproval = (wallet: Address, intent: Address, sha256: string, url: string, costs: DeliveryCosts, sync: boolean, arms = false): string =>
+  termsApproval({ action: "deliver", wallet, intent, sha256, url, announce_fee: costs.fee?.lamports ?? 0n, fee_to: costs.fee?.to ?? null, book_rent: costs.bookRent, sync, ...(arms ? { arms } : {}) });
 
 function announcing(plan: AnnouncementPlan, sha256: string, url: string, from: string, costs: DeliveryCosts): string[] {
   const { fee } = costs;
@@ -157,8 +157,16 @@ function announcing(plan: AnnouncementPlan, sha256: string, url: string, from: s
     `Pays: the announcement's rent and the transaction fee${announceFeePaid(fee)}, from ${from}; the rent returns when the announcement closes${announceFeeKept(fee)}, and ${TOKENS_STAY}`,
     ...(costs.bookRent === 0n ? [] : [bookCreated(costs.bookRent, from)]),
     ...(plan.setup.length === 0 ? [] : [`Syncs first, in its own transaction: the key snapshot of committee ${plan.attestor}`]),
+    ...protectionLines(plan.protection, sol),
   ];
 }
+
+const protectionOutput = {
+  protected: optional(flag("true when this announcement arms a review: until review_until the owner cannot cancel, and if the judge neither releases nor rejects by then, the holder collects its stake and the kill fee")),
+  review_until: optional(amount("with protected: unix seconds the judge's review would run until")),
+};
+
+export const protectionOf = (plan: AnnouncementPlan) => ({ protected: plan.protection.arms, ...(plan.protection.reviewUntil === null ? {} : { review_until: plan.protection.reviewUntil }) });
 
 const announcedOutput = {
   intent: account(),
@@ -168,6 +176,7 @@ const announcedOutput = {
   url: text(),
   commitment: text("64 hex: binds the work's sha256 to the announcing wallet and its salt; the chain holds it in place of the hash"),
   sealed_to: list(account(), 8, "the wallets whose keys open the sealed url"),
+  ...protectionOutput,
   summary: list(text(), 8),
   warnings: list(text(), 8),
 };
@@ -182,6 +191,7 @@ export const walletDeliver = define({
     intent: account("the proof escrow's intent address"),
     sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
     url: text(`where the judge fetches the work, ${MEMO_URL_RULE}; ${UNGUESSABLE_URL}`),
+    force: optional(flag("true announces even after a cancel request's notice ended on an announcement that arms no review, when the owner can cancel at once")),
     send: optional(flag("true signs and sends; leave out to preview")),
     approval: optional(text("the approval the preview returned; needed with send")),
   }),
@@ -204,7 +214,7 @@ export const walletDeliver = define({
       throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
     }
     const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
-    const announce: Announcing = { worker: signer, intent: input.intent, sha256, url: input.url };
+    const announce: Announcing = { worker: signer, intent: input.intent, sha256, url: input.url, ...(input.force === true ? { force: true } : {}) };
     const plan = await planOf(ctx, announce);
     const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent, specReach(ctx));
     const costs = await deliveryCosts(ctx.transport, input.intent);
@@ -218,6 +228,7 @@ export const walletDeliver = define({
       url: input.url,
       commitment: plan.commitment,
       sealed_to: plan.sealedTo.map(walletOf),
+      ...protectionOf(plan),
       summary: announcing(plan, sha256, input.url, "this wallet", costs),
       warnings: [
         ...(invited === undefined || invited.includes(signer.address) ? [] : [deliverNotInvited(signer.address, input.intent)]),
@@ -230,7 +241,7 @@ export const walletDeliver = define({
     }
     const syncing = plan.setup.length > 0;
     const device = signer.device !== undefined;
-    const approval = deliverApproval(signer.address, input.intent, sha256, input.url, costs, syncing);
+    const approval = deliverApproval(signer.address, input.intent, sha256, input.url, costs, syncing, plan.protection.arms);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", DELIVER_CHANGED);
     }
@@ -247,7 +258,7 @@ export const walletDeliver = define({
     }
     if (syncing && !device) {
       const fresh = await deliveryCosts(memoized(unmemoized(ctx.transport)), input.intent);
-      if (deliverApproval(signer.address, input.intent, sha256, input.url, fresh, true) !== approval) {
+      if (deliverApproval(signer.address, input.intent, sha256, input.url, fresh, true, plan.protection.arms) !== approval) {
         throw new AgentRefusal("ReleaseChanged", SYNCED_CHANGED);
       }
       const after = await planOf(ctx, announce);

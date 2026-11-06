@@ -18,6 +18,7 @@ import {
 import { OPTIONS, PROFILE_OPTIONS, type Values } from "./arg-options.js";
 import { addressList, confirmUrlOf, encryptionKeypairOf, key, noSub, parseAddress, parseBounded, required, sha256Of, splitOf, u64, UsageError } from "./arg-values.js";
 import { maxPagesOf } from "./command-builders.js";
+import { DEFAULT_REVIEW_SECS } from "./fair-lines.js";
 import type { Command, Remote } from "./command-types.js";
 
 export const COMMITTEE_SUBS = "committee needs create, show, vote or release";
@@ -139,7 +140,7 @@ export function feedbackOf(sub: string | undefined, remote: Remote, values: Valu
   };
 }
 
-export const CLAIMS_SUBS = "claims needs show, open, list, take, drop, settle, standby, leave or advance";
+export const CLAIMS_SUBS = "claims needs show, open, list, take, drop, settle, collect, standby, leave or advance";
 export const PROFILE_SUBS = "profile needs show, set, close or encryption-key new";
 export const ENCRYPTION_KEY_SUB = "profile encryption-key needs new";
 export const ENCRYPTION_KEY_TEXT = `--encryption-key is ${ENCRYPTION_KEY_RULE}, or ${NO_ENCRYPTION_KEY} to remove it`;
@@ -152,8 +153,8 @@ export function optionsFor(argv: readonly string[]): typeof OPTIONS {
   return (verb === "profile" ? PROFILE_OPTIONS : OPTIONS) as typeof OPTIONS;
 }
 
-function stakeOf(values: Values): bigint {
-  const text = required(values, "stake");
+function stakeOf(values: Values, name: "stake" | "kill-fee" = "stake"): bigint {
+  const text = required(values, name);
   let lamports: bigint;
   try {
     lamports = TOKEN_AMOUNT_PATTERN.test(text) ? parseAmount(text, 9) : -1n;
@@ -161,9 +162,15 @@ function stakeOf(values: Values): bigint {
     lamports = -1n;
   }
   if (lamports < 0n || lamports > MAX_CLAIM_STAKE) {
-    throw new UsageError(STAKE_FORMAT);
+    throw new UsageError(name === "stake" ? STAKE_FORMAT : STAKE_FORMAT.replace("--stake", "--kill-fee"));
   }
   return lamports;
+}
+
+function reviewTermsOf(values: Values, stake: bigint): { reviewSecs: number; killFee: bigint } {
+  const reviewSecs = typeof values["review-secs"] === "string" ? parseBounded(values["review-secs"], "review-secs", MAX_CLAIM_SECS, 0) : DEFAULT_REVIEW_SECS;
+  const killFee = typeof values["kill-fee"] === "string" ? stakeOf(values, "kill-fee") : reviewSecs === 0 ? 0n : stake;
+  return { reviewSecs, killFee };
 }
 
 export const WORKERS_LIMIT = `--workers takes 1 to ${MAX_CLAIMANTS} addresses`;
@@ -193,6 +200,7 @@ function claimsOf(sub: string | undefined, remote: Remote, values: Values): Comm
         nonce,
         maxSecs: parseBounded(required(values, "max-secs"), "max-secs", MAX_CLAIM_SECS, 1),
         stake: stakeOf(values),
+        ...reviewTermsOf(values, stakeOf(values)),
         workers: workersOf(values),
       };
     case "list":
@@ -236,6 +244,8 @@ function claimsOf(sub: string | undefined, remote: Remote, values: Values): Comm
         nonce,
         secs: parseBounded(required(values, "secs"), "secs", MAX_CLAIM_SECS, 1),
       };
+    case "collect":
+      return { name: "claims-collect", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, owner: key(values, "owner"), nonce };
     default:
       return { name: sub === "drop" ? "claims-drop" : "claims-settle", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, owner: key(values, "owner"), nonce };
   }
@@ -289,8 +299,27 @@ function profileOf(sub: string | undefined, third: string | undefined, remote: R
   }
 }
 
+function rejectOf(remote: Remote, values: Values): Command {
+  return {
+    name: "reject",
+    ...remote,
+    keypair: required(values, "keypair"),
+    yes: values.yes === true,
+    owner: key(values, "owner"),
+    nonce: u64(values, "nonce"),
+    announcement: key(values, "announcement"),
+    sha256: sha256Of(required(values, "sha256")).toLowerCase(),
+    votes: values.vote ?? [],
+    out: values.out,
+    ...encryptionKeypairOf(values),
+    ...withoutReceiptOf(values),
+  };
+}
+
 export function trustOf(verb: string, sub: string | undefined, remote: Remote, values: Values, third?: string): Command {
   switch (verb) {
+    case "reject":
+      return rejectOf(remote, values);
     case "committee":
       return committeeOf(sub, remote, values);
     case "reputation":
@@ -298,7 +327,7 @@ export function trustOf(verb: string, sub: string | undefined, remote: Remote, v
     case "feedback":
       return feedbackOf(sub, remote, values);
     case "claims":
-      if (sub === undefined || !["show", "open", "list", "take", "drop", "settle", "standby", "leave", "advance"].includes(sub)) {
+      if (sub === undefined || !["show", "open", "list", "take", "drop", "settle", "collect", "standby", "leave", "advance"].includes(sub)) {
         throw new UsageError(CLAIMS_SUBS);
       }
       return claimsOf(sub, remote, values);

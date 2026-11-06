@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { setNow, NOW } from "./harness.js";
 import { markFilled } from "./agent-wallet-kit.js";
 import { call, job } from "./kill-cli-agent-survivors-kit.js";
+import { NO_REVIEW_UNPROTECTED } from "@intent-engine/client/internal";
 
 describe("the line entries wallet_claim leaves", () => {
   it("names who stands by nowhere, guards another wallet's entry while the escrow is open and frees it afterwards", async () => {
@@ -52,13 +53,14 @@ describe("the claims wallet_claim takes and drops", () => {
   it("takes for the longest claim, refuses a longer one, and lists a lapsed claim only when there is one", async () => {
     const j = await job();
     const free = await j.ok("wallet_claim", { ...j.escrow, action: "take", secs: 3600 });
-    expect(free["summary"]).toHaveLength(2);
+    expect(free["summary"]).toHaveLength(3);
     expect(free["summary"][0]).toContain("3600 seconds from now");
+    expect(free["summary"][2]).toBe(`Unprotected: ${NO_REVIEW_UNPROTECTED}`);
     expect(await j.refused({ action: "take", secs: 3601 })).toMatchObject({ code: "ClaimTerms", hint: expect.stringContaining("at most 3600 seconds") });
     await j.as("holder", "take", 600);
     setNow(NOW + 600n);
     const lapsed = await j.ok("wallet_claim", { ...j.escrow, action: "take", secs: 60 });
-    expect(lapsed["summary"]).toHaveLength(3);
+    expect(lapsed["summary"]).toHaveLength(4);
     expect(lapsed["summary"][2]).toBe(`Ends: the lapsed claim of ${j.holder.address}, whose stake goes to the owner ${j.owner}`);
   });
 
@@ -67,7 +69,7 @@ describe("the claims wallet_claim takes and drops", () => {
     await j.as("holder", "take", 600);
     await j.as("holder", "drop");
     const other = await j.ok("wallet_claim", { ...j.escrow, action: "take", secs: 60 });
-    expect(other["summary"]).toHaveLength(2);
+    expect(other["summary"]).toHaveLength(3);
     await j.sent({ action: "take", secs: 600 });
     await j.sent({ action: "drop" });
     expect(await j.refused({ action: "take", secs: 60 })).toMatchObject({ code: "ClaimCooldown" });

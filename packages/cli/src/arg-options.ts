@@ -194,6 +194,7 @@ export const OPTIONS = {
   score: { type: "string" },
   note: { type: "string" },
   "max-secs": { type: "string" },
+  "review-secs": { type: "string" }, "kill-fee": { type: "string" },
   stake: { type: "string" },
   workers: { type: "string" },
   secs: { type: "string" },
@@ -416,7 +417,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "lookup-table",
     "without-receipt",
   ],
-  claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs", "seq", "workers"],
+  claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "review-secs", "kill-fee", "secs", "seq", "workers"],
+  reject: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "announcement", "sha256", "vote", "out", "encryption-keypair", "without-receipt"],
   profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key", "out"],
 };
 
@@ -478,18 +480,17 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
   },
   claims: {
     show: ["url", "owner", "nonce"],
-    open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake", "workers"],
+    open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake", "review-secs", "kill-fee", "workers"],
     list: ["url", "priority-fee", "keypair", "yes", "nonce", "workers"],
     take: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
     drop: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
     settle: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
+    collect: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
     standby: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
     leave: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "seq"],
     advance: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
   },
-  solver: {
-    float: ["url", "priority-fee", "keypair", "yes", "owner", "delegate", "mint", "mints", "amount", "units"],
-  },
+  solver: { float: ["url", "priority-fee", "keypair", "yes", "owner", "delegate", "mint", "mints", "amount", "units"] },
   profile: {
     show: ["url", "wallet"],
     set: ["url", "priority-fee", "keypair", "yes", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key"],

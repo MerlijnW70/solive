@@ -41,7 +41,7 @@ async function job(module: string, claimed: boolean): Promise<Job & { stranger: 
   });
   let stranger: KeyPairSigner | undefined;
   if (claimed) {
-    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
+    const opened = await cli(["claims", "open", "--review-secs", "0", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": w.owner });
     expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
   }
   const worker = await keyed();
