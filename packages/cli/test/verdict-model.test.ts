@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EXIT_RETRY, JudgeInfraError, JudgeInterrupted, oomInfra, SIGNAL_EXIT, timedOutInfra } from "../src/judge-errors.js";
 import {
+  type CaseEnd,
+  caseOomInfra,
+  caseOomPinned,
+  caseOutcome,
   combine,
   type ContainerState,
   containerOutcome,
@@ -20,6 +24,7 @@ import {
   NO_RULING,
   nothingJudged,
   notStarted,
+  OOM_UNREAD,
   oomPinned,
   ranPastPin,
   RUN_UNTIMED,
@@ -41,6 +46,8 @@ const fail = (reason: string) => ({ outcome: "fail", reason });
 const infra = (reason: string) => ({ outcome: "infra", reason });
 const ENGINE = "the viper judge";
 const stopAt = (cause: "deadline" | "fault", unfinished: number) => ({ cause, reason: `${cause} reason`, unfinished });
+
+const ended = (more: Partial<CaseEnd>): CaseEnd => ({ signal: "SIGKILL", stoppedByJudge: false, oomKills: 0, ...more });
 
 const exitOf = (ruling: Ruling): number => (ruling.outcome === "interrupted" ? SIGNAL_EXIT[ruling.signal] : EXIT_OF[ruling.outcome]);
 
@@ -128,6 +135,25 @@ describe("the verdict model, row by row", () => {
     expect(pinned(ran(0), { overran: true, interrupted: "SIGINT" })).toEqual({ outcome: "interrupted", signal: "SIGINT" });
     expect(containerOutcome({ deadline: false, state: ran(0), overran: true, ranAtMostMs: 999_999 }, LIMITS)).toEqual(PASS);
     expect(docker(ran(1, { oomKilled: true }))).toEqual(infra(oomInfra("512m")));
+  });
+
+  it("makes a plain Node case killed with signal 9 while its container's out-of-memory count rose infra under the memory the judge chose, and fail under pinned memory", () => {
+    expect(caseOutcome(ended({ oomKills: 1 }), LIMITS)).toEqual(infra(caseOomInfra("512m")));
+    expect(caseOutcome(ended({ oomKills: 3 }), LIMITS)).toEqual(infra(caseOomInfra("512m")));
+    const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "256m" } };
+    expect(caseOutcome(ended({ oomKills: 1 }), pinnedMemory)).toEqual(fail(caseOomPinned("256m")));
+    expect(caseOutcome(ended({ oomKills: 1 }), { seconds: 90, memory: "1g", pinned: { seconds: 60 } })).toEqual(infra(caseOomInfra("1g")));
+    expect(caseOutcome(ended({ oomKills: null }), LIMITS)).toEqual(infra(OOM_UNREAD));
+  });
+
+  it("leaves a plain Node case that kills itself, aborts, exits, or is stopped by the judge to its own verdict, whatever the out-of-memory count", () => {
+    expect(caseOutcome(ended({ oomKills: 0 }), LIMITS)).toBeUndefined();
+    for (const oomKills of [0, 1, null]) {
+      for (const signal of ["SIGABRT", "SIGSEGV", "SIGTERM", null]) {
+        expect(caseOutcome(ended({ signal, oomKills }), LIMITS), `${signal} ${oomKills}`).toBeUndefined();
+      }
+      expect(caseOutcome(ended({ stoppedByJudge: true, oomKills }), LIMITS), String(oomKills)).toBeUndefined();
+    }
   });
 
   it("lets an interrupt win over every Docker and shell outcome", () => {
@@ -221,6 +247,9 @@ const OUTCOME_ROWS: Record<string, Ruling> = {
   "`--sandbox none`: the check exits with any other code, or a signal the judge did not send ends it": shell(null, { signal: "SIGKILL" }),
   "Docker or the shell cannot start the check": shell(null, { problem: "ENOENT" }),
   "the check runs past `--timeout`, so the judge stops it, and the judge never saw it run a pinned `timeout`": containerOutcome({ deadline: true, state: null, ranAtMostMs: 4_000 }, { ...LIMITS, pinned: { seconds: 5 } }),
+  "`--plain-node`: a case is killed with signal 9 while the kernel's out-of-memory count for its container rises, under the memory the judge chose": caseOutcome(ended({ oomKills: 1 }), LIMITS) as Ruling,
+  "`--plain-node`: a case is killed with signal 9, and the judge cannot read its container's out-of-memory count": caseOutcome(ended({ oomKills: null }), LIMITS) as Ruling,
+  "`--plain-node`: a case kills itself, aborts or exits, or is killed with signal 9 while the out-of-memory count stays the same": caseOutcome(ended({ oomKills: 0 }), LIMITS) ?? engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "an engine runs past `--timeout`, or past the MCP tool's own time budget": engineOutcome(ENGINE, { total: 1, passed: 0, stop: stopAt("deadline", 1) }),
   "a case reaches a limit of its own: the host engine's per-call limit, the plain Node per-case limit, or the spec's `steps` or `heap`": engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "a case answers wrongly, throws, answers no primitive, or the module does not load": engineOutcome(ENGINE, { total: 2, passed: 1 }),

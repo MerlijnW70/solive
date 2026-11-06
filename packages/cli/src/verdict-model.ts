@@ -75,6 +75,30 @@ export const killedUnflagged = (memory: string): string =>
 export const RUN_UNTIMED =
   "the check's container ended, but on the judge's own clock it may have run for the spec's pinned timeout, so whether it kept to it is unknown";
 
+export type CaseEnd = { signal: string | null; stoppedByJudge: boolean; oomKills: number | null };
+
+export const caseOomInfra = (memory: string): string =>
+  `a plain Node case was killed with signal 9 while the kernel counted an out-of-memory kill in its container, under the ${memory} memory the judge chose; raise --sandbox-memory if the work needs more`;
+
+export const caseOomPinned = (memory: string): string => `a plain Node case was killed for using all of the ${memory} memory the spec pins`;
+
+export const OOM_UNREAD = "a plain Node case was killed with signal 9, and the judge could not read its container's out-of-memory count, so whether memory killed it is unknown";
+
+const killedForMemory = (limits: Limits, chosen: (memory: string) => string, pins: (memory: string) => string): Outcome => {
+  const memory = limits.pinned?.memory;
+  return memory === undefined ? infra(chosen(limits.memory)) : fail(pins(memory));
+};
+
+export function caseOutcome(end: CaseEnd, limits: Limits): Outcome | undefined {
+  if (end.signal !== "SIGKILL" || end.stoppedByJudge) {
+    return undefined;
+  }
+  if (end.oomKills === null) {
+    return infra(OOM_UNREAD);
+  }
+  return end.oomKills > 0 ? killedForMemory(limits, caseOomInfra, caseOomPinned) : undefined;
+}
+
 export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling {
   if (facts.interrupted !== undefined) {
     return { outcome: "interrupted", signal: facts.interrupted };
@@ -100,7 +124,7 @@ export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling 
     return infra(NEVER_STARTED);
   }
   if (state.oomKilled) {
-    return pinned?.memory === undefined ? infra(oomInfra(limits.memory)) : fail(oomPinned(pinned.memory));
+    return killedForMemory(limits, oomInfra, oomPinned);
   }
   if (state.exitCode === KILLED_EXIT && pinned?.memory === undefined) {
     return infra(killedUnflagged(limits.memory));

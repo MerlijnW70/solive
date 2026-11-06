@@ -3,18 +3,19 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { judgeRoot, removeCopy } from "./artifact.js";
-import { removeContainer } from "./check-process.js";
+import { endedState, oomKills, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
-import { NODE_CASE, NODE_LAUNCHER } from "./node-runner.js";
-import { type Box, containerName, dockerEnv, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { deadlineOf, faultOf, type Stop } from "./verdict-model.js";
+import { NODE_CASE, NODE_LAUNCHER, NODE_READY } from "./node-runner.js";
+import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
+import { caseOutcome, containerOutcome, deadlineOf, faultOf, type Limits, type Stop } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
 export const NODE_ROOT = "/judge";
 export const NODE_RUNNER = "runner";
 export const NODE_CASE_MS = 5_000;
+export const NODE_HEAP_FACTOR = 1;
 
 export type NodeJudged = { engine: typeof NODE_ENGINE; image: string; path: string } & Tallied;
 export type NodeRun = { judged: NodeJudged; cleanup: string | undefined };
@@ -66,12 +67,13 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
     "--entrypoint",
     "node",
     box.image,
+    SIGUSR1_FLAG,
     posix.join(NODE_ROOT, NODE_RUNNER, "launch.mjs"),
     posix.join(NODE_ROOT, NODE_RUNNER, "case.mjs"),
   ];
 }
 
-type Answer = { token: string; out: string; code: number | null; timedOut: boolean; over: boolean; failed?: string };
+type Answer = { token: string; out: string; code: number | null; signal?: string | null; timedOut: boolean; over: boolean; failed?: string };
 
 const ENGINE = "the plain Node engine";
 
@@ -80,6 +82,11 @@ export const OUT_OF_TURN = "the case wrote into the plain Node engine's own chan
 export const TOO_LONG = "the case wrote into the plain Node engine's own channel more than it can read";
 
 export const PROTOCOL_BROKEN = "a case broke the plain Node engine's channel, so the cases after it were not run";
+
+export const SIGUSR1_FLAG = "--disable-sigusr1";
+
+export const sigusr1Unsupported = (diagnostic: string): string =>
+  `the Node in the plain Node image does not accept ${SIGUSR1_FLAG}, which keeps a case from opening the launcher's debugger, so no case was run; pass a --sandbox-image with Node 22.14 or later (${diagnostic})`;
 
 export const NODE_DEADLINE = "the judgement's --timeout ran out before the plain Node engine finished every case";
 
@@ -139,7 +146,7 @@ async function stage(source: Uint8Array, name: string): Promise<Staged> {
 
 type Conversed = { results: CaseResult[]; stop?: Stop };
 
-function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, timeoutSeconds: number): Promise<Conversed> {
+function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, limits: Limits): Promise<Conversed> {
   return new Promise((done) => {
     const env = dockerEnv(process.env);
     const child = spawn("docker", args, { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -149,6 +156,9 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     let token = "";
     let ended: Stop | undefined;
     let killing: Promise<void> = Promise.resolve();
+    let settling: Promise<void> = Promise.resolve();
+    let known: number | null = null;
+    let ready = false;
     const left = () => cases.cases.length - results.length;
     const kill = (why: Stop) => {
       ended ??= why;
@@ -163,7 +173,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       process.on(signal, handler);
       return [signal, handler] as const;
     });
-    const timer = setTimeout(() => kill(deadlineOf(NODE_DEADLINE, left())), timeoutSeconds * 1000);
+    const timer = setTimeout(() => kill(deadlineOf(NODE_DEADLINE, left())), limits.seconds * 1000);
     const tampered = (detail: string) => {
       if (left() > 0) results.push({ verdict: "crashed", detail });
       token = "";
@@ -180,7 +190,20 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       token = randomBytes(32).toString("hex");
       send({ token, ...wireArgs(cases.cases[results.length]?.args ?? []) });
     };
+    const begin = async () => {
+      known = await oomKills(name, env);
+      if (ended === undefined) next();
+    };
     const answered = (line: string) => {
+      if (!ready) {
+        if (line === NODE_READY) {
+          ready = true;
+          settling = begin();
+        } else {
+          kill(faultOf(`${ENGINE} wrote ${JSON.stringify(line.slice(0, 64))} before it was ready`, left()));
+        }
+        return;
+      }
       let answer: Answer | undefined;
       try {
         answer = JSON.parse(line) as Answer;
@@ -195,9 +218,31 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         kill(faultOf(`${ENGINE} could not start a case: ${answer.failed.slice(0, 256)}`, left()));
         return;
       }
-      results.push(caseVerdict(answer, token, cases.cases[results.length]?.expected ?? null));
+      const sent = token;
       token = "";
+      settling = settle(answer, sent);
+    };
+    const settle = async (answer: Answer, sent: string) => {
+      const verdict = caseVerdict(answer, sent, cases.cases[results.length]?.expected ?? null);
+      const end = { signal: answer.signal ?? null, stoppedByJudge: answer.timedOut || answer.over };
+      const counted = verdict.verdict !== "pass" && end.signal === "SIGKILL" && !end.stoppedByJudge;
+      const before = known;
+      if (counted) known = await oomKills(name, env);
+      if (ended !== undefined) return;
+      const oomKilled = !counted || before === null || known === null ? null : known - before;
+      const memory = counted ? caseOutcome({ ...end, oomKills: oomKilled }, limits) : undefined;
+      if (memory?.outcome === "infra") {
+        kill(faultOf(memory.reason, left()));
+        return;
+      }
+      results.push(memory?.outcome === "fail" ? { verdict: "crashed", detail: memory.reason } : verdict);
       next();
+    };
+    const ranOut = async (exitCode: number | null): Promise<Stop> => {
+      if (!ready && diagnostic.includes(SIGUSR1_FLAG)) return faultOf(sigusr1Unsupported(diagnostic.trim().slice(0, 256)), left());
+      const inspected = await endedState(name, env);
+      const ruled = inspected.state === null ? undefined : containerOutcome({ deadline: false, state: inspected.state }, limits);
+      return faultOf(ruled?.outcome === "infra" ? ruled.reason : `${ENGINE} ended with exit code ${exitCode} before it answered every case: ${diagnostic.trim().slice(0, 256)}`, left());
     };
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -218,9 +263,9 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     child.stdin.on("error", () => undefined);
     const finish = (exitCode: number | null) => {
       clearTimeout(timer);
-      void killing.finally(() => {
+      void settling.then(() => killing).finally(async () => {
         for (const [signal, handler] of handlers) process.removeListener(signal, handler);
-        const stop = left() === 0 ? undefined : (ended ?? faultOf(`${ENGINE} ended with exit code ${exitCode} before it answered every case: ${diagnostic.trim().slice(0, 256)}`, left()));
+        const stop = left() === 0 ? undefined : (ended ?? (await ranOut(exitCode)));
         done(stop === undefined ? { results } : { results, stop: { ...stop, unfinished: left() } });
       });
     };
@@ -229,8 +274,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), caseMs: NODE_CASE_MS, outputBytes: OUTPUT_BYTES, path: staged.path });
-    next();
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: NODE_CASE_MS, outputBytes: OUTPUT_BYTES, path: staged.path });
   });
 }
 
@@ -250,7 +294,7 @@ export async function judgeNode(box: Box, source: Uint8Array, name: string, case
   let conversed: Conversed = { results: [] };
   let cleanup: string | undefined;
   try {
-    conversed = await converse(nodeArgs(box, container, staged.mount, staged.directory), container, staged, cases, seed, timeoutSeconds);
+    conversed = await converse(nodeArgs(box, container, staged.mount, staged.directory), container, staged, cases, seed, { seconds: timeoutSeconds, memory: box.memory });
   } finally {
     await removeContainer(container, dockerEnv(process.env));
     cleanup = await removeCopy(staged.root);

@@ -46,6 +46,9 @@ Every judgement ends in one of three outcomes, decided by one classifier, `packa
 | `--sandbox none`: the check exits with any other code, or a signal the judge did not send ends it | fail | 1 | no |
 | Docker or the shell cannot start the check | infra | 75 | no |
 | the check runs past `--timeout`, so the judge stops it, and the judge never saw it run a pinned `timeout` | infra | 75 | no |
+| `--plain-node`: a case is killed with signal 9 while the kernel's out-of-memory count for its container rises, under the memory the judge chose | infra | 75 | no |
+| `--plain-node`: a case is killed with signal 9, and the judge cannot read its container's out-of-memory count | infra | 75 | no |
+| `--plain-node`: a case kills itself, aborts or exits, or is killed with signal 9 while the out-of-memory count stays the same | fail | 1 | no |
 | an engine runs past `--timeout`, or past the MCP tool's own time budget | infra | 75 | no |
 | a case reaches a limit of its own: the host engine's per-call limit, the plain Node per-case limit, or the spec's `steps` or `heap` | fail | 1 | no |
 | a case answers wrongly, throws, answers no primitive, or the module does not load | fail | 1 | no |
@@ -118,6 +121,14 @@ A pass proves that the delivery answered every case in the engines that ran, and
 - holds the delivery at `/judge/<random>/<name>.mjs`, in a directory named afresh for each judgement, and loads it with a real `import()` of its `file:` URL, so `import.meta.url`, `import.meta.resolve`, `process`, `console`, timers and every other Node global are what plain Node gives a module.
 
 Each case runs in a fresh Node process, started by a launcher that never loads the delivery and that kills every other process in the container after each case. Before it imports the delivery, the case process reads the case's arguments and a fresh random token from its standard input and keeps its own references to what it needs to answer; it then writes the answer framed by that token. `judge`, outside the container, accepts only an answer framed by the case's token and compares it with the expected answer itself. A case with no framed answer, two framed answers, an answer that is not a string, number, boolean or null, an exception, or no answer in time fails, so a delivery that writes to stdout or stderr, exits early, patches built-ins or prototypes, or reads the runner's files gains no way to pass a case it answers wrongly. The time each case may take is `NODE_CASE_MS` in `packages/cli/src/node-judge.ts`.
+
+The container's memory is always the judge's choice: a `judge-run` block refuses `--sandbox viper`, and the spec's `heap` bounds only ViperJS. Left alone, V8 stops a case at a heap limit of its own, which can lie below `--sandbox-memory`, by aborting it, which a case can also do with `process.abort()`. So the launcher starts each case with V8's `--max-old-space-size` set to `NODE_HEAP_FACTOR` times `--sandbox-memory`, a factor of 1, so the kernel stops the case before V8 can. A larger factor would also delay V8's collections until the container is full, so a case that only makes garbage would be killed.
+
+When the launcher is ready, and again after each case killed with signal 9 that the launcher did not stop itself, `judge` reads the `oom_kill` count from the container's `memory.events` with `docker exec` as root, which the case's user can neither signal nor trace, from a file the case cannot write. A case killed with signal 9 while that count rose since the last read is infra; a count the judge cannot read then is infra too; a self-kill, an abort or an exit fails.
+
+The count rises for every process the kernel kills for memory, so a case that forks a process the kernel kills for memory, in that case or an earlier one, and then kills itself is infra too, since the work did fill the memory the judge chose. A container that ends before every case was answered, the launcher killed for memory included, is infra, with the reason Docker's state gives.
+
+The launcher and every case start with `--disable-sigusr1`, so a case cannot send the launcher `SIGUSR1` to open its debugger on the loopback interface, which `--network none` keeps, and run code in it. An image whose Node does not accept the option, older than Node 22.14, runs no case, which is infra.
 
 The verdict lists this run as `node`, beside `cases` and `host`: `{ "engine": "node-docker", "image", "path", "total", "passed", "failures" }`, where `path` is the delivery's path inside the container. `judge` passes only when every engine it ran answered every case. Without `--plain-node` nothing changes: no Docker is needed and the verdict has no `node`.
 

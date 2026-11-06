@@ -1,3 +1,5 @@
+export const NODE_READY = '"ready"';
+
 export const NODE_LAUNCHER = `
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -11,12 +13,13 @@ const sweep = () => {
 };
 const runCase = (token, json, zeros) =>
   new Promise((done) => {
-    const child = spawn(process.execPath, ["--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore"] });
+    const child = spawn(process.execPath, ["--disable-sigusr1", "--max-old-space-size=" + config.heapMb, "--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore"] });
     const out = [];
     let bytes = 0;
     let over = false;
     let timedOut = false;
     let code = null;
+    let signal = null;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
@@ -32,24 +35,26 @@ const runCase = (token, json, zeros) =>
     });
     child.stdin.on("error", () => undefined);
     child.stdin.end(JSON.stringify({ token, json, zeros, path: config.path }));
-    child.once("exit", (exitCode) => {
+    child.once("exit", (exitCode, endedBy) => {
       clearTimeout(timer);
       code = exitCode;
+      signal = endedBy;
       sweep();
     });
     child.once("error", (error) => {
       clearTimeout(timer);
       sweep();
-      done({ token, out: "", code: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
+      done({ token, out: "", code: null, signal: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });
     child.once("close", () => {
-      done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, timedOut, over });
+      done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, signal, timedOut, over });
     });
   });
 for await (const line of lines) {
   const message = JSON.parse(line);
   if (config === undefined) {
     config = message;
+    process.stdout.write(${JSON.stringify(NODE_READY)} + "\\n");
     continue;
   }
   const result = await runCase(message.token, message.json, message.zeros);
