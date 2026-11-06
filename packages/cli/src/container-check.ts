@@ -73,14 +73,6 @@ export async function endedState(name: string, env: NodeJS.ProcessEnv, timeoutSe
 
 export const MEMORY_EVENTS = "/sys/fs/cgroup/memory.events";
 
-const OOM_KILL = /^oom_kill (\d{1,15})$/m;
-
-export async function oomKills(name: string, env: NodeJS.ProcessEnv, timeoutSeconds: number = INSPECT_SECONDS): Promise<number | null> {
-  const read = await docker(["exec", "--user", "0:0", name, "node", "-e", `process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(MEMORY_EVENTS)}, "utf8"))`], env, false, timeoutSeconds);
-  const count = read.status === 0 ? OOM_KILL.exec(read.out)?.[1] : undefined;
-  return count === undefined ? null : Number(count);
-}
-
 export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {
   await docker(["rm", "-f", "-v", name], env);
   if ((await docker(["container", "inspect", name], env)).status === 0) {

@@ -29,7 +29,7 @@ import { type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { isResaved, RESAVED, resavedFrom } from "./resaved.js";
-import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
+import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, nodeMemoryRead, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
 import { secondsLeft } from "./monotonic.js";
 
@@ -96,7 +96,7 @@ const reasonOf = (error: unknown): string => (error instanceof Error ? error.mes
 
 async function mentionsRun(spec: string): Promise<boolean> {
   const bytes = await readFile(resolve(spec)).catch(() => Buffer.alloc(0));
-  return fenceMentions(specText(bytes), RUN_FENCE) > 0 || runProblem(bytes) !== undefined;
+  return fenceMentions(specText(bytes), RUN_FENCE) > 0 || runProblem(bytes) !== undefined || nodeMemoryRead(bytes).memory !== undefined;
 }
 
 export const sealedOnDevice = (path: string, intent: Address): string =>
@@ -226,7 +226,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const sha256 = read.sha256;
   const check = await checkFilesOf(command.check, plan);
-  if (plan.pinned !== undefined) {
+  if (plan.pinned !== undefined || viper?.cases.nodeMemory !== undefined) {
     await sandboxReady(plan.sandbox, dockerEnv(process.env));
   }
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));

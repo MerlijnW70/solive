@@ -5,7 +5,7 @@ import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { claim, processTable, statOf } from "./process-table.js";
 import { sweep, taskkill, type Watch } from "./process-reap.js";
 
-export { containerLeft, type ContainerRun, type Docker, docker, endedState, oomKills, removeContainer, runContainer } from "./container-check.js";
+export { containerLeft, type ContainerRun, type Docker, docker, endedState, MEMORY_EVENTS, removeContainer, runContainer } from "./container-check.js";
 export { leftRunning, stillRunning } from "./process-reap.js";
 export { claim, type Recorded, type Running } from "./process-table.js";
 

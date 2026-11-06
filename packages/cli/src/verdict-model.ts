@@ -99,6 +99,13 @@ export function caseOutcome(end: CaseEnd, limits: Limits): Outcome | undefined {
   return end.oomKills > 0 ? killedForMemory(limits, caseOomInfra, caseOomPinned) : undefined;
 }
 
+export const caseFilledPinned = (memory: string): string => `a plain Node case filled the ${memory} memory the spec pins, and the kernel killed a process of it for memory`;
+
+export function pinnedFill(oomKills: number | null, limits: Limits): Outcome | undefined {
+  const memory = limits.pinned?.memory;
+  return memory !== undefined && oomKills !== null && oomKills > 0 ? fail(caseFilledPinned(memory)) : undefined;
+}
+
 export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling {
   if (facts.interrupted !== undefined) {
     return { outcome: "interrupted", signal: facts.interrupted };

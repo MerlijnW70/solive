@@ -279,6 +279,10 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --plain-node --verdict verdict.json
 ```
 
+Plain Node cases run under `--sandbox-memory`, and a case killed for using all of it is infra, since that memory is the judge's choice. A hirer who wants such a case to fail adds `"node_memory": "512m"` to the `judge-cases` block, in the format of `--sandbox-memory` and at least `128m`, `NODE_MIN_MEGABYTES` in `packages/cli/src/viper.ts`, below which plain Node itself may not start.
+
+`judge --plain-node` then runs the cases under exactly that memory, fails a case killed for it, and refuses a `--sandbox-memory` that differs. Without `--plain-node` the field changes nothing. `solive_get_spec` and `intent-engine spec` show it as `node_memory`, and refuse a bad value as `judge_run_refused`, as the hirer's checks do before anything is sent.
+
 `--sandbox viper` needs neither WSL nor Docker on Windows: a demo job is judged from PowerShell as is. Save the spec and the work byte for byte, such as with `curl.exe -o`; `Set-Content` adds a byte-order mark or line ends that change the sha256, and `judge` then says so.
 
 An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, `pass`, `fail` or `infra`, each engine's failed cases and the work's sha256, and sends nothing. `infra` is no verdict: approve nothing and judge again later. On a pass it saves the receipt `solive_wallet_attest` needs, and `solive_wallet_attest` with that sha256 pays.

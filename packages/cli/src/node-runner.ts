@@ -1,7 +1,10 @@
 export const NODE_READY = '"ready"';
 
+export const SAME_UID = "the plain Node launcher runs under the uid its cases would run under, so a case could reach it, and no case was run";
+
 export const NODE_LAUNCHER = `
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const caseFile = process.argv[2];
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -11,9 +14,17 @@ const sweep = () => {
     process.kill(-1, "SIGKILL");
   } catch {}
 };
+const oomCount = () => {
+  try {
+    const found = /^oom_kill (\\d{1,15})$/m.exec(readFileSync(config.events, "utf8"));
+    return found === null ? null : Number(found[1]);
+  } catch {
+    return null;
+  }
+};
 const runCase = (token, json, zeros) =>
   new Promise((done) => {
-    const child = spawn(process.execPath, ["--disable-sigusr1", "--max-old-space-size=" + config.heapMb, "--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore"] });
+    const child = spawn(process.execPath, ["--disable-sigusr1", "--max-old-space-size=" + config.heapMb, "--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore"], uid: config.uid, gid: config.gid, detached: true });
     const out = [];
     let bytes = 0;
     let over = false;
@@ -54,12 +65,17 @@ for await (const line of lines) {
   const message = JSON.parse(line);
   if (config === undefined) {
     config = message;
+    if (process.getuid() === config.uid || process.getgid() === config.gid) {
+      process.stderr.write(${JSON.stringify(SAME_UID)} + "\\n");
+      process.exit(78);
+    }
     process.stdout.write(${JSON.stringify(NODE_READY)} + "\\n");
     continue;
   }
+  const oomBefore = oomCount();
   const result = await runCase(message.token, message.json, message.zeros);
   sweep();
-  process.stdout.write(JSON.stringify(result) + "\\n");
+  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter: oomCount() }) + "\\n");
 }
 `;
 

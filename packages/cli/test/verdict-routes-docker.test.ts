@@ -136,7 +136,15 @@ describe("a delivery that tries to turn its own fail in plain Node into infra", 
     expect([pending.judged.passed, pending.judged.stop, pending.judged.failures[0]?.verdict, engineOutcome(NODE_ENGINE, pending.judged).outcome]).toEqual([0, undefined, "crashed", "fail"]);
     const scribbled = "import fs from 'node:fs'; fs.writeFileSync('/proc/1/fd/1', 'not a frame\\n'); export default (text) => text.split(' ').length;";
     const { judged } = await judgeNode(BOX, new TextEncoder().encode(scribbled), "count.mjs", cases, 7, 60);
-    expect(judged).toMatchObject({ passed: 0, failures: [{ case: 0, verdict: "crashed", detail: OUT_OF_TURN }], stop: { reason: PROTOCOL_BROKEN, unfinished: 1 } });
+    const denied = "EACCES: permission denied, open '/proc/1/fd/1'";
+    expect([judged.passed, judged.stop, judged.failures]).toEqual([
+      0,
+      undefined,
+      [
+        { case: 0, verdict: "no-module", detail: denied },
+        { case: 1, verdict: "no-module", detail: denied },
+      ],
+    ]);
     expect(engineOutcome(NODE_ENGINE, judged).outcome).toBe("fail");
   });
 });

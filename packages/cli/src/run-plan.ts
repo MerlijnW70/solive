@@ -7,6 +7,7 @@ import { RUN_OPTIONS } from "./job-args.js";
 import { checkFilesSha256, type PinnedRun, pinnedRunOf, RUN_FENCE, RUN_OVERHEAD_SECONDS } from "./judge-run.js";
 import { containerArgs, containerName, dockerEnv, megabytesOf, NO_SANDBOX, type Sandbox, SANDBOX_CPUS, SANDBOX_MEMORY, SANDBOX_TMP, shareable } from "./sandbox.js";
 import { containerOutcome, type Limits, type Ruling, shellOutcome } from "./verdict-model.js";
+import { CASES_FENCE, NODE_MEMORY, nodeMemoryRead } from "./viper.js";
 
 type JudgeCommand = Extract<Command, { name: "judge" }>;
 
@@ -42,11 +43,34 @@ export const CHECK_UNPINNED = `is refused: ${pins("a check")} with no hidden che
 
 export const checkDiffers = (path: string, sha256: string, pinned: string): string => `${path} has check_sha256 ${sha256}, but ${pins(pinned)}`;
 
+export const nodeMemoryDiffers = (given: string, pinned: string): string =>
+  `${JSON.stringify(given)} is refused: the spec's ${CASES_FENCE} block pins ${NODE_MEMORY} ${JSON.stringify(pinned)}, the memory plain Node cases run under`;
+
+function nodePlan(spec: Uint8Array, command: JudgeCommand): Plan {
+  const { sandbox } = command;
+  const unpinned = { sandbox, run: command.run, timeout: command.timeout };
+  if (sandbox.kind !== "viper" || sandbox.node === undefined) {
+    return unpinned;
+  }
+  const { memory: pinned, problem } = nodeMemoryRead(spec);
+  if (problem !== undefined) {
+    throw new JudgeRefused(`${problem}; nothing was run or paid`);
+  }
+  if (pinned === undefined) {
+    return unpinned;
+  }
+  const given = new Set<string>(command.given ?? EVERY_OPTION);
+  if (given.has("sandbox-memory") && megabytesOf(sandbox.node.memory) !== megabytesOf(pinned)) {
+    return optionRefused("--sandbox-memory", nodeMemoryDiffers(sandbox.node.memory, pinned));
+  }
+  return { ...unpinned, sandbox: { kind: "viper", node: { ...sandbox.node, memory: pinned } } };
+}
+
 export function runPlan(spec: Uint8Array, command: JudgeCommand): Plan {
   const pinned = pinnedRunOf(spec);
   const { sandbox } = command;
   if (pinned === undefined) {
-    return { sandbox, run: command.run, timeout: command.timeout };
+    return nodePlan(spec, command);
   }
   const given = new Set<string>(command.given ?? EVERY_OPTION);
   if (sandbox.kind !== "docker") {

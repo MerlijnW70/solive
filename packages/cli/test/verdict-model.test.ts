@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { EXIT_RETRY, JudgeInfraError, JudgeInterrupted, oomInfra, SIGNAL_EXIT, timedOutInfra } from "../src/judge-errors.js";
 import {
   type CaseEnd,
+  caseFilledPinned,
   caseOomInfra,
   caseOomPinned,
   caseOutcome,
@@ -26,6 +27,7 @@ import {
   notStarted,
   OOM_UNREAD,
   oomPinned,
+  pinnedFill,
   ranPastPin,
   RUN_UNTIMED,
   type Ruling,
@@ -146,6 +148,12 @@ describe("the verdict model, row by row", () => {
     expect(caseOutcome(ended({ oomKills: null }), LIMITS)).toEqual(infra(OOM_UNREAD));
   });
 
+  it("fails a plain Node case under pinned memory whenever the count rose while it ran, and only then", () => {
+    const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "256m" } };
+    expect([pinnedFill(1, pinnedMemory), pinnedFill(4, pinnedMemory)]).toEqual([fail(caseFilledPinned("256m")), fail(caseFilledPinned("256m"))]);
+    expect([pinnedFill(0, pinnedMemory), pinnedFill(null, pinnedMemory), pinnedFill(1, LIMITS), pinnedFill(1, { seconds: 90, memory: "1g", pinned: { seconds: 60 } })]).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
   it("leaves a plain Node case that kills itself, aborts, exits, or is stopped by the judge to its own verdict, whatever the out-of-memory count", () => {
     expect(caseOutcome(ended({ oomKills: 0 }), LIMITS)).toBeUndefined();
     for (const oomKills of [0, 1, null]) {
@@ -249,6 +257,10 @@ const OUTCOME_ROWS: Record<string, Ruling> = {
   "the check runs past `--timeout`, so the judge stops it, and the judge never saw it run a pinned `timeout`": containerOutcome({ deadline: true, state: null, ranAtMostMs: 4_000 }, { ...LIMITS, pinned: { seconds: 5 } }),
   "`--plain-node`: a case is killed with signal 9 while the kernel's out-of-memory count for its container rises, under the memory the judge chose": caseOutcome(ended({ oomKills: 1 }), LIMITS) as Ruling,
   "`--plain-node`: a case is killed with signal 9, and the judge cannot read its container's out-of-memory count": caseOutcome(ended({ oomKills: null }), LIMITS) as Ruling,
+  "`--plain-node` under a `judge-cases` block that pins `node_memory`: the out-of-memory count rises while a case runs, or the container ends while a case runs and Docker flags it out of memory or its launcher was killed with signal 9": pinnedFill(1, {
+    ...LIMITS,
+    pinned: { seconds: 5, memory: "512m" },
+  }) as Ruling,
   "`--plain-node`: a case kills itself, aborts or exits, or is killed with signal 9 while the out-of-memory count stays the same": caseOutcome(ended({ oomKills: 0 }), LIMITS) ?? engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "an engine runs past `--timeout`, or past the MCP tool's own time budget": engineOutcome(ENGINE, { total: 1, passed: 0, stop: stopAt("deadline", 1) }),
   "a case reaches a limit of its own: the host engine's per-call limit, the plain Node per-case limit, or the spec's `steps` or `heap`": engineOutcome(ENGINE, { total: 1, passed: 0 }),

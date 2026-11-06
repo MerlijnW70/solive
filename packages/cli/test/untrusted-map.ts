@@ -31,6 +31,7 @@ export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>
     "judge_run.cpus": payer("untrusted"),
     "judge_run.check_sha256": payer("hashed"),
     judge_run_refused: payer("sanitized"),
+    node_memory: payer("untrusted"),
   },
   [tool("wallet_setup")]: { "faucet.refused": faucet("sanitized") },
   [tool("wallet_fetch_work")]: { url: worker("sanitized"), untrusted_text: worker("untrusted"), sha256: worker("hashed"), "first.commitment": worker("hashed") },

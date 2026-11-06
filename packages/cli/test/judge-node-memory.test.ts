@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client/node";
@@ -10,7 +10,7 @@ import { EXIT_RETRY, INFRA_NEXT } from "../src/judge-errors.js";
 import { judgeNode, NODE_ENGINE, sigusr1Unsupported } from "../src/node-judge.js";
 import { MEMORY_EVENTS } from "../src/container-check.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
-import { caseOomInfra, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
+import { caseFilledPinned, caseOomInfra, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 import { announced, keyed } from "./announce.js";
 import { DOCKER_TEST } from "./docker-switch.js";
@@ -23,12 +23,15 @@ vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
   const spawn = (...all: Parameters<typeof actual.spawn>) => {
     const [, args, options] = all as unknown as [string, unknown, object | undefined];
-    const counting = Array.isArray(args) && args[0] === "exec" && args.some((arg) => typeof arg === "string" && arg.includes(MEMORY_EVENTS));
-    if (counting) reads.count += 1;
+    if (Array.isArray(args) && args[0] === "exec") reads.count += 1;
     if (reads.oldNode && Array.isArray(args) && args.includes("--entrypoint")) {
       return actual.spawn(process.execPath, ["-e", 'process.stderr.write("node: bad option: --disable-sigusr1\\n"); process.exit(9)'], options ?? {});
     }
-    return counting && reads.broken ? actual.spawn(process.execPath, ["-e", "process.exit(1)"], options ?? {}) : actual.spawn(...all);
+    if (reads.broken && Array.isArray(args) && args[0] === "run") {
+      const hidden = ["run", "--mount", `type=tmpfs,target=${dirname(MEMORY_EVENTS)}`, ...args.slice(1)];
+      return actual.spawn("docker", hidden, options ?? {});
+    }
+    return actual.spawn(...all);
   };
   return { ...actual, spawn: vi.fn(spawn) };
 });
@@ -98,15 +101,15 @@ describe("a plain Node case killed for memory under the memory the judge chose",
     }
   });
 
-  it("reads the count once before the first case and again only after a case killed with signal 9", DOCKER_TEST, async () => {
+  it("has the launcher read the count around each case itself, with no docker exec into a container the work may have filled", DOCKER_TEST, async () => {
     const passing = await judgeNode(BOX, bytes(FORKED_HOG_THEN_ANSWER), "count.mjs", CASES, 7, 60);
-    expect([passing.judged.passed, passing.judged.failures, reads.count]).toEqual([2, [], 1]);
-    reads.count = 0;
+    expect([passing.judged.passed, passing.judged.failures, reads.count]).toEqual([2, [], 0]);
     const killed = await judgeNode(BOX, bytes(inNode('process.kill(process.pid, "SIGKILL");')), "count.mjs", CASES, 7, 60);
-    expect([killed.judged.passed, reads.count]).toEqual([0, 3]);
-    reads.count = 0;
+    expect([killed.judged.passed, killed.judged.stop, reads.count]).toEqual([0, undefined, 0]);
     const exited = await judgeNode(BOX, bytes(inNode("process.exit(3);")), "count.mjs", CASES, 7, 60);
-    expect([exited.judged.passed, reads.count]).toEqual([0, 1]);
+    expect([exited.judged.passed, exited.judged.stop, reads.count]).toEqual([0, undefined, 0]);
+    const pinned = await judgeNode(BOX, bytes(FORKED_HOG_THEN_ANSWER), "count.mjs", { ...CASES, nodeMemory: MEMORY }, 7, 60);
+    expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures, reads.count]).toEqual([0, undefined, CASES.cases.map((_, at) => ({ case: at, verdict: "crashed", detail: caseFilledPinned(MEMORY) })), 0]);
   });
 
   it("is infra when a case killed with signal 9 leaves a count the judge cannot read", DOCKER_TEST, async () => {

@@ -4,7 +4,7 @@ import { MAX_JUDGE_TIMEOUT } from "./command-builders.js";
 import { JudgeRefused } from "./judge-errors.js";
 import { cpusValid, DOCKER_ASK_SECONDS, imageValid, megabytesOf, memoryValid } from "./sandbox.js";
 import { ambiguous, blockFields, fenceMentions, readBlocks, specText, strayFence } from "./spec-blocks.js";
-import { CASES_FENCE, utf8Exact } from "./viper.js";
+import { CASES_FENCE, nodeMemoryRead, utf8Exact } from "./viper.js";
 
 export const RUN_FENCE = "judge-run";
 export const RUN_OVERHEAD_SECONDS = DOCKER_ASK_SECONDS;
@@ -142,16 +142,16 @@ export const shownRun = (pinned: PinnedRun): ShownRun => ({
 export function runProblem(spec: Uint8Array): string | undefined {
   try {
     pinnedRunOf(spec);
-    return undefined;
   } catch (error) {
     if (error instanceof RunBlockRefused) {
       return error.why;
     }
     throw error;
   }
+  return nodeMemoryRead(spec).problem;
 }
 
-export type RunRead = { judge_run?: ShownRun; judge_run_refused?: string };
+export type RunRead = { judge_run?: ShownRun; judge_run_refused?: string; node_memory?: string };
 
 export function runRead(spec: Uint8Array): RunRead {
   const problem = runProblem(spec);
@@ -159,5 +159,6 @@ export function runRead(spec: Uint8Array): RunRead {
     return { judge_run_refused: problem };
   }
   const pinned = pinnedRunOf(spec);
-  return pinned === undefined ? {} : { judge_run: shownRun(pinned) };
+  const { memory } = nodeMemoryRead(spec);
+  return { ...(pinned === undefined ? {} : { judge_run: shownRun(pinned) }), ...(memory === undefined ? {} : { node_memory: memory }) };
 }
