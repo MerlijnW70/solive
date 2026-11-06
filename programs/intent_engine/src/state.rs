@@ -28,7 +28,7 @@ pub const MANDATE_VERSION: u8 = 2;
 pub const MINT_CAP_VERSION: u8 = 2;
 pub const COMMITTEE_VERSION: u8 = 2;
 pub const CLAIMS_SEED: &[u8] = b"claims";
-pub const CLAIMS_VERSION: u8 = 2;
+pub const CLAIMS_VERSION: u8 = 3;
 pub const CLAIMS_OPEN: u8 = 1;
 pub const STANDBY_SEED: &[u8] = b"standby";
 pub const STANDBY_VERSION: u8 = 1;
@@ -38,7 +38,8 @@ pub const LISTED: u8 = 1;
 pub const PROFILE_SEED: &[u8] = b"profile";
 pub const PROFILE_VERSION: u8 = 2;
 pub const DELIVERY_BOOK_SEED: &[u8] = b"delivery_book";
-pub const DELIVERY_BOOK_VERSION: u8 = 1;
+pub const DELIVERY_BOOK_VERSION: u8 = 2;
+pub const OLDEST_DELIVERY_BOOK_VERSION: u8 = 1;
 pub const ANNOUNCEMENT_SEED: &[u8] = b"announcement";
 pub const ANNOUNCEMENT_VERSION: u8 = 1;
 pub const REFUTATION_SEED: &[u8] = b"refutation";
@@ -266,6 +267,11 @@ pub struct ClaimBoard {
     pub dropped_by: Pubkey,
     pub head: u32,
     pub tail: u32,
+    pub review_ann: Pubkey,
+    pub review_until: i64,
+    pub kill_fee: u64,
+    pub review_secs: u32,
+    pub padding2: [u8; 4],
 }
 
 impl ClaimBoard {
@@ -330,6 +336,7 @@ pub struct DeliveryBook {
     pub version: u8,
     pub bump: u8,
     pub padding: [u8; 6],
+    pub cancel_at: i64,
 }
 
 impl DeliveryBook {

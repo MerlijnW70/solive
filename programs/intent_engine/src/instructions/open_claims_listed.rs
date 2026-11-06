@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::EngineError;
-use crate::instructions::open_claims::{check_stake, fill_board, open_terms};
+use crate::instructions::open_claims::{delivered, fill_board, fund_kill_fee, open_terms, Asked};
 use crate::roster::start;
 use crate::state::{ClaimBoard, ClaimList, Intent, CLAIMS_SEED, CLAIM_LIST_SEED, INTENT_VERSION};
 
@@ -32,6 +32,8 @@ pub struct OpenClaimsListed<'info> {
         bump
     )]
     pub claim_list: AccountLoader<'info, ClaimList>,
+    /// CHECK: the intent's delivery book, checked by hand against its seeds and read only to learn whether an announcement exists
+    pub book: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -41,17 +43,39 @@ pub fn handle_open_claims_listed(
     stake: u64,
     size: u8,
     workers: Vec<Pubkey>,
+    review_secs: u32,
+    kill_fee: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    check_stake(stake, Rent::get()?.minimum_balance(0))?;
-    let terms = open_terms(&mut *ctx.accounts.intent.load_mut()?, now, max_secs, stake)?;
+    let asked = Asked {
+        max_secs,
+        stake,
+        review_secs,
+        kill_fee,
+        floor: Rent::get()?.minimum_balance(0),
+    };
+    let open = open_terms(
+        &mut *ctx.accounts.intent.load_mut()?,
+        now,
+        asked,
+        delivered(
+            &ctx.accounts.book.to_account_info(),
+            &ctx.accounts.intent.key(),
+        )?,
+    )?;
+    fund_kill_fee(
+        &ctx.accounts.system_program,
+        ctx.accounts.owner.to_account_info(),
+        ctx.accounts.board.to_account_info(),
+        open.review.kill_fee(),
+    )?;
     let (opened, listed) = {
         let mut board = ctx.accounts.board.load_init()?;
         let opened = fill_board(
             &mut board,
             ctx.accounts.intent.key(),
             ctx.accounts.owner.key(),
-            terms,
+            &open,
             ctx.bumps.board,
         );
         let listed = start(

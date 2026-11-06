@@ -116,6 +116,8 @@ import {
   getProposeAdminInstruction,
   getRaisePauseInstruction,
   getRefuteReleaseInstructionAsync,
+  getRejectDeliveryInstruction,
+  getRequestCancelInstructionAsync,
   getRevokeMandateInstruction,
   getSetAnnounceFeeInstruction,
   getSetCapsRequiredInstruction,
@@ -167,6 +169,8 @@ import {
   parseProposeAdminInstruction,
   parseRaisePauseInstruction,
   parseRefuteReleaseInstruction,
+  parseRejectDeliveryInstruction,
+  parseRequestCancelInstruction,
   parseRevokeMandateInstruction,
   parseSetAnnounceFeeInstruction,
   parseSetCapsRequiredInstruction,
@@ -255,6 +259,8 @@ import {
   type ParsedProposeAdminInstruction,
   type ParsedRaisePauseInstruction,
   type ParsedRefuteReleaseInstruction,
+  type ParsedRejectDeliveryInstruction,
+  type ParsedRequestCancelInstruction,
   type ParsedRevokeMandateInstruction,
   type ParsedSetAnnounceFeeInstruction,
   type ParsedSetCapsRequiredInstruction,
@@ -269,6 +275,8 @@ import {
   type ProposeAdminInput,
   type RaisePauseInput,
   type RefuteReleaseAsyncInput,
+  type RejectDeliveryInput,
+  type RequestCancelAsyncInput,
   type RevokeMandateInput,
   type SetAnnounceFeeInput,
   type SetCapsRequiredInput,
@@ -493,102 +501,110 @@ export const IntentEngineEvent = {
   3: "AgentPaid",
   4: "AnnounceFeeSet",
   5: "AnnouncementClosed",
-  6: "CapsRequiredSet",
-  7: "ClaimDropped",
-  8: "ClaimantsListed",
-  9: "ClaimsClosed",
-  10: "ClaimsOpened",
-  11: "CommitteeAttested",
-  12: "CommitteeCreated",
-  13: "CommitteeFloorSet",
-  14: "CommitteeKeysSynced",
-  15: "ConfigInitialized",
-  16: "ConfigUpdated",
-  17: "DeliveryAnnounced",
-  18: "DeliveryBookClosed",
-  19: "DeliveryReleased",
-  20: "EconomicsUpdated",
-  21: "EpochAdvanced",
-  22: "FeeWithheld",
-  23: "FillBegun",
-  24: "FillEnded",
-  25: "HeldShareClaimed",
-  26: "IntentAttested",
-  27: "IntentCancelled",
-  28: "IntentClosed",
-  29: "IntentCreated",
-  30: "IntentExpired",
-  31: "IntentFilled",
-  32: "IntentSplit",
-  33: "JobClaimed",
-  34: "LegacyClosed",
-  35: "LineLeft",
-  36: "MandateClosed",
-  37: "MandateCreated",
-  38: "MandateUsed",
-  39: "MintCapSet",
-  40: "NonceAdvanced",
-  41: "PauseLowered",
-  42: "PauseRaised",
-  43: "ProfileClosed",
-  44: "ProfileSet",
-  45: "RelayerPaid",
-  46: "ReleaseRefuted",
-  47: "ShareHeld",
-  48: "StakeMoved",
-  49: "StoodBy",
-  50: "UserInitialized",
+  6: "CancelRequested",
+  7: "CapsRequiredSet",
+  8: "ClaimDropped",
+  9: "ClaimantsListed",
+  10: "ClaimsClosed",
+  11: "ClaimsOpened",
+  12: "CommitteeAttested",
+  13: "CommitteeCreated",
+  14: "CommitteeFloorSet",
+  15: "CommitteeKeysSynced",
+  16: "ConfigInitialized",
+  17: "ConfigUpdated",
+  18: "DeliveryAnnounced",
+  19: "DeliveryBookClosed",
+  20: "DeliveryRejected",
+  21: "DeliveryReleased",
+  22: "EconomicsUpdated",
+  23: "EpochAdvanced",
+  24: "FeeWithheld",
+  25: "FillBegun",
+  26: "FillEnded",
+  27: "HeldShareClaimed",
+  28: "IntentAttested",
+  29: "IntentCancelled",
+  30: "IntentClosed",
+  31: "IntentCreated",
+  32: "IntentExpired",
+  33: "IntentFilled",
+  34: "IntentSplit",
+  35: "JobClaimed",
+  36: "LegacyClosed",
+  37: "LineLeft",
+  38: "MandateClosed",
+  39: "MandateCreated",
+  40: "MandateUsed",
+  41: "MintCapSet",
+  42: "NonceAdvanced",
+  43: "PauseLowered",
+  44: "PauseRaised",
+  45: "ProfileClosed",
+  46: "ProfileSet",
+  47: "RelayerPaid",
+  48: "ReleaseRefuted",
+  49: "ReviewArmed",
+  50: "ReviewLapsed",
+  51: "ShareHeld",
+  52: "StakeMoved",
+  53: "StoodBy",
+  54: "UserInitialized",
   AccountMigrated: 0,
   AdminAccepted: 1,
   AdminProposed: 2,
   AgentPaid: 3,
   AnnounceFeeSet: 4,
   AnnouncementClosed: 5,
-  CapsRequiredSet: 6,
-  ClaimDropped: 7,
-  ClaimantsListed: 8,
-  ClaimsClosed: 9,
-  ClaimsOpened: 10,
-  CommitteeAttested: 11,
-  CommitteeCreated: 12,
-  CommitteeFloorSet: 13,
-  CommitteeKeysSynced: 14,
-  ConfigInitialized: 15,
-  ConfigUpdated: 16,
-  DeliveryAnnounced: 17,
-  DeliveryBookClosed: 18,
-  DeliveryReleased: 19,
-  EconomicsUpdated: 20,
-  EpochAdvanced: 21,
-  FeeWithheld: 22,
-  FillBegun: 23,
-  FillEnded: 24,
-  HeldShareClaimed: 25,
-  IntentAttested: 26,
-  IntentCancelled: 27,
-  IntentClosed: 28,
-  IntentCreated: 29,
-  IntentExpired: 30,
-  IntentFilled: 31,
-  IntentSplit: 32,
-  JobClaimed: 33,
-  LegacyClosed: 34,
-  LineLeft: 35,
-  MandateClosed: 36,
-  MandateCreated: 37,
-  MandateUsed: 38,
-  MintCapSet: 39,
-  NonceAdvanced: 40,
-  PauseLowered: 41,
-  PauseRaised: 42,
-  ProfileClosed: 43,
-  ProfileSet: 44,
-  RelayerPaid: 45,
-  ReleaseRefuted: 46,
-  ShareHeld: 47,
-  StakeMoved: 48,
-  StoodBy: 49,
-  UserInitialized: 50,
+  CancelRequested: 6,
+  CapsRequiredSet: 7,
+  ClaimDropped: 8,
+  ClaimantsListed: 9,
+  ClaimsClosed: 10,
+  ClaimsOpened: 11,
+  CommitteeAttested: 12,
+  CommitteeCreated: 13,
+  CommitteeFloorSet: 14,
+  CommitteeKeysSynced: 15,
+  ConfigInitialized: 16,
+  ConfigUpdated: 17,
+  DeliveryAnnounced: 18,
+  DeliveryBookClosed: 19,
+  DeliveryRejected: 20,
+  DeliveryReleased: 21,
+  EconomicsUpdated: 22,
+  EpochAdvanced: 23,
+  FeeWithheld: 24,
+  FillBegun: 25,
+  FillEnded: 26,
+  HeldShareClaimed: 27,
+  IntentAttested: 28,
+  IntentCancelled: 29,
+  IntentClosed: 30,
+  IntentCreated: 31,
+  IntentExpired: 32,
+  IntentFilled: 33,
+  IntentSplit: 34,
+  JobClaimed: 35,
+  LegacyClosed: 36,
+  LineLeft: 37,
+  MandateClosed: 38,
+  MandateCreated: 39,
+  MandateUsed: 40,
+  MintCapSet: 41,
+  NonceAdvanced: 42,
+  PauseLowered: 43,
+  PauseRaised: 44,
+  ProfileClosed: 45,
+  ProfileSet: 46,
+  RelayerPaid: 47,
+  ReleaseRefuted: 48,
+  ReviewArmed: 49,
+  ReviewLapsed: 50,
+  ShareHeld: 51,
+  StakeMoved: 52,
+  StoodBy: 53,
+  UserInitialized: 54,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -665,6 +681,17 @@ export function identifyIntentEngineEvent(
     )
   ) {
     return IntentEngineEvent.AnnouncementClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([178, 234, 154, 172, 145, 115, 28, 116]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.CancelRequested;
   }
   if (
     containsBytes(
@@ -808,6 +835,17 @@ export function identifyIntentEngineEvent(
     )
   ) {
     return IntentEngineEvent.DeliveryBookClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([190, 128, 122, 108, 160, 167, 230, 238]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.DeliveryRejected;
   }
   if (
     containsBytes(
@@ -1121,6 +1159,28 @@ export function identifyIntentEngineEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([111, 210, 255, 25, 116, 174, 213, 47]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.ReviewArmed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([48, 146, 73, 37, 177, 219, 24, 63]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.ReviewLapsed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([16, 253, 107, 71, 153, 28, 94, 64]),
       ),
       0,
@@ -1207,17 +1267,19 @@ export const IntentEngineInstruction = {
   37: "ProposeAdmin",
   38: "RaisePause",
   39: "RefuteRelease",
-  40: "RevokeMandate",
-  41: "SetAnnounceFee",
-  42: "SetCapsRequired",
-  43: "SetCommitteeFloor",
-  44: "SetMintCap",
-  45: "SettleClaims",
-  46: "StandBy",
-  47: "SyncCommitteeKeys",
-  48: "UpdateConfig",
-  49: "UpdateEconomics",
-  50: "UpdateProfile",
+  40: "RejectDelivery",
+  41: "RequestCancel",
+  42: "RevokeMandate",
+  43: "SetAnnounceFee",
+  44: "SetCapsRequired",
+  45: "SetCommitteeFloor",
+  46: "SetMintCap",
+  47: "SettleClaims",
+  48: "StandBy",
+  49: "SyncCommitteeKeys",
+  50: "UpdateConfig",
+  51: "UpdateEconomics",
+  52: "UpdateProfile",
   AcceptAdmin: 0,
   Advance: 1,
   AdvanceEpoch: 2,
@@ -1258,17 +1320,19 @@ export const IntentEngineInstruction = {
   ProposeAdmin: 37,
   RaisePause: 38,
   RefuteRelease: 39,
-  RevokeMandate: 40,
-  SetAnnounceFee: 41,
-  SetCapsRequired: 42,
-  SetCommitteeFloor: 43,
-  SetMintCap: 44,
-  SettleClaims: 45,
-  StandBy: 46,
-  SyncCommitteeKeys: 47,
-  UpdateConfig: 48,
-  UpdateEconomics: 49,
-  UpdateProfile: 50,
+  RejectDelivery: 40,
+  RequestCancel: 41,
+  RevokeMandate: 42,
+  SetAnnounceFee: 43,
+  SetCapsRequired: 44,
+  SetCommitteeFloor: 45,
+  SetMintCap: 46,
+  SettleClaims: 47,
+  StandBy: 48,
+  SyncCommitteeKeys: 49,
+  UpdateConfig: 50,
+  UpdateEconomics: 51,
+  UpdateProfile: 52,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -1724,6 +1788,28 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([36, 183, 50, 167, 246, 186, 10, 45]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.RejectDelivery;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([244, 78, 42, 227, 165, 174, 94, 167]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.RequestCancel;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([252, 97, 140, 119, 67, 43, 177, 108]),
       ),
       0,
@@ -1970,6 +2056,12 @@ export type ParsedIntentEngineInstruction<
   | ({
       instructionType: typeof IntentEngineInstruction.RefuteRelease;
     } & ParsedRefuteReleaseInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.RejectDelivery;
+    } & ParsedRejectDeliveryInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.RequestCancel;
+    } & ParsedRequestCancelInstruction<TProgram>)
   | ({
       instructionType: typeof IntentEngineInstruction.RevokeMandate;
     } & ParsedRevokeMandateInstruction<TProgram>)
@@ -2289,6 +2381,20 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseRefuteReleaseInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.RejectDelivery: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.RejectDelivery,
+        ...parseRejectDeliveryInstruction(instruction),
+      };
+    }
+    case IntentEngineInstruction.RequestCancel: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.RequestCancel,
+        ...parseRequestCancelInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.RevokeMandate: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -2566,6 +2672,14 @@ export type IntentEnginePluginInstructions = {
   refuteRelease: (
     input: MakeOptional<RefuteReleaseAsyncInput, "payer">,
   ) => ReturnType<typeof getRefuteReleaseInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  rejectDelivery: (
+    input: RejectDeliveryInput,
+  ) => ReturnType<typeof getRejectDeliveryInstruction> &
+    SelfPlanAndSendFunctions;
+  requestCancel: (
+    input: RequestCancelAsyncInput,
+  ) => ReturnType<typeof getRequestCancelInstructionAsync> &
     SelfPlanAndSendFunctions;
   revokeMandate: (
     input: RevokeMandateInput,
@@ -2866,6 +2980,16 @@ export function intentEngineProgram() {
                 ...input,
                 payer: input.payer ?? client.payer,
               }),
+            ),
+          rejectDelivery: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRejectDeliveryInstruction(input),
+            ),
+          requestCancel: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRequestCancelInstructionAsync(input),
             ),
           revokeMandate: (input) =>
             addSelfPlanAndSendFunctions(

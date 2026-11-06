@@ -313,3 +313,247 @@ proptest! {
         }
     }
 }
+
+mod review {
+    use intent_core::claim::{
+        arm_review, review_fits, Claim, Payout, ReviewTerms, Slot, StakeTo, MAX_CLAIM_SECS,
+        MAX_CLAIM_STAKE,
+    };
+    use intent_core::delivery::{MAX_REVIEW_SECS, MIN_REVIEW_SECS};
+    use intent_core::Error;
+    use proptest::prelude::*;
+
+    const WORKER: [u8; 32] = [7; 32];
+    const OTHER: [u8; 32] = [8; 32];
+    const NOW: i64 = 1_700_000_000;
+    const RENT: u64 = 890_880;
+
+    fn claim(worker: [u8; 32], until: i64, held: u64, review_until: i64, kill_fee: u64) -> Claim {
+        Claim {
+            worker,
+            until,
+            held,
+            review_until,
+            kill_fee,
+        }
+    }
+
+    #[test]
+    fn at_review_truth_table() {
+        let held = Slot::Held {
+            worker: WORKER,
+            until: i64::MAX,
+        };
+        assert_eq!(Slot::at_review(WORKER, NOW, NOW + 10, NOW + 20), held);
+        assert_eq!(Slot::at_review(WORKER, NOW + 5, NOW + 10, NOW), held);
+        assert_eq!(Slot::at_review([0; 32], NOW, NOW + 10, NOW), Slot::Free);
+        assert_eq!(
+            Slot::at_review(WORKER, NOW + 1, 0, NOW),
+            Slot::Held {
+                worker: WORKER,
+                until: NOW + 1
+            }
+        );
+        assert_eq!(
+            Slot::at_review(WORKER, NOW, 0, NOW),
+            Slot::Lapsed { worker: WORKER }
+        );
+        assert_eq!(Slot::at_review([0; 32], NOW, 0, NOW), Slot::Free);
+    }
+
+    #[test]
+    fn review_terms_follow_the_bounds() {
+        assert!(ReviewTerms::new(0, 0, 0, RENT).is_ok());
+        assert!(ReviewTerms::new(MIN_REVIEW_SECS, 0, 0, RENT).is_ok());
+        assert!(ReviewTerms::new(MAX_REVIEW_SECS, MAX_CLAIM_STAKE, 1, RENT).is_ok());
+        assert!(ReviewTerms::new(MIN_REVIEW_SECS, RENT, RENT, RENT).is_ok());
+        assert_eq!(MAX_REVIEW_SECS, MAX_CLAIM_SECS);
+        assert_eq!((MIN_REVIEW_SECS, MAX_REVIEW_SECS), (3_600, 604_800));
+        let refused = [
+            (MIN_REVIEW_SECS - 1, 0, 0, Error::ReviewTerms),
+            (MAX_REVIEW_SECS + 1, 0, 0, Error::ReviewTerms),
+            (0, RENT, RENT, Error::ReviewTerms),
+            (MIN_REVIEW_SECS, RENT, 0, Error::ReviewTerms),
+            (MIN_REVIEW_SECS, RENT - 1, RENT, Error::StakeBelowRent),
+            (MIN_REVIEW_SECS, 1, RENT, Error::StakeBelowRent),
+            (
+                MIN_REVIEW_SECS,
+                MAX_CLAIM_STAKE + 1,
+                RENT,
+                Error::ReviewTerms,
+            ),
+        ];
+        for (secs, fee, stake, err) in refused {
+            assert_eq!(
+                ReviewTerms::new(secs, fee, stake, RENT),
+                Err(err),
+                "{secs} {fee} {stake}"
+            );
+        }
+        let terms = ReviewTerms::new(86_400, RENT, RENT, RENT);
+        assert_eq!(
+            terms.map(|t| (t.review_secs(), t.kill_fee())),
+            Ok((86_400, RENT))
+        );
+    }
+
+    #[test]
+    fn a_claim_must_leave_a_whole_review_before_expiry() {
+        assert_eq!(review_fits(NOW, 100, 0, NOW + 100), Ok(()));
+        assert_eq!(review_fits(NOW, 100, 3_600, NOW + 3_700), Ok(()));
+        assert_eq!(
+            review_fits(NOW, 100, 3_600, NOW + 3_699),
+            Err(Error::ReviewPastExpiry)
+        );
+        assert_eq!(
+            review_fits(i64::MAX, u32::MAX, u32::MAX, i64::MAX),
+            Err(Error::ReviewPastExpiry)
+        );
+    }
+
+    #[test]
+    fn a_review_arms_once_for_the_live_holder_with_the_whole_window_left() {
+        let held = Slot::Held {
+            worker: WORKER,
+            until: NOW + 10,
+        };
+        let expires = NOW + 3_600;
+        assert_eq!(
+            arm_review(3_600, 0, held, WORKER, NOW, expires),
+            Some(NOW + 3_600)
+        );
+        assert_eq!(arm_review(3_600, 0, held, WORKER, NOW + 1, expires), None);
+        assert_eq!(arm_review(3_600, NOW + 5, held, WORKER, NOW, expires), None);
+        assert_eq!(arm_review(0, 0, held, WORKER, NOW, expires), None);
+        assert_eq!(arm_review(3_600, 0, held, OTHER, NOW, expires), None);
+        assert_eq!(
+            arm_review(
+                3_600,
+                0,
+                Slot::Lapsed { worker: WORKER },
+                WORKER,
+                NOW,
+                expires
+            ),
+            None
+        );
+        assert_eq!(arm_review(3_600, 0, Slot::Free, WORKER, NOW, expires), None);
+        assert_eq!(arm_review(3_600, 0, held, WORKER, -3_600, i64::MAX), None);
+        assert_eq!(
+            arm_review(u32::MAX, 0, held, WORKER, i64::MAX, i64::MAX),
+            None
+        );
+    }
+
+    #[test]
+    fn a_lapse_pays_stake_and_kill_fee_to_the_holder_at_review_until() {
+        let c = claim(WORKER, NOW - 50, 10, NOW, 7);
+        let lapse = Some(Payout {
+            to: StakeTo::Worker,
+            amount: 17,
+            kill_fee: 7,
+        });
+        assert_eq!(c.on_settle(NOW - 1, true), Err(Error::ClaimHeld));
+        assert_eq!(c.on_settle(NOW, true), Ok(lapse));
+        assert_eq!(c.on_settle(NOW - 1, false), Ok(lapse));
+        assert_eq!(c.on_cancel(NOW - 1), Err(Error::ReviewPending));
+        assert_eq!(c.on_cancel(NOW), Ok(lapse));
+        assert_eq!(
+            claim(WORKER, 0, u64::MAX, NOW, 1).on_cancel(NOW),
+            Err(Error::Overflow)
+        );
+    }
+
+    #[test]
+    fn a_reject_returns_only_the_stake_and_only_before_review_until() {
+        let c = claim(WORKER, NOW - 50, 10, NOW, 7);
+        assert_eq!(
+            c.on_reject(NOW - 1),
+            Ok(Payout {
+                to: StakeTo::Worker,
+                amount: 10,
+                kill_fee: 0
+            })
+        );
+        assert_eq!(c.on_reject(NOW), Err(Error::ReviewLapsed));
+        assert_eq!(
+            claim(WORKER, NOW + 10, 10, 0, 7).on_reject(NOW),
+            Err(Error::ReviewLapsed)
+        );
+    }
+
+    #[test]
+    fn a_release_during_review_pays_only_the_holder_and_never_the_kill_fee() {
+        let c = claim(WORKER, NOW - 50, 10, NOW + 10, 7);
+        assert_eq!(c.on_release(&[OTHER], NOW), Err(Error::ClaimHeld));
+        assert_eq!(
+            c.on_release(&[OTHER, WORKER], NOW + 100),
+            Ok(Some(Payout {
+                to: StakeTo::Worker,
+                amount: 10,
+                kill_fee: 0
+            }))
+        );
+    }
+
+    #[test]
+    fn without_a_review_the_old_stake_rules_hold() {
+        let c = claim(WORKER, NOW, 10, 0, 7);
+        let owner = Some(Payout {
+            to: StakeTo::Owner,
+            amount: 10,
+            kill_fee: 0,
+        });
+        assert_eq!(c.on_cancel(NOW), Ok(owner));
+        assert_eq!(c.on_settle(NOW, true), Ok(owner));
+        assert_eq!(c.on_release(&[WORKER], NOW), Ok(owner));
+        assert_eq!(claim([0; 32], 0, 0, 0, 7).on_settle(NOW, false), Ok(None));
+    }
+
+    proptest! {
+        #[test]
+        fn an_armed_review_is_never_lapsed(
+            until in any::<i64>(),
+            review_until in any::<i64>().prop_filter("armed", |r| *r != 0),
+            now in any::<i64>(),
+        ) {
+            let slot = Slot::at_review(WORKER, until, review_until, now);
+            prop_assert!(!matches!(slot, Slot::Lapsed { .. }), "an armed review lapsed");
+            prop_assert_eq!(slot.claimable(), Err(Error::ClaimHeld));
+        }
+
+        #[test]
+        fn review_terms_accept_exactly_the_bounds(
+            secs in prop_oneof![Just(0u32), 3_500u32..3_700, 604_700u32..604_900, any::<u32>()],
+            fee in prop_oneof![Just(0u64), RENT - 2..RENT + 2, MAX_CLAIM_STAKE - 1..MAX_CLAIM_STAKE + 2, any::<u64>()],
+            stake in prop_oneof![Just(0u64), any::<u64>()],
+        ) {
+            let ok = (secs == 0 || (MIN_REVIEW_SECS..=MAX_REVIEW_SECS).contains(&secs))
+                && (fee == 0 || (secs > 0 && stake > 0 && (RENT..=MAX_CLAIM_STAKE).contains(&fee)));
+            prop_assert_eq!(ReviewTerms::new(secs, fee, stake, RENT).is_ok(), ok);
+        }
+
+        #[test]
+        fn an_armed_review_never_pays_the_owner(
+            until in any::<i64>(),
+            held in any::<u32>(),
+            review_until in any::<i64>().prop_filter("armed", |r| *r != 0),
+            fee in any::<u32>(),
+            now in any::<i64>(),
+            open in any::<bool>(),
+        ) {
+            let c = claim(WORKER, until, u64::from(held), review_until, u64::from(fee));
+            let paid = [
+                (c.on_settle(now, open).ok().flatten(), !open),
+                (c.on_cancel(now).ok().flatten(), false),
+                (c.on_release(&[WORKER], now).ok().flatten(), false),
+                (c.on_reject(now).ok(), false),
+            ];
+            for (payout, ended) in paid {
+                let Some(payout) = payout else { continue };
+                prop_assert_eq!(payout.to, StakeTo::Worker);
+                prop_assert!(payout.kill_fee == 0 || ended || now >= review_until, "kill fee before review_until");
+            }
+        }
+    }
+}

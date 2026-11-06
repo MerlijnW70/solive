@@ -160,7 +160,9 @@ describe("announcement rules", () => {
   it("decodes announcement states and refuses unknown bytes", () => {
     expect(decodeAnnState(0)).toBe("announced");
     expect(decodeAnnState(1)).toBe("paid");
-    expect(refusal(() => decodeAnnState(2))).toBe("AnnouncementState");
+    expect(decodeAnnState(2)).toBe("rejected");
+    expect(encodeAnnState("rejected")).toBe(2);
+    expect(refusal(() => decodeAnnState(3))).toBe("AnnouncementState");
     expect(refusal(() => decodeAnnState(255))).toBe("AnnouncementState");
     expect(refusal(() => decodeAnnState(-1))).toBe("AnnouncementState");
     expect(refusal(() => decodeAnnState(0.5))).toBe("AnnouncementState");
@@ -171,6 +173,9 @@ describe("announcement rules", () => {
   it("closes an unpaid announcement for its worker once the intent stops being open", () => {
     expect(refusal(() => closable("announced", true, true, 500n, 1_000n, 0n))).toBe("AnnouncementOpen");
     expect(refusal(() => closable("announced", true, false, 500n, 1_000n, 0n))).toBe("accepted");
+    expect(refusal(() => closable("rejected", true, true, 500n, 1_000n, 0n))).toBe("AnnouncementOpen");
+    expect(refusal(() => closable("rejected", true, false, 500n, 1_000n, 0n))).toBe("accepted");
+    expect(refusal(() => closable("rejected", false, false, 1_000n + REFUTE_WINDOW_SECS - 1n, 1_000n, 0n))).toBe("AnnouncementRetained");
   });
 
   it("closes an unpaid announcement for others only after the refute window", () => {

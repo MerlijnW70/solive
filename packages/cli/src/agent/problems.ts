@@ -177,6 +177,15 @@ export const ENGINE_PROBLEMS = {
   HeldSplitMismatch: never("the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them"),
   HolderStandsBy: never("the wallet holding a job's claim cannot stand by in that job's line; it keeps the claim until it drops it or the claim lapses"),
   StakeBelowRent: never(`${stakeBelowRent()}; raise the stake or set it to 0`),
+  ClaimsAfterDelivery: never("claims open only before the first announcement on an escrow"),
+  ReviewTerms: never("a review window is 0 or 3600 to 604800 seconds, and a kill fee needs a review window and a stake and is at most 100 SOL"),
+  ReviewPastExpiry: never("this claim leaves no whole review window before the escrow expires; claim for fewer seconds"),
+  ReviewPending: later("the judge's review of the holder's delivery is still running; try again once it ends"),
+  ReviewLapsed: never("the review window has ended, so this announcement can no longer be rejected"),
+  DeliveryNotPending: never("only an announcement that is neither paid nor rejected can be rejected"),
+  CancelNoticeRequired: never("this escrow has an announcement, so its owner first requests a cancel and waits the notice"),
+  CancelNoticeRunning: later("the cancel notice is still running; try again once it ends"),
+  CancelAlreadyRequested: never("a cancel was already requested for this escrow; wait for its notice to end"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

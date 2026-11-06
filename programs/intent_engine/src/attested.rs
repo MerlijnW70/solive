@@ -65,7 +65,7 @@ impl Judge {
         })
     }
 
-    fn signers(&self, attestor: &Pubkey) -> Result<Vec<Pubkey>> {
+    pub fn signers(&self, attestor: &Pubkey) -> Result<Vec<Pubkey>> {
         match self {
             Self::Key => Ok(vec![*attestor]),
             Self::Committee {
@@ -84,7 +84,7 @@ impl Judge {
         }
     }
 
-    fn eligible(&self, attestor: &Pubkey) -> Vec<Pubkey> {
+    pub fn eligible(&self, attestor: &Pubkey) -> Vec<Pubkey> {
         match self {
             Self::Key => vec![*attestor],
             Self::Committee { committee, .. } => committee

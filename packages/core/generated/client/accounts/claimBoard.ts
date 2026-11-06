@@ -67,6 +67,11 @@ export type ClaimBoard = {
   droppedBy: Address;
   head: number;
   tail: number;
+  reviewAnn: Address;
+  reviewUntil: bigint;
+  killFee: bigint;
+  reviewSecs: number;
+  padding2: ReadonlyUint8Array;
 };
 
 export type ClaimBoardArgs = {
@@ -84,6 +89,11 @@ export type ClaimBoardArgs = {
   droppedBy: Address;
   head: number;
   tail: number;
+  reviewAnn: Address;
+  reviewUntil: number | bigint;
+  killFee: number | bigint;
+  reviewSecs: number;
+  padding2: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link ClaimBoardArgs} account data. */
@@ -105,6 +115,11 @@ export function getClaimBoardEncoder(): FixedSizeEncoder<ClaimBoardArgs> {
       ["droppedBy", getAddressEncoder()],
       ["head", getU32Encoder()],
       ["tail", getU32Encoder()],
+      ["reviewAnn", getAddressEncoder()],
+      ["reviewUntil", getI64Encoder()],
+      ["killFee", getU64Encoder()],
+      ["reviewSecs", getU32Encoder()],
+      ["padding2", fixEncoderSize(getBytesEncoder(), 4)],
     ]),
     (value) => ({ ...value, discriminator: CLAIM_BOARD_DISCRIMINATOR }),
   );
@@ -128,6 +143,11 @@ export function getClaimBoardDecoder(): FixedSizeDecoder<ClaimBoard> {
     ["droppedBy", getAddressDecoder()],
     ["head", getU32Decoder()],
     ["tail", getU32Decoder()],
+    ["reviewAnn", getAddressDecoder()],
+    ["reviewUntil", getI64Decoder()],
+    ["killFee", getU64Decoder()],
+    ["reviewSecs", getU32Decoder()],
+    ["padding2", fixDecoderSize(getBytesDecoder(), 4)],
   ]);
 }
 
@@ -193,5 +213,5 @@ export async function fetchAllMaybeClaimBoard(
 }
 
 export function getClaimBoardSize(): number {
-  return 176;
+  return 232;
 }

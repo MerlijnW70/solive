@@ -1309,3 +1309,35 @@ fn closing_the_escrow_against_every_board_state() -> TestResult {
         ],
     )
 }
+
+#[test]
+fn a_cancel_against_an_armed_and_a_lapsed_review() -> TestResult {
+    use svm_tests::{Fair, FAIR_KILL, FAIR_STAKE};
+    for lapsed in [false, true] {
+        let mut f = Fair::armed(ReleasePath::Attested)?;
+        f.world
+            .request_cancel()
+            .map_err(|e| format!("request: {e:?}"))?;
+        let until = f.review_until()?;
+        f.world.set_now(if lapsed { until } else { until - 1 });
+        let before = f.purse()?;
+        let sent = f.cancel_now();
+        let after = f.purse()?;
+        if lapsed {
+            assert_eq!(sent.err(), None);
+            assert_eq!(after.holder, before.holder + FAIR_STAKE + FAIR_KILL);
+            assert_eq!(after.board, before.board - FAIR_STAKE - FAIR_KILL);
+            assert_eq!(after.vault, 0);
+        } else {
+            assert_eq!(
+                sent.err(),
+                Some(engine_error_at(0, EngineError::ReviewPending))
+            );
+            assert_eq!(
+                (after.holder, after.board, after.vault, after.owner),
+                (before.holder, before.board, before.vault, before.owner)
+            );
+        }
+    }
+    Ok(())
+}

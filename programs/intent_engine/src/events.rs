@@ -334,6 +334,8 @@ pub struct ClaimsOpened {
     pub owner: Pubkey,
     pub max_secs: u32,
     pub stake: u64,
+    pub review_secs: u32,
+    pub kill_fee: u64,
 }
 
 #[event]
@@ -349,6 +351,7 @@ pub struct ClaimDropped {
     pub intent: Pubkey,
     pub worker: Pubkey,
     pub refunded: u64,
+    pub announcement: Pubkey,
 }
 
 #[event]
@@ -498,4 +501,42 @@ pub struct ReleaseRefuted {
     pub earlier_worker: Pubkey,
     pub delivered: [u8; 32],
     pub refuter: Pubkey,
+}
+
+#[event]
+pub struct ReviewArmed {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub worker: Pubkey,
+    pub attestor: Pubkey,
+    pub review_until: i64,
+    pub kill_fee: u64,
+}
+
+#[event]
+pub struct DeliveryRejected {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub seq: u64,
+    pub worker: Pubkey,
+    pub attestor: Pubkey,
+    pub under_review: bool,
+    pub stake_returned: u64,
+}
+
+#[event]
+pub struct ReviewLapsed {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub worker: Pubkey,
+    pub attestor: Pubkey,
+    pub kill_fee: u64,
+    pub stake: u64,
+}
+
+#[event]
+pub struct CancelRequested {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub cancel_at: i64,
 }

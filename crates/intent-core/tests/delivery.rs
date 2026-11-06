@@ -156,9 +156,11 @@ fn only_the_holder_announces_while_a_claim_is_held() {
 fn announcement_states_decode_and_refuse_unknown_bytes() {
     assert_eq!(AnnState::try_from(0u8), Ok(AnnState::Announced));
     assert_eq!(AnnState::try_from(1u8), Ok(AnnState::Paid));
-    assert_eq!(AnnState::try_from(2u8), Err(Error::AnnouncementState));
+    assert_eq!(AnnState::try_from(2u8), Ok(AnnState::Rejected));
+    assert_eq!(AnnState::try_from(3u8), Err(Error::AnnouncementState));
     assert_eq!(u8::from(AnnState::Announced), 0);
     assert_eq!(u8::from(AnnState::Paid), 1);
+    assert_eq!(u8::from(AnnState::Rejected), 2);
 }
 
 #[test]
@@ -517,10 +519,11 @@ fn attested_split_delivery_preimage_changes_with_each_bound_field() {
 #[test]
 fn every_domain_tag_in_core_is_unique() {
     use intent_core::committee::{COMMITTEE_COSIGN_TAG, COMMITTEE_TAG};
-    use intent_core::sig::{ATTEST_TAG, INTENT_TAG, RETIRED_TAGS, SPLIT_COSIGN_TAG};
+    use intent_core::sig::{ATTEST_TAG, INTENT_TAG, REJECT_TAG, RETIRED_TAGS, SPLIT_COSIGN_TAG};
     assert_eq!(RETIRED_TAGS, [*b"intent-engine-pf", *b"intent-engine-sp"]);
     let [retired_proof, retired_split] = RETIRED_TAGS;
-    let tags: [&[u8]; 11] = [
+    let tags: [&[u8]; 12] = [
+        &REJECT_TAG,
         &INTENT_TAG,
         &ATTEST_TAG,
         &retired_proof,
@@ -537,5 +540,57 @@ fn every_domain_tag_in_core_is_unique() {
         for b in tags.iter().skip(i.saturating_add(1)) {
             assert_ne!(a, b);
         }
+    }
+}
+
+mod notice {
+    use intent_core::delivery::{
+        cancel_at, cancel_ready, closable, AnnState, CANCEL_NOTICE_SECS, REFUTE_WINDOW_SECS,
+    };
+    use intent_core::Error;
+
+    #[test]
+    fn a_rejected_announcement_closes_exactly_like_an_unpaid_one() {
+        let edges = [
+            i64::MIN,
+            -1,
+            0,
+            1,
+            1_000,
+            i64::MAX - REFUTE_WINDOW_SECS,
+            i64::MAX,
+        ];
+        for by_worker in [true, false] {
+            for open in [true, false] {
+                for now in edges {
+                    for expires in edges {
+                        assert_eq!(
+                            closable(AnnState::Rejected, by_worker, open, now, expires, 0),
+                            closable(AnnState::Announced, by_worker, open, now, expires, 0),
+                            "{by_worker} {open} {now} {expires}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cancel_waits_for_a_request_and_then_the_whole_notice() {
+        assert_eq!(CANCEL_NOTICE_SECS, 86_400);
+        let at = cancel_at(1_000);
+        assert_eq!(at, 1_000 + 86_400);
+        assert_eq!(cancel_ready(0, i64::MAX), Err(Error::CancelNoticeRequired));
+        assert_eq!(cancel_ready(at, at - 1), Err(Error::CancelNoticeRunning));
+        assert_eq!(cancel_ready(at, at), Ok(()));
+        assert_eq!(cancel_ready(at, i64::MAX), Ok(()));
+        assert_eq!(cancel_at(i64::MAX), i64::MAX);
+        assert_eq!(cancel_ready(cancel_at(i64::MAX), i64::MAX), Ok(()));
+        assert_eq!(
+            cancel_ready(cancel_at(i64::MAX), i64::MAX - 1),
+            Err(Error::CancelNoticeRunning)
+        );
+        assert_eq!(cancel_ready(i64::MIN, i64::MIN), Ok(()));
+        assert_eq!(cancel_ready(1, i64::MIN), Err(Error::CancelNoticeRunning));
     }
 }

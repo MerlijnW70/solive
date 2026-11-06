@@ -22,6 +22,8 @@ import {
   getInitUserDiscriminatorBytes,
   getProposeAdminDiscriminatorBytes,
   getRaisePauseDiscriminatorBytes,
+  getRejectDeliveryDiscriminatorBytes,
+  getRequestCancelDiscriminatorBytes,
   getRaisePauseInstructionDataEncoder,
   getUpdateConfigDiscriminatorBytes,
   checkFlags,
@@ -188,6 +190,8 @@ describe("golden vectors emitted by the Rust implementation", () => {
       set_mint_cap: getSetMintCapDiscriminatorBytes(),
       set_caps_required: getSetCapsRequiredDiscriminatorBytes(),
       set_committee_floor: getSetCommitteeFloorDiscriminatorBytes(),
+      request_cancel: getRequestCancelDiscriminatorBytes(),
+      reject_delivery: getRejectDeliveryDiscriminatorBytes(),
     };
     expect(Object.keys(ours).sort()).toEqual(Object.keys(vectors.discriminators).sort());
     for (const [name, disc] of Object.entries(ours)) {

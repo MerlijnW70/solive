@@ -85,6 +85,11 @@ async function boardView({ intent, worker = NONE, until = 0n, head = 0, tail = 0
     droppedBy: NONE,
     head,
     tail,
+    reviewAnn: NONE,
+    reviewUntil: 0n,
+    killFee: 0n,
+    reviewSecs: 0,
+    padding2: new Uint8Array(4),
   });
   return [await claimBoardAddress(intent), engineView(Uint8Array.from(data))];
 }

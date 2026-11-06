@@ -6,8 +6,9 @@ use crate::state::{
     Announcement, ClaimBoard, ClaimList, Committee, Config, DeliveryBook, Intent, Mandate, MintCap,
     Profile, Refutation, Standby, UserState, ANNOUNCEMENT_VERSION, CLAIMS_VERSION,
     CLAIM_LIST_VERSION, COMMITTEE_VERSION, CONFIG_VERSION, DELIVERY_BOOK_VERSION, INTENT_VERSION,
-    MANDATE_VERSION, MINT_CAP_VERSION, OLDEST_CLAIMS_VERSION, OLDEST_INTENT_VERSION,
-    OLDEST_MINT_CAP_VERSION, PROFILE_VERSION, REFUTATION_VERSION, STANDBY_VERSION, USER_VERSION,
+    MANDATE_VERSION, MINT_CAP_VERSION, OLDEST_CLAIMS_VERSION, OLDEST_DELIVERY_BOOK_VERSION,
+    OLDEST_INTENT_VERSION, OLDEST_MINT_CAP_VERSION, PROFILE_VERSION, REFUTATION_VERSION,
+    STANDBY_VERSION, USER_VERSION,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,11 +167,34 @@ pub fn readable(data: &[u8]) -> bool {
 }
 
 pub const LEGACY_BOARD_SPACE: usize = 168;
+pub const V2_BOARD_SPACE: usize = 176;
+pub const V2_BOARD_VERSION: u8 = 2;
+pub const V1_BOOK_SPACE: usize = 96;
 
 pub fn legacy_board(data: &[u8]) -> bool {
-    data.len() == LEGACY_BOARD_SPACE
-        && data.get(..ClaimBoard::DISCRIMINATOR.len()) == Some(ClaimBoard::DISCRIMINATOR)
-        && board_version(data) == Some(OLDEST_CLAIMS_VERSION)
+    let version = board_version(data);
+    let known = match data.len() {
+        LEGACY_BOARD_SPACE => version == Some(OLDEST_CLAIMS_VERSION),
+        V2_BOARD_SPACE => {
+            version == Some(OLDEST_CLAIMS_VERSION) || version == Some(V2_BOARD_VERSION)
+        }
+        _ => false,
+    };
+    known && data.get(..ClaimBoard::DISCRIMINATOR.len()) == Some(ClaimBoard::DISCRIMINATOR)
+}
+
+pub fn book_readable(data: &[u8]) -> bool {
+    if data.get(..DeliveryBook::DISCRIMINATOR.len()) != Some(DeliveryBook::DISCRIMINATOR) {
+        return false;
+    }
+    let at = DeliveryBook::DISCRIMINATOR
+        .len()
+        .saturating_add(offset_of!(DeliveryBook, version));
+    match (data.len(), data.get(at).copied()) {
+        (V1_BOOK_SPACE, Some(OLDEST_DELIVERY_BOOK_VERSION)) => true,
+        (space, Some(DELIVERY_BOOK_VERSION)) => space == DeliveryBook::SPACE,
+        _ => false,
+    }
 }
 
 fn board_version(data: &[u8]) -> Option<u8> {
@@ -256,7 +280,7 @@ const fn outdated(discriminator: &'static [u8], space: usize, version: u8) -> Ou
     }
 }
 
-pub const OUTDATED: [Outdated; 11] = [
+pub const OUTDATED: [Outdated; 13] = [
     outdated(Config::DISCRIMINATOR, LEGACY_CONFIG_SPACE, FIRST_VERSION),
     outdated(Config::DISCRIMINATOR, Config::SPACE, FIRST_VERSION),
     outdated(UserState::DISCRIMINATOR, UserState::SPACE, FIRST_VERSION),
@@ -265,9 +289,11 @@ pub const OUTDATED: [Outdated; 11] = [
     outdated(MintCap::DISCRIMINATOR, MintCap::SPACE, FIRST_VERSION),
     outdated(Committee::DISCRIMINATOR, Committee::SPACE, FIRST_VERSION),
     outdated(ClaimBoard::DISCRIMINATOR, LEGACY_BOARD_SPACE, FIRST_VERSION),
-    outdated(ClaimBoard::DISCRIMINATOR, ClaimBoard::SPACE, FIRST_VERSION),
+    outdated(ClaimBoard::DISCRIMINATOR, V2_BOARD_SPACE, FIRST_VERSION),
+    outdated(ClaimBoard::DISCRIMINATOR, V2_BOARD_SPACE, V2_BOARD_VERSION),
     outdated(Standby::DISCRIMINATOR, Standby::SPACE, UNVERSIONED),
     outdated(Profile::DISCRIMINATOR, Profile::SPACE, FIRST_VERSION),
+    outdated(DeliveryBook::DISCRIMINATOR, V1_BOOK_SPACE, FIRST_VERSION),
 ];
 
 pub fn migration_of(data: &[u8]) -> Option<(&'static Layout, &'static Outdated)> {

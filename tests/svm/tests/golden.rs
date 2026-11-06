@@ -974,6 +974,8 @@ fn vectors() -> TestResult<Value> {
         "set_mint_cap": hex(ix::SetMintCap::DISCRIMINATOR),
         "set_caps_required": hex(ix::SetCapsRequired::DISCRIMINATOR),
         "set_committee_floor": hex(ix::SetCommitteeFloor::DISCRIMINATOR),
+        "request_cancel": hex(ix::RequestCancel::DISCRIMINATOR),
+        "reject_delivery": hex(ix::RejectDelivery::DISCRIMINATOR),
     });
 
     let event_discriminators = json!({
@@ -1019,6 +1021,10 @@ fn vectors() -> TestResult<Value> {
         "PauseRaised": hex(ev::PauseRaised::DISCRIMINATOR),
         "RelayerPaid": hex(ev::RelayerPaid::DISCRIMINATOR),
         "UserInitialized": hex(ev::UserInitialized::DISCRIMINATOR),
+        "CancelRequested": hex(ev::CancelRequested::DISCRIMINATOR),
+        "DeliveryRejected": hex(ev::DeliveryRejected::DISCRIMINATOR),
+        "ReviewArmed": hex(ev::ReviewArmed::DISCRIMINATOR),
+        "ReviewLapsed": hex(ev::ReviewLapsed::DISCRIMINATOR),
     });
     let mandate_lanes: Vec<Value> = [
         0u64,

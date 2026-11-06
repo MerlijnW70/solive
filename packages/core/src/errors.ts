@@ -128,6 +128,13 @@ export const CORE_ERROR_CODES = [
   "RefuteNotEarlier",
   "RefuteSamePayee",
   "SplitCountMismatch",
+  "ReviewTerms",
+  "ReviewPastExpiry",
+  "ReviewPending",
+  "ReviewLapsed",
+  "CancelNoticeRequired",
+  "CancelNoticeRunning",
+  "StakeBelowRent",
 ] as const;
 
 export type CoreErrorCode = (typeof CORE_ERROR_CODES)[number];

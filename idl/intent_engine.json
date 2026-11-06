@@ -294,6 +294,7 @@
         },
         {
           "name": "board",
+          "writable": true,
           "optional": true,
           "pda": {
             "seeds": [
@@ -642,6 +643,9 @@
           "name": "mint_cap",
           "writable": true,
           "optional": true
+        },
+        {
+          "name": "book"
         },
         {
           "name": "event_authority"
@@ -3704,6 +3708,9 @@
           }
         },
         {
+          "name": "book"
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
@@ -3721,6 +3728,14 @@
         },
         {
           "name": "stake",
+          "type": "u64"
+        },
+        {
+          "name": "review_secs",
+          "type": "u32"
+        },
+        {
+          "name": "kill_fee",
           "type": "u64"
         }
       ]
@@ -3801,6 +3816,9 @@
           }
         },
         {
+          "name": "book"
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
@@ -3829,6 +3847,14 @@
           "type": {
             "vec": "pubkey"
           }
+        },
+        {
+          "name": "review_secs",
+          "type": "u32"
+        },
+        {
+          "name": "kill_fee",
+          "type": "u64"
         }
       ]
     },
@@ -4003,6 +4029,145 @@
           }
         }
       ]
+    },
+    {
+      "name": "reject_delivery",
+      "discriminator": [
+        36,
+        183,
+        50,
+        167,
+        246,
+        186,
+        10,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "announcement",
+          "writable": true
+        },
+        {
+          "name": "attestor"
+        },
+        {
+          "name": "committee",
+          "optional": true
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "signers_mask",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "request_cancel",
+      "discriminator": [
+        244,
+        78,
+        42,
+        227,
+        165,
+        174,
+        94,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  105,
+                  118,
+                  101,
+                  114,
+                  121,
+                  95,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "revoke_mandate",
@@ -4882,6 +5047,19 @@
       ]
     },
     {
+      "name": "CancelRequested",
+      "discriminator": [
+        178,
+        234,
+        154,
+        172,
+        145,
+        115,
+        28,
+        116
+      ]
+    },
+    {
       "name": "CapsRequiredSet",
       "discriminator": [
         184,
@@ -5048,6 +5226,19 @@
         217,
         132,
         122
+      ]
+    },
+    {
+      "name": "DeliveryRejected",
+      "discriminator": [
+        190,
+        128,
+        122,
+        108,
+        160,
+        167,
+        230,
+        238
       ]
     },
     {
@@ -5412,6 +5603,32 @@
         163,
         64,
         142
+      ]
+    },
+    {
+      "name": "ReviewArmed",
+      "discriminator": [
+        111,
+        210,
+        255,
+        25,
+        116,
+        174,
+        213,
+        47
+      ]
+    },
+    {
+      "name": "ReviewLapsed",
+      "discriminator": [
+        48,
+        146,
+        73,
+        37,
+        177,
+        219,
+        24,
+        63
       ]
     },
     {
@@ -6075,6 +6292,42 @@
     {
       "code": 6151,
       "name": "StakeBelowRent"
+    },
+    {
+      "code": 6152,
+      "name": "ClaimsAfterDelivery"
+    },
+    {
+      "code": 6153,
+      "name": "ReviewTerms"
+    },
+    {
+      "code": 6154,
+      "name": "ReviewPastExpiry"
+    },
+    {
+      "code": 6155,
+      "name": "ReviewPending"
+    },
+    {
+      "code": 6156,
+      "name": "ReviewLapsed"
+    },
+    {
+      "code": 6157,
+      "name": "DeliveryNotPending"
+    },
+    {
+      "code": 6158,
+      "name": "CancelNoticeRequired"
+    },
+    {
+      "code": 6159,
+      "name": "CancelNoticeRunning"
+    },
+    {
+      "code": 6160,
+      "name": "CancelAlreadyRequested"
     }
   ],
   "types": [
@@ -6349,6 +6602,26 @@
       }
     },
     {
+      "name": "CancelRequested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "cancel_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "CapsRequiredSet",
       "type": {
         "kind": "struct",
@@ -6429,6 +6702,31 @@
           {
             "name": "tail",
             "type": "u32"
+          },
+          {
+            "name": "review_ann",
+            "type": "pubkey"
+          },
+          {
+            "name": "review_until",
+            "type": "i64"
+          },
+          {
+            "name": "kill_fee",
+            "type": "u64"
+          },
+          {
+            "name": "review_secs",
+            "type": "u32"
+          },
+          {
+            "name": "padding2",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           }
         ]
       }
@@ -6449,6 +6747,10 @@
           {
             "name": "refunded",
             "type": "u64"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
           }
         ]
       }
@@ -6572,6 +6874,14 @@
           },
           {
             "name": "stake",
+            "type": "u64"
+          },
+          {
+            "name": "review_secs",
+            "type": "u32"
+          },
+          {
+            "name": "kill_fee",
             "type": "u64"
           }
         ]
@@ -7145,6 +7455,10 @@
                 6
               ]
             }
+          },
+          {
+            "name": "cancel_at",
+            "type": "i64"
           }
         ]
       }
@@ -7177,6 +7491,42 @@
           {
             "name": "by",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DeliveryRejected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "under_review",
+            "type": "bool"
+          },
+          {
+            "name": "stake_returned",
+            "type": "u64"
           }
         ]
       }
@@ -8970,6 +9320,70 @@
           {
             "name": "refuter",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReviewArmed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "review_until",
+            "type": "i64"
+          },
+          {
+            "name": "kill_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReviewLapsed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "kill_fee",
+            "type": "u64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }

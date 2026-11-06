@@ -816,6 +816,8 @@ pub fn announced_base() -> TestResult<(Base, Keypair, Keypair, Delivery)> {
 pub fn close_announcement_ready() -> TestResult<Ready> {
     let (mut b, _, worker, delivery) = announced_base()?;
     let owner = b.owner_key();
+    let intent = b.intent(0);
+    b.env.give_notice(&owner, &intent)?;
     let cancel = b.env.cancel_ix(&b.owner(), &b.market, 0, &b.trader.input);
     b.env.send(&owner, &[cancel], &[])?;
     let ix = svm_tests::close_announcement_ix(
@@ -834,6 +836,8 @@ pub fn close_announcement_ready() -> TestResult<Ready> {
 pub fn close_delivery_book() -> TestResult<Ready> {
     let (mut b, _, worker, delivery) = announced_base()?;
     let owner = b.owner_key();
+    let intent = b.intent(0);
+    b.env.give_notice(&owner, &intent)?;
     let cancel = b.env.cancel_ix(&b.owner(), &b.market, 0, &b.trader.input);
     b.env.send(&owner, &[cancel], &[])?;
     let intent = b.intent(0);

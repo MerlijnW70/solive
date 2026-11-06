@@ -56,4 +56,11 @@ pub enum Error {
     RefuteNotEarlier,
     RefuteSamePayee,
     SplitCountMismatch,
+    ReviewTerms,
+    ReviewPastExpiry,
+    ReviewPending,
+    ReviewLapsed,
+    CancelNoticeRequired,
+    CancelNoticeRunning,
+    StakeBelowRent,
 }

@@ -153,4 +153,13 @@ export const ENGINE_ERROR_LIST: readonly EngineErrorEntry[] = [
   { code: 6149, name: "HeldSplitMismatch", message: "held split mismatch" },
   { code: 6150, name: "HolderStandsBy", message: "holder stands by" },
   { code: 6151, name: "StakeBelowRent", message: "stake below rent" },
+  { code: 6152, name: "ClaimsAfterDelivery", message: "claims after delivery" },
+  { code: 6153, name: "ReviewTerms", message: "review terms" },
+  { code: 6154, name: "ReviewPastExpiry", message: "review past expiry" },
+  { code: 6155, name: "ReviewPending", message: "review pending" },
+  { code: 6156, name: "ReviewLapsed", message: "review lapsed" },
+  { code: 6157, name: "DeliveryNotPending", message: "delivery not pending" },
+  { code: 6158, name: "CancelNoticeRequired", message: "cancel notice required" },
+  { code: 6159, name: "CancelNoticeRunning", message: "cancel notice running" },
+  { code: 6160, name: "CancelAlreadyRequested", message: "cancel already requested" },
 ];

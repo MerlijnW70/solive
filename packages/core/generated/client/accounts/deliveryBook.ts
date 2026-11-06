@@ -19,6 +19,8 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getI64Decoder,
+  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -58,6 +60,7 @@ export type DeliveryBook = {
   version: number;
   bump: number;
   padding: ReadonlyUint8Array;
+  cancelAt: bigint;
 };
 
 export type DeliveryBookArgs = {
@@ -68,6 +71,7 @@ export type DeliveryBookArgs = {
   version: number;
   bump: number;
   padding: ReadonlyUint8Array;
+  cancelAt: number | bigint;
 };
 
 /** Gets the encoder for {@link DeliveryBookArgs} account data. */
@@ -82,6 +86,7 @@ export function getDeliveryBookEncoder(): FixedSizeEncoder<DeliveryBookArgs> {
       ["version", getU8Encoder()],
       ["bump", getU8Encoder()],
       ["padding", fixEncoderSize(getBytesEncoder(), 6)],
+      ["cancelAt", getI64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: DELIVERY_BOOK_DISCRIMINATOR }),
   );
@@ -98,6 +103,7 @@ export function getDeliveryBookDecoder(): FixedSizeDecoder<DeliveryBook> {
     ["version", getU8Decoder()],
     ["bump", getU8Decoder()],
     ["padding", fixDecoderSize(getBytesDecoder(), 6)],
+    ["cancelAt", getI64Decoder()],
   ]);
 }
 
@@ -163,5 +169,5 @@ export async function fetchAllMaybeDeliveryBook(
 }
 
 export function getDeliveryBookSize(): number {
-  return 96;
+  return 104;
 }

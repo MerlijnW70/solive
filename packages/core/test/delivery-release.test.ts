@@ -15,11 +15,14 @@ import {
   buildFillAttestedCommittee,
   buildFillAttestedSplit,
   buildRefuteRelease,
+  buildRequestCancel,
   buildSetAnnounceFee,
+  CANCEL_NOTICE_SECS,
   buildSyncCommitteeKeys,
   committeeProofDigest,
   deliveryBookAddress,
   INTENT_ENGINE_ERROR__ANNOUNCEMENT_OPEN,
+  INTENT_ENGINE_ERROR__CANCEL_NOTICE_REQUIRED,
   INTENT_ENGINE_ERROR__COMMITMENT_MISMATCH,
   INTENT_ENGINE_ERROR__DELIVERY_BOOK_OPEN,
   INTENT_ENGINE_ERROR__SIG_MESSAGE,
@@ -244,7 +247,11 @@ describe("delivery v4 against the deployed engine, built only from the core buil
     const closeBook = await buildCloseDeliveryBook({ by: owner, intent, rentTo: worker.address });
     expect(customCode(await e.attempt(e.authority, [closeAnnouncement]))).toBe(INTENT_ENGINE_ERROR__ANNOUNCEMENT_OPEN);
     expect(customCode(await e.attempt(e.authority, [closeBook]))).toBe(INTENT_ENGINE_ERROR__DELIVERY_BOOK_OPEN);
-    await e.send(owner, [await buildCancelIntent({ owner, nonce: 0n, inputMint: e.inputMint, tokenProgram: TOKEN })]);
+    const cancel = await buildCancelIntent({ owner, nonce: 0n, inputMint: e.inputMint, tokenProgram: TOKEN });
+    expect(customCode(await e.attempt(owner, [cancel]))).toBe(INTENT_ENGINE_ERROR__CANCEL_NOTICE_REQUIRED);
+    await e.send(owner, [await buildRequestCancel({ owner, intent })]);
+    e.at(NOW + CANCEL_NOTICE_SECS);
+    await e.send(owner, [cancel]);
     const [announcementRent, bookRent, before] = [e.lamportsOf(a.announcement), e.lamportsOf(book), e.lamportsOf(worker.address)];
     const closed = await e.send(e.authority, [closeAnnouncement]);
     expect(named(emitted(closed), "AnnouncementClosed")).toEqual({

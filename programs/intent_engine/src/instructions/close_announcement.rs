@@ -2,12 +2,10 @@ use anchor_lang::prelude::*;
 use intent_core::delivery::{closable, AnnState};
 
 use crate::claims::close_entry;
-use crate::delivery::intent_open;
+use crate::delivery::{intent_open, read_book, stored_book_bump, write_book};
 use crate::errors::{core_err, EngineError};
 use crate::events::{AnnouncementClosed, DeliveryBookClosed};
-use crate::state::{
-    Announcement, DeliveryBook, ANNOUNCEMENT_VERSION, DELIVERY_BOOK_SEED, DELIVERY_BOOK_VERSION,
-};
+use crate::state::{Announcement, ANNOUNCEMENT_VERSION, DELIVERY_BOOK_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -21,13 +19,13 @@ pub struct CloseAnnouncement<'info> {
     /// CHECK: the announcement's intent, read only to tell whether it is still open
     #[account(address = announcement.load()?.intent @ EngineError::AnnouncementMismatch)]
     pub intent: UncheckedAccount<'info>,
+    /// CHECK: the intent's delivery book in its current or earlier layout, read by hand
     #[account(
         mut,
         seeds = [DELIVERY_BOOK_SEED, intent.key().as_ref()],
-        bump = book.load()?.bump,
-        constraint = book.load()?.version == DELIVERY_BOOK_VERSION @ EngineError::AccountOutdated
+        bump = stored_book_bump(&book)?
     )]
-    pub book: AccountLoader<'info, DeliveryBook>,
+    pub book: UncheckedAccount<'info>,
     /// CHECK: the wallet that paid the announcement's rent, which gets it back
     #[account(mut, address = announcement.load()?.payer @ EngineError::RentRecipientMismatch)]
     pub rent_to: UncheckedAccount<'info>,
@@ -55,10 +53,12 @@ pub fn handle_close_announcement(ctx: Context<CloseAnnouncement>) -> Result<()> 
         );
         (stored.intent, stored.seq, stored.worker)
     };
-    {
-        let mut book = ctx.accounts.book.load_mut()?;
-        book.live = book.live.checked_sub(1).ok_or(EngineError::Overflow)?;
-    }
+    let book = ctx.accounts.book.to_account_info();
+    let live = read_book(&book)?
+        .live
+        .checked_sub(1)
+        .ok_or(EngineError::Overflow)?;
+    write_book(&book, |b| b.live = live)?;
     let lamports = close_entry(
         &ctx.accounts.announcement.to_account_info(),
         &ctx.accounts.rent_to.to_account_info(),
@@ -81,16 +81,16 @@ pub struct CloseDeliveryBook<'info> {
     pub by: Signer<'info>,
     /// CHECK: the book's intent, read only to tell whether it is still open; the book's seeds bind it
     pub intent: UncheckedAccount<'info>,
+    /// CHECK: the intent's delivery book in its current or earlier layout, read by hand
     #[account(
         mut,
         seeds = [DELIVERY_BOOK_SEED, intent.key().as_ref()],
-        bump = book.load()?.bump,
-        constraint = book.load()?.version == DELIVERY_BOOK_VERSION @ EngineError::AccountOutdated,
-        constraint = book.load()?.intent == intent.key() @ EngineError::BookMismatch
+        bump = stored_book_bump(&book)?,
+        constraint = read_book(&book)?.intent == intent.key() @ EngineError::BookMismatch
     )]
-    pub book: AccountLoader<'info, DeliveryBook>,
+    pub book: UncheckedAccount<'info>,
     /// CHECK: the wallet that paid the book's rent, which gets it back
-    #[account(mut, address = book.load()?.payer @ EngineError::RentRecipientMismatch)]
+    #[account(mut, address = read_book(&book)?.payer @ EngineError::RentRecipientMismatch)]
     pub rent_to: UncheckedAccount<'info>,
 }
 
@@ -101,7 +101,7 @@ pub fn handle_close_delivery_book(ctx: Context<CloseDeliveryBook>) -> Result<()>
         EngineError::DeliveryBookOpen
     );
     let (intent, next_seq) = {
-        let book = ctx.accounts.book.load()?;
+        let book = read_book(&ctx.accounts.book.to_account_info())?;
         require!(book.live == 0, EngineError::DeliveryBookLive);
         (book.intent, book.next_seq)
     };

@@ -40,13 +40,18 @@ pub struct DropClaim<'info> {
 pub fn handle_drop_claim(ctx: Context<DropClaim>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let worker = ctx.accounts.worker.key();
-    let (intent, held, waiting) = {
+    let (intent, held, waiting, reviewed) = {
         let board = ctx.accounts.board.load()?;
         match slot_of(&board, now) {
             Slot::Held { worker: holder, .. } if holder == worker.to_bytes() => {}
             _ => return err!(EngineError::NotClaimant),
         }
-        (board.intent, board.held, !line_of(&board).is_empty())
+        (
+            board.intent,
+            board.held,
+            !line_of(&board).is_empty(),
+            board.review_ann,
+        )
     };
     move_lamports(
         &ctx.accounts.board.to_account_info(),
@@ -58,11 +63,14 @@ pub fn handle_drop_claim(ctx: Context<DropClaim>) -> Result<()> {
         board.worker = Pubkey::default();
         board.held = 0;
         board.dropped_by = worker;
+        board.review_ann = Pubkey::default();
+        board.review_until = 0;
     }
     emit_cpi!(ClaimDropped {
         intent,
         worker,
         refunded: held,
+        announcement: reviewed,
     });
     let deadline = escrow_deadline(&ctx.accounts.intent.to_account_info(), now)?;
     if let (true, Some(expires_at)) = (waiting, deadline) {

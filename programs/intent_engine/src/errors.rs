@@ -155,6 +155,15 @@ pub enum EngineError {
     HeldSplitMismatch,
     HolderStandsBy,
     StakeBelowRent,
+    ClaimsAfterDelivery,
+    ReviewTerms,
+    ReviewPastExpiry,
+    ReviewPending,
+    ReviewLapsed,
+    DeliveryNotPending,
+    CancelNoticeRequired,
+    CancelNoticeRunning,
+    CancelAlreadyRequested,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -215,5 +224,12 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::RefuteNotEarlier => EngineError::RefuteNotEarlier,
         CoreError::RefuteSamePayee => EngineError::RefuteSamePayee,
         CoreError::SplitCountMismatch => EngineError::SplitCountMismatch,
+        CoreError::ReviewTerms => EngineError::ReviewTerms,
+        CoreError::ReviewPastExpiry => EngineError::ReviewPastExpiry,
+        CoreError::ReviewPending => EngineError::ReviewPending,
+        CoreError::ReviewLapsed => EngineError::ReviewLapsed,
+        CoreError::CancelNoticeRequired => EngineError::CancelNoticeRequired,
+        CoreError::CancelNoticeRunning => EngineError::CancelNoticeRunning,
+        CoreError::StakeBelowRent => EngineError::StakeBelowRent,
     }
 }

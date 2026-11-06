@@ -41,12 +41,14 @@ export type ClaimDroppedEvent = {
   intent: Address;
   worker: Address;
   refunded: bigint;
+  announcement: Address;
 };
 
 export type ClaimDroppedEventArgs = {
   intent: Address;
   worker: Address;
   refunded: number | bigint;
+  announcement: Address;
 };
 
 /** Gets the encoder for {@link ClaimDroppedEventArgs} event data. */
@@ -56,6 +58,7 @@ export function getClaimDroppedEventEncoder(): FixedSizeEncoder<ClaimDroppedEven
       ["intent", getAddressEncoder()],
       ["worker", getAddressEncoder()],
       ["refunded", getU64Encoder()],
+      ["announcement", getAddressEncoder()],
     ]),
     [getConstantEncoder(CLAIM_DROPPED_EVENT_DISCRIMINATOR)],
   );
@@ -68,6 +71,7 @@ export function getClaimDroppedEventDecoder(): FixedSizeDecoder<ClaimDroppedEven
       ["intent", getAddressDecoder()],
       ["worker", getAddressDecoder()],
       ["refunded", getU64Decoder()],
+      ["announcement", getAddressDecoder()],
     ]),
     [getConstantDecoder(CLAIM_DROPPED_EVENT_DISCRIMINATOR)],
   );

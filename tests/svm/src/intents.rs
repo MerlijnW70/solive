@@ -152,6 +152,7 @@ impl Env {
                 claims: self.claims,
                 stake_to: self.stake_to,
                 mint_cap: self.mint_cap,
+                book: book_pda(&intent),
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },

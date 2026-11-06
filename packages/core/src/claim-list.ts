@@ -6,7 +6,8 @@ import {
   getOpenClaimsListedInstructionAsync,
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
-import { checkClaimStake, checkClaimTerms } from "./claims.js";
+import { findDeliveryBookPda } from "./pdas.js";
+import { checkClaimStake, checkClaimTerms, reviewTerms, type ReviewTermsInput } from "./claims.js";
 import { IntentCoreError } from "./errors.js";
 
 export const MAX_CLAIMANTS = 32;
@@ -50,12 +51,14 @@ export function claimantChunks(workers: readonly Address[], chunk = CLAIM_LIST_C
   return chunks.length === 0 ? [[]] : chunks;
 }
 
-export async function buildOpenClaimsListed(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint; size: number; workers: readonly Address[]; floor?: bigint | undefined }) {
-  const { floor, ...terms } = input;
+export async function buildOpenClaimsListed(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint; size: number; workers: readonly Address[]; floor?: bigint | undefined } & ReviewTermsInput) {
+  const { floor, reviewSecs, killFee, ...terms } = input;
   checkClaimTerms(terms.maxSecs, terms.stake);
   checkClaimStake(terms.stake, floor);
   checkClaimants(terms.size, terms.workers);
-  return getOpenClaimsListedInstructionAsync({ ...terms, workers: [...terms.workers], ...(await events()) });
+  const review = reviewTerms({ reviewSecs, killFee, stake: terms.stake, floor });
+  const book = (await findDeliveryBookPda({ intent: terms.intent }))[0];
+  return getOpenClaimsListedInstructionAsync({ ...terms, ...review, book, workers: [...terms.workers], ...(await events()) });
 }
 
 export async function buildListClaimants(input: { owner: TransactionSigner; intent: Address; size: number; workers: readonly Address[] }) {
@@ -70,7 +73,7 @@ export async function buildExtendClaimants(input: { owner: TransactionSigner; in
   return getExtendClaimantsInstructionAsync({ ...input, workers: [...input.workers], ...(await events()) });
 }
 
-export async function buildClaimsWithList(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint; workers: readonly Address[]; floor?: bigint | undefined }): Promise<Instruction[][]> {
+export async function buildClaimsWithList(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint; workers: readonly Address[]; floor?: bigint | undefined } & ReviewTermsInput): Promise<Instruction[][]> {
   checkClaimants(input.workers.length, input.workers);
   const [first = [], ...rest] = claimantChunks(input.workers);
   const open = await buildOpenClaimsListed({ ...input, size: input.workers.length, workers: first });

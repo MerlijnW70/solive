@@ -12,10 +12,12 @@ import {
   getCloseAnnouncementInstructionAsync,
   getCloseDeliveryBookInstructionAsync,
   getRefuteReleaseInstructionAsync,
+  getRejectDeliveryInstruction,
+  getRequestCancelInstructionAsync,
   getSetAnnounceFeeInstruction,
   getSyncCommitteeKeysInstruction,
 } from "../generated/client/index.js";
-import { events } from "./builder-accounts.js";
+import { events, INSTRUCTIONS_SYSVAR_ADDRESS } from "./builder-accounts.js";
 import { sized } from "./bytes.js";
 import { MAX_COMMITTEE_MEMBERS, sortMembers } from "./committee.js";
 import { blobHead, commitmentPreimage, SALT_LEN, splitHashPreimage } from "./delivery.js";
@@ -148,6 +150,43 @@ export async function buildRefuteRelease(input: RefuteReleaseSpec) {
     salt: sized("salt", input.salt, SALT_LEN),
     esk: sized("esk", input.esk, 32),
     claim: input.claim ?? null,
+    ...(await events()),
+  });
+}
+
+export async function buildRequestCancel(input: { owner: TransactionSigner; intent: Address }) {
+  return getRequestCancelInstructionAsync({
+    owner: input.owner,
+    intent: input.intent,
+    book: await deliveryBookAddress(input.intent),
+    ...(await events()),
+  });
+}
+
+export type RejectDeliverySpec = {
+  intent: Address;
+  announcement: Address;
+  attestor: Address;
+  committee?: boolean;
+  signersMask?: number;
+  claims?: Address;
+  stakeTo?: Address;
+};
+
+export async function buildRejectDelivery(input: RejectDeliverySpec) {
+  const mask = input.signersMask ?? 0;
+  if (!Number.isInteger(mask) || mask < 0 || mask > 0xff) {
+    throw new InvalidInput("signersMask", "range", `a signer mask is one byte, got ${mask}`);
+  }
+  return getRejectDeliveryInstruction({
+    intent: input.intent,
+    announcement: input.announcement,
+    attestor: input.attestor,
+    ...(input.committee === true ? { committee: input.attestor } : {}),
+    ...(input.claims === undefined ? {} : { board: input.claims }),
+    ...(input.stakeTo === undefined ? {} : { stakeTo: input.stakeTo }),
+    signersMask: mask,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     ...(await events()),
   });
 }

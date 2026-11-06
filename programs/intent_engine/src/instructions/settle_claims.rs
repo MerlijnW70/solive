@@ -1,29 +1,30 @@
 use anchor_lang::prelude::*;
-use intent_core::claim::{stake_on_settle, StakeTo};
 
-use crate::claims::{clear, close_entry, escrow_deadline, move_lamports, slot_of, stake_receiver};
-use crate::errors::{core_err, EngineError};
-use crate::events::{ClaimsClosed, StakeMoved};
+use crate::claims::{
+    close_entry, escrow_deadline, honor_on_settle, read_board, stored_attestor, stored_bump,
+};
+use crate::errors::EngineError;
+use crate::events::ClaimsClosed;
 use crate::roster::is_listed;
-use crate::state::{board_readable, ClaimBoard, CLAIMS_SEED, CLAIM_LIST_SEED};
+use crate::state::{CLAIMS_SEED, CLAIM_LIST_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
 pub struct SettleClaims<'info> {
     /// CHECK: the board's escrow, read only to learn whether it can still be released
     pub intent: UncheckedAccount<'info>,
+    /// CHECK: the escrow's claims board in its current or an earlier layout, read by hand
     #[account(
         mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
-        bump = board.load()?.bump,
-        constraint = board_readable(board.load()?.version) @ EngineError::AccountOutdated
+        bump = stored_bump(&board)?
     )]
-    pub board: AccountLoader<'info, ClaimBoard>,
+    pub board: UncheckedAccount<'info>,
     /// CHECK: the board's recorded owner, paid a forfeited stake and the board's rent
-    #[account(mut, address = board.load()?.owner @ EngineError::StakeAccountMismatch)]
+    #[account(mut)]
     pub owner: UncheckedAccount<'info>,
     /// CHECK: the board's recorded worker, refunded a stake the escrow failed
-    #[account(mut, address = board.load()?.worker @ EngineError::StakeAccountMismatch)]
+    #[account(mut)]
     pub worker: Option<UncheckedAccount<'info>>,
     /// CHECK: the escrow's claim list, closed with the board when the board records one; one already closed is skipped
     #[account(mut, seeds = [CLAIM_LIST_SEED, intent.key().as_ref()], bump)]
@@ -32,57 +33,52 @@ pub struct SettleClaims<'info> {
 
 pub fn handle_settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let open = escrow_deadline(&ctx.accounts.intent.to_account_info(), now)?.is_some();
-    let (intent, owner, worker, held, outcome) = {
-        let board = ctx.accounts.board.load()?;
-        let outcome = stake_on_settle(slot_of(&board, now), open).map_err(core_err)?;
-        let receiver = outcome.map(|to| stake_receiver(&board, to));
-        (
-            board.intent,
-            board.owner,
-            board.worker,
-            board.held,
-            receiver.zip(outcome),
-        )
-    };
-    if let Some(((to, role), side)) = outcome {
-        let target = match side {
-            StakeTo::Worker => ctx
-                .accounts
-                .worker
-                .as_ref()
-                .ok_or(EngineError::StakeAccountMismatch)?
-                .to_account_info(),
-            StakeTo::Owner => ctx.accounts.owner.to_account_info(),
-        };
-        move_lamports(&ctx.accounts.board.to_account_info(), &target, held)?;
-        clear(&mut *ctx.accounts.board.load_mut()?);
-        emit_cpi!(StakeMoved {
-            intent,
-            worker,
-            to,
-            amount: held,
-            role,
-        });
-    } else if open {
-        return err!(EngineError::InvalidTransition);
+    let escrow = ctx.accounts.intent.to_account_info();
+    let open = escrow_deadline(&escrow, now)?.is_some();
+    let board = ctx.accounts.board.to_account_info();
+    let stored = read_board(&board, true)?;
+    require_keys_eq!(
+        ctx.accounts.owner.key(),
+        stored.owner,
+        EngineError::StakeAccountMismatch
+    );
+    if let Some(worker) = ctx.accounts.worker.as_ref() {
+        require_keys_eq!(
+            worker.key(),
+            stored.worker,
+            EngineError::StakeAccountMismatch
+        );
     }
-    if !open {
-        if is_listed(&*ctx.accounts.board.load()?) {
-            let list = ctx
-                .accounts
-                .claim_list
-                .as_ref()
-                .ok_or(EngineError::ClaimListMissing)?
-                .to_account_info();
-            if *list.owner == crate::ID {
-                close_entry(&list, &ctx.accounts.owner.to_account_info())?;
-            }
+    let owner = ctx.accounts.owner.to_account_info();
+    let worker = ctx.accounts.worker.as_ref().map(|a| a.to_account_info());
+    let honored = honor_on_settle(&board, &stored, &owner, worker.as_ref(), now, open)?;
+    let moved = honored.moved.is_some();
+    if let Some(moved) = honored.moved {
+        emit_cpi!(moved);
+    }
+    if let Some(mut lapsed) = honored.lapsed {
+        lapsed.attestor = stored_attestor(&escrow);
+        emit_cpi!(lapsed);
+    }
+    if open {
+        require!(moved, EngineError::InvalidTransition);
+        return Ok(());
+    }
+    if is_listed(&stored) {
+        let list = ctx
+            .accounts
+            .claim_list
+            .as_ref()
+            .ok_or(EngineError::ClaimListMissing)?
+            .to_account_info();
+        if *list.owner == crate::ID {
+            close_entry(&list, &owner)?;
         }
-        ctx.accounts
-            .board
-            .close(ctx.accounts.owner.to_account_info())?;
-        emit_cpi!(ClaimsClosed { intent, owner });
     }
+    close_entry(&board, &owner)?;
+    emit_cpi!(ClaimsClosed {
+        intent: stored.intent,
+        owner: stored.owner,
+    });
     Ok(())
 }

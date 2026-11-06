@@ -46,6 +46,8 @@ export * from "./openClaimsListed.js";
 export * from "./proposeAdmin.js";
 export * from "./raisePause.js";
 export * from "./refuteRelease.js";
+export * from "./rejectDelivery.js";
+export * from "./requestCancel.js";
 export * from "./revokeMandate.js";
 export * from "./setAnnounceFee.js";
 export * from "./setCapsRequired.js";

@@ -9,6 +9,7 @@ export const INTENT_TAG = ascii("intent-engine-v1");
 export const ATTEST_TAG = ascii("intent-engine-at");
 export const ATTEST_DELIVERY_TAG = ascii("intent-engine-dl");
 export const ATTEST_SPLIT_DELIVERY_TAG = ascii("intent-engine-sd");
+export const REJECT_TAG = ascii("intent-engine-rj");
 export const SPLIT_COSIGN_TAG = ascii("intent-engine-split-cosigner\0\0\0\0");
 export const RETIRED_TAGS = [ascii("intent-engine-pf"), ascii("intent-engine-sp")] as const;
 export const OFFCHAIN_PREFIX = new Uint8Array([0xff, ...ascii("solana offchain")]);
@@ -17,6 +18,7 @@ export const ENVELOPE_LEN = 114;
 export const ATTEST_PREIMAGE_LEN = 206;
 export const ATTEST_DELIVERY_PREIMAGE_LEN = 326;
 export const ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN = 326;
+export const REJECT_PREIMAGE_LEN = 152;
 export const MAX_COSIGNERS = 16;
 export const COSIGN_KEYS_AT = 18;
 
@@ -285,4 +287,13 @@ export async function attestedSplitDigest(f: AttestedSplitDeliveryTerms): Promis
 
 export async function attestedSplitMessage(f: AttestedSplitDeliveryTerms, cosigners: readonly Address[]): Promise<Uint8Array> {
   return cosignEnvelope(cosigners, await attestedSplitDigest(f));
+}
+
+export type RejectDeliveryFields = { program?: Address; domain: Uint8Array; intent: Address; announcement: Address; seq: bigint };
+
+export function rejectDeliveryPreimage(f: RejectDeliveryFields): Uint8Array {
+  return concat(
+    [REJECT_TAG, key(f.program ?? INTENT_ENGINE_PROGRAM_ADDRESS), sized("domain", f.domain, 32), key(f.intent), key(f.announcement), u64le(f.seq)],
+    REJECT_PREIMAGE_LEN,
+  );
 }

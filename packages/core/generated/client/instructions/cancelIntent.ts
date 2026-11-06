@@ -69,6 +69,7 @@ export type CancelIntentInstruction<
   TAccountClaims extends string | AccountMeta<string> = string,
   TAccountStakeTo extends string | AccountMeta<string> = string,
   TAccountMintCap extends string | AccountMeta<string> = string,
+  TAccountBook extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -104,6 +105,9 @@ export type CancelIntentInstruction<
       TAccountMintCap extends string
         ? WritableAccount<TAccountMintCap>
         : TAccountMintCap,
+      TAccountBook extends string
+        ? ReadonlyAccount<TAccountBook>
+        : TAccountBook,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -159,6 +163,7 @@ export type CancelIntentAsyncInput<
   TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -172,6 +177,7 @@ export type CancelIntentAsyncInput<
   claims?: TAccountClaims;
   stakeTo?: TAccountStakeTo;
   mintCap?: TAccountMintCap;
+  book: TAccountBook;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   ext: CancelIntentInstructionDataArgs["ext"];
@@ -187,6 +193,7 @@ export async function getCancelIntentInstructionAsync<
   TAccountClaims extends InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -201,6 +208,7 @@ export async function getCancelIntentInstructionAsync<
     TAccountClaims,
     TAccountStakeTo,
     TAccountMintCap,
+    TAccountBook,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -243,6 +251,10 @@ export async function getCancelIntentInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountMintCap,
       InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBook,
+      InstructionAccountInputAddress<TAccountBook>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -292,6 +304,7 @@ export async function getCancelIntentInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    book: { value: input.book ?? null, isSigner: false, isWritable: false },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -339,6 +352,7 @@ export async function getCancelIntentInstructionAsync<
       getAccountMeta("claims", accounts.claims),
       getAccountMeta("stakeTo", accounts.stakeTo),
       getAccountMeta("mintCap", accounts.mintCap),
+      getAccountMeta("book", accounts.book),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -385,6 +399,10 @@ export async function getCancelIntentInstructionAsync<
       InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBook,
+      InstructionAccountInputAddress<TAccountBook>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -406,6 +424,7 @@ export type CancelIntentInput<
   TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -419,6 +438,7 @@ export type CancelIntentInput<
   claims?: TAccountClaims;
   stakeTo?: TAccountStakeTo;
   mintCap?: TAccountMintCap;
+  book: TAccountBook;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   ext: CancelIntentInstructionDataArgs["ext"];
@@ -434,6 +454,7 @@ export function getCancelIntentInstruction<
   TAccountClaims extends InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -448,6 +469,7 @@ export function getCancelIntentInstruction<
     TAccountClaims,
     TAccountStakeTo,
     TAccountMintCap,
+    TAccountBook,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -489,6 +511,10 @@ export function getCancelIntentInstruction<
   ResolvedInstructionAccountMeta<
     TAccountMintCap,
     InstructionAccountInputAddress<TAccountMintCap>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBook,
+    InstructionAccountInputAddress<TAccountBook>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -537,6 +563,7 @@ export function getCancelIntentInstruction<
       isSigner: false,
       isWritable: true,
     },
+    book: { value: input.book ?? null, isSigner: false, isWritable: false },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -573,6 +600,7 @@ export function getCancelIntentInstruction<
       getAccountMeta("claims", accounts.claims),
       getAccountMeta("stakeTo", accounts.stakeTo),
       getAccountMeta("mintCap", accounts.mintCap),
+      getAccountMeta("book", accounts.book),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -619,6 +647,10 @@ export function getCancelIntentInstruction<
       InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBook,
+      InstructionAccountInputAddress<TAccountBook>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -644,8 +676,9 @@ export type ParsedCancelIntentInstruction<
     claims?: TAccountMetas[6] | undefined;
     stakeTo?: TAccountMetas[7] | undefined;
     mintCap?: TAccountMetas[8] | undefined;
-    eventAuthority: TAccountMetas[9];
-    program: TAccountMetas[10];
+    book: TAccountMetas[9];
+    eventAuthority: TAccountMetas[10];
+    program: TAccountMetas[11];
   };
   data: CancelIntentInstructionData;
 };
@@ -658,12 +691,12 @@ export function parseCancelIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCancelIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 11,
+        expectedAccountMetas: 12,
       },
     );
   }
@@ -691,6 +724,7 @@ export function parseCancelIntentInstruction<
       claims: getNextOptionalAccount(),
       stakeTo: getNextOptionalAccount(),
       mintCap: getNextOptionalAccount(),
+      book: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

@@ -55,9 +55,9 @@ export function mayAnnounce(slot: ClaimSlot, worker: Address): void {
   }
 }
 
-export type AnnState = "announced" | "paid";
+export type AnnState = "announced" | "paid" | "rejected";
 
-const ANN_STATES: readonly AnnState[] = ["announced", "paid"];
+const ANN_STATES: readonly AnnState[] = ["announced", "paid", "rejected"];
 
 export function decodeAnnState(byte: number): AnnState {
   const state = Number.isInteger(byte) ? ANN_STATES[byte] : undefined;
@@ -81,7 +81,7 @@ export function closable(state: AnnState, byWorker: boolean, intentOpen: boolean
   checkI64("now", now);
   checkI64("expiresAt", expiresAt);
   checkI64("paidAt", paidAt);
-  if (state === "announced" && byWorker) {
+  if (state !== "paid" && byWorker) {
     if (intentOpen) {
       throw new IntentCoreError("AnnouncementOpen");
     }

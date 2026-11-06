@@ -168,7 +168,7 @@ export const claimsOn = (args: string[], owner: Address, nonce: string) => args.
 export async function plantBook(payer: Address, intent?: Address): Promise<{ book: Address; intent: Address; rent: bigint }> {
   const on = intent ?? (await generateKeyPairSigner()).address;
   const [book, bump] = await findDeliveryBookPda({ intent: on });
-  const data = Uint8Array.from(getDeliveryBookEncoder().encode({ intent: on, payer, nextSeq: 0n, live: 0n, version: DELIVERY_BOOK_VERSION, bump, padding: new Uint8Array(6) }));
+  const data = Uint8Array.from(getDeliveryBookEncoder().encode({ intent: on, payer, nextSeq: 0n, live: 0n, version: DELIVERY_BOOK_VERSION, bump, padding: new Uint8Array(6), cancelAt: 0n }));
   const rent = BigInt(h.svm.minimumBalanceForRentExemption(BigInt(getDeliveryBookSize())));
   h.svm.setAccount({ address: book, data, executable: false, lamports: lamports(rent), programAddress: INTENT_ENGINE_PROGRAM_ADDRESS, space: BigInt(data.length) });
   return { book, intent: on, rent };

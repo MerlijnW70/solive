@@ -11,6 +11,10 @@ import {
   buildExpireIntent,
   buildFillIntent,
   buildInitUser,
+  buildOpenClaims,
+  buildRejectDelivery,
+  buildRequestCancel,
+  findIntentPda,
   type IdlLike,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
@@ -47,7 +51,11 @@ export const meta = (ix: Instruction, i: number) => {
 
 export async function everyBuilt(): Promise<Record<string, Instruction>> {
   const ref = { owner, nonce: 42n, inputMint, tokenProgram: TOKEN };
+  const [intent] = await findIntentPda({ owner, nonce: 42n });
   return {
+    open_claims: await buildOpenClaims({ owner: ownerSigner, intent, maxSecs: 3_600, stake: 890_880n, reviewSecs: 86_400, killFee: 890_880n }),
+    request_cancel: await buildRequestCancel({ owner: ownerSigner, intent }),
+    reject_delivery: await buildRejectDelivery({ intent, announcement: announced.announcement, attestor: feeRecipient, claims: solver.address, stakeTo: owner }),
     init_user: await buildInitUser({ owner: ownerSigner }),
     advance_nonce: await buildAdvanceNonce({ owner: ownerSigner, nonceBase: 9n }),
     advance_epoch: await buildAdvanceEpoch({ owner: ownerSigner, epoch: 9n }),

@@ -10,7 +10,7 @@ use intent_engine::state::{
 };
 use intent_engine::versions::{
     board_terms, is_current, is_delivery_record, layout_of, line_intent, recorded_payer,
-    stored_version, LAYOUTS,
+    stored_version, LAYOUTS, V2_BOARD_SPACE, V2_BOARD_VERSION,
 };
 use intent_engine::ProfileFields;
 use litesvm::types::TransactionMetadata;
@@ -373,6 +373,22 @@ impl World {
 
     fn set_version(&mut self, address: &Pubkey, version: u8) -> TestResult {
         let mut account = self.env.svm.get_account(address).ok_or("account missing")?;
+        if version == OLD
+            && account.data.len() == ClaimBoard::SPACE
+            && account.data.get(..8) == Some(ClaimBoard::DISCRIMINATOR)
+        {
+            let rent = |space: usize| self.env.svm.minimum_balance_for_rent_exemption(space);
+            let held = account
+                .lamports
+                .checked_sub(rent(ClaimBoard::SPACE))
+                .ok_or("board below rent")?;
+            account.data.truncate(V2_BOARD_SPACE);
+            account.lamports = rent(V2_BOARD_SPACE).checked_add(held).ok_or("overflow")?;
+            let at = 8usize.saturating_add(core::mem::offset_of!(ClaimBoard, version));
+            *account.data.get_mut(at).ok_or("short")? = V2_BOARD_VERSION;
+            self.env.svm.set_account(*address, account)?;
+            return Ok(());
+        }
         let at = layout_of(&account.data)
             .ok_or("no layout")?
             .version_at

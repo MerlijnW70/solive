@@ -1,10 +1,12 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use intent_core::delivery::cancel_ready;
 use intent_core::ext::SETTLE_EXT_TAGS;
 use intent_core::lifecycle::{transition, Action, Status};
 
 use crate::caps::refund_mint_cap;
-use crate::claims::honor_on_cancel;
+use crate::claims::{cancel_board, check_cancel_review, honor_on_cancel, stored_attestor};
+use crate::delivery::checked_book;
 use crate::errors::{core_err, EngineError};
 use crate::events::IntentCancelled;
 use crate::ext::Ext;
@@ -49,35 +51,43 @@ pub struct CancelIntent<'info> {
     /// CHECK: the input mint's cap, read by hand so a cap of an earlier version, or none at all, never blocks a refund
     #[account(mut)]
     pub mint_cap: Option<UncheckedAccount<'info>>,
+    /// CHECK: the intent's delivery book, checked by hand against its seeds and read for its cancel notice; one never created leaves cancel immediate
+    pub book: UncheckedAccount<'info>,
 }
 
 pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> {
     ext.check(SETTLE_EXT_TAGS)?;
     let now = Clock::get()?.unix_timestamp;
-    let (signer, claims) = {
-        let mut intent = ctx.accounts.intent.load_mut()?;
+    let (next, claims) = {
+        let intent = ctx.accounts.intent.load()?;
         let status = Status::try_from(intent.status).map_err(core_err)?;
         let next = transition(status, Action::Cancel, now, intent.expires_at)
             .map_err(core_err)?
             .ok_or(EngineError::InvalidTransition)?;
+        (next, intent.claims)
+    };
+    if let Some(book) = checked_book(
+        &ctx.accounts.book.to_account_info(),
+        &ctx.accounts.intent.key(),
+    )? {
+        cancel_ready(book.cancel_at, now).map_err(core_err)?;
+    }
+    let board = ctx.accounts.claims.as_ref().map(|a| a.to_account_info());
+    let stored = cancel_board(claims, board.as_ref())?;
+    check_cancel_review(stored.as_ref(), now)?;
+    let signer = {
+        let mut intent = ctx.accounts.intent.load_mut()?;
         intent.status = next as u8;
         intent.agent_fee = 0;
-        (
-            IntentSigner {
-                owner: intent.owner,
-                nonce: intent.nonce.to_le_bytes(),
-                bump: [intent.bump],
-            },
-            intent.claims,
-        )
+        IntentSigner {
+            owner: intent.owner,
+            nonce: intent.nonce.to_le_bytes(),
+            bump: [intent.bump],
+        }
     };
-    let stake = honor_on_cancel(
-        claims,
-        ctx.accounts
-            .claims
-            .as_ref()
-            .map(|a| a.to_account_info())
-            .as_ref(),
+    let honored = honor_on_cancel(
+        stored.as_ref(),
+        board.as_ref(),
         ctx.accounts
             .stake_to
             .as_ref()
@@ -107,8 +117,12 @@ pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> 
         owner: signer.owner,
         refunded,
     });
-    if let Some(moved) = stake {
+    if let Some(moved) = honored.moved {
         emit_cpi!(moved);
+    }
+    if let Some(mut lapsed) = honored.lapsed {
+        lapsed.attestor = stored_attestor(&ctx.accounts.intent.to_account_info());
+        emit_cpi!(lapsed);
     }
     Ok(())
 }

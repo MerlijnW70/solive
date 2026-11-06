@@ -9,6 +9,7 @@ pub const INTENT_TAG: [u8; 16] = *b"intent-engine-v1";
 pub const ATTEST_TAG: [u8; 16] = *b"intent-engine-at";
 pub const ATTEST_DELIVERY_TAG: [u8; 16] = *b"intent-engine-dl";
 pub const ATTEST_SPLIT_DELIVERY_TAG: [u8; 16] = *b"intent-engine-sd";
+pub const REJECT_TAG: [u8; 16] = *b"intent-engine-rj";
 pub const SPLIT_COSIGN_TAG: [u8; 32] = *b"intent-engine-split-cosigner\0\0\0\0";
 pub const RETIRED_TAGS: [[u8; 16]; 2] = [*b"intent-engine-pf", *b"intent-engine-sp"];
 pub const OFFCHAIN_PREFIX: [u8; 16] = *b"\xffsolana offchain";
@@ -21,6 +22,7 @@ pub const ENVELOPE_LEN: usize = 114;
 pub const ATTEST_PREIMAGE_LEN: usize = 206;
 pub const ATTEST_DELIVERY_PREIMAGE_LEN: usize = 326;
 pub const ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN: usize = 326;
+pub const REJECT_PREIMAGE_LEN: usize = 152;
 pub const MAX_COSIGNERS: usize = 16;
 pub const COSIGN_KEYS_AT: usize = 18;
 pub const COSIGN_ENVELOPE_MAX: usize = COSIGN_KEYS_AT + 32 * MAX_COSIGNERS + 64;
@@ -409,6 +411,28 @@ impl AttestedSplitDelivery {
             .put(&self.seq.to_le_bytes())
             .put(&self.delivered)
             .put(&self.salt)
+            .out
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RejectDelivery {
+    pub program: [u8; 32],
+    pub domain: [u8; 32],
+    pub intent: [u8; 32],
+    pub announcement: [u8; 32],
+    pub seq: u64,
+}
+
+impl RejectDelivery {
+    pub fn preimage(&self) -> [u8; REJECT_PREIMAGE_LEN] {
+        Buf::<REJECT_PREIMAGE_LEN>::new()
+            .put(&REJECT_TAG)
+            .put(&self.program)
+            .put(&self.domain)
+            .put(&self.intent)
+            .put(&self.announcement)
+            .put(&self.seq.to_le_bytes())
             .out
     }
 }

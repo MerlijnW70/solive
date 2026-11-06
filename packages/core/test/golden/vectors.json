@@ -817,6 +817,8 @@
     "init_user": "0e33449fed4e9e66",
     "propose_admin": "79d6c7d4572775ea",
     "raise_pause": "977fc2f285fd59f3",
+    "reject_delivery": "24b732a7f6ba0a2d",
+    "request_cancel": "f44e2ae3a5ae5ea7",
     "revoke_mandate": "fc618c77432bb16c",
     "set_caps_required": "1c43793be5311eef",
     "set_committee_floor": "7cf81f5270d80ead",
@@ -832,6 +834,7 @@
     "AdminAccepted": "ae0c4c8b9e636efe",
     "AdminProposed": "81f9e2e3c7526ef3",
     "AgentPaid": "8ba67dcba3181f5d",
+    "CancelRequested": "b2ea9aac91731c74",
     "CapsRequiredSet": "b89fadf016f3ec9e",
     "ClaimDropped": "abdc31d0acf2479a",
     "ClaimantsListed": "923a3dc02baecb7b",
@@ -842,6 +845,7 @@
     "CommitteeFloorSet": "01f6b3d7595861b6",
     "ConfigInitialized": "b531c89c13a7b25b",
     "ConfigUpdated": "28f1e67a0b13c6c2",
+    "DeliveryRejected": "be807a6ca0a7e6ee",
     "EconomicsUpdated": "429afe7f7fcc3b39",
     "EpochAdvanced": "29dc0e7b7546759d",
     "FeeWithheld": "5a46b4b944fc4845",
@@ -867,6 +871,8 @@
     "ProfileClosed": "f0e615a36a26a659",
     "ProfileSet": "44d6fca026f40cd6",
     "RelayerPaid": "75a902de967276fa",
+    "ReviewArmed": "6fd2ff1974aed52f",
+    "ReviewLapsed": "30924925b1db183f",
     "StakeMoved": "e5d55aeb58f2391b",
     "StoodBy": "e58333891e755da9",
     "UserInitialized": "42c305df2a54873c"
@@ -1245,8 +1251,8 @@
       "discriminator": "17151716526de8a1",
       "oldest": 1,
       "payer_at": 32,
-      "space": 176,
-      "version": 2,
+      "space": 232,
+      "version": 3,
       "version_at": 124
     },
     {
@@ -1275,10 +1281,10 @@
     },
     {
       "discriminator": "8aabc81162c438e3",
-      "oldest": 1,
+      "oldest": 2,
       "payer_at": 32,
-      "space": 96,
-      "version": 1,
+      "space": 104,
+      "version": 2,
       "version_at": 80
     },
     {
@@ -3796,6 +3802,11 @@
       "version": 1
     },
     {
+      "discriminator": "17151716526de8a1",
+      "space": 176,
+      "version": 2
+    },
+    {
       "discriminator": "da6c5cb059e0c928",
       "space": 88,
       "version": 0
@@ -3803,6 +3814,11 @@
     {
       "discriminator": "b865a5bc5f3f7fbc",
       "space": 504,
+      "version": 1
+    },
+    {
+      "discriminator": "8aabc81162c438e3",
+      "space": 96,
       "version": 1
     }
   ],

@@ -44,6 +44,8 @@ export type ClaimsOpenedEvent = {
   owner: Address;
   maxSecs: number;
   stake: bigint;
+  reviewSecs: number;
+  killFee: bigint;
 };
 
 export type ClaimsOpenedEventArgs = {
@@ -51,6 +53,8 @@ export type ClaimsOpenedEventArgs = {
   owner: Address;
   maxSecs: number;
   stake: number | bigint;
+  reviewSecs: number;
+  killFee: number | bigint;
 };
 
 /** Gets the encoder for {@link ClaimsOpenedEventArgs} event data. */
@@ -61,6 +65,8 @@ export function getClaimsOpenedEventEncoder(): FixedSizeEncoder<ClaimsOpenedEven
       ["owner", getAddressEncoder()],
       ["maxSecs", getU32Encoder()],
       ["stake", getU64Encoder()],
+      ["reviewSecs", getU32Encoder()],
+      ["killFee", getU64Encoder()],
     ]),
     [getConstantEncoder(CLAIMS_OPENED_EVENT_DISCRIMINATOR)],
   );
@@ -74,6 +80,8 @@ export function getClaimsOpenedEventDecoder(): FixedSizeDecoder<ClaimsOpenedEven
       ["owner", getAddressDecoder()],
       ["maxSecs", getU32Decoder()],
       ["stake", getU64Decoder()],
+      ["reviewSecs", getU32Decoder()],
+      ["killFee", getU64Decoder()],
     ]),
     [getConstantDecoder(CLAIMS_OPENED_EVENT_DISCRIMINATOR)],
   );

@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
-use intent_core::claim::{Slot, StakeTo, Terms};
+use intent_core::claim::{review_fits, Slot, StakeTo, Terms};
 use intent_core::lifecycle::Status;
 
 use crate::claims::{cooldown_of, line_of, move_lamports, slot_of, stake_receiver};
@@ -57,7 +57,7 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
         check_fills_on(&*ctx.accounts.config.load()?, intent.kind)?;
         intent.expires_at
     };
-    let (slot, cooldown, terms, held, lapsed) = {
+    let (slot, cooldown, terms, held, lapsed, review_secs) = {
         let board = ctx.accounts.board.load()?;
         check_listed(
             &board,
@@ -72,12 +72,13 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
             Slot::Lapsed { .. } => Some(stake_receiver(&board, StakeTo::Owner)),
             Slot::Free | Slot::Held { .. } => None,
         };
-        (slot, cooldown, terms, board.held, lapsed)
+        (slot, cooldown, terms, board.held, lapsed, board.review_secs)
     };
     cooldown
         .check(slot, ctx.accounts.worker.key().to_bytes(), now)
         .map_err(core_err)?;
     let until = terms.until(now, secs, expires_at).map_err(core_err)?;
+    review_fits(now, secs, review_secs, expires_at).map_err(core_err)?;
     let intent = ctx.accounts.intent.key();
     if terms.stake() > 0 {
         transfer(

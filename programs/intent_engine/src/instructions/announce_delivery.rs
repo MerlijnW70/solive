@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
 use anchor_lang::Discriminator;
+use intent_core::claim::{arm_review, Slot};
 use intent_core::delivery::{blob_head, may_announce, AnnState};
 use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::Status;
@@ -10,7 +11,7 @@ use crate::delivery::{
     blob_digest, check_committee_recipients, check_key_recipient, create_pda, profile_key,
 };
 use crate::errors::{core_err, EngineError};
-use crate::events::DeliveryAnnounced;
+use crate::events::{DeliveryAnnounced, ReviewArmed};
 use crate::policy::check_fills_on;
 use crate::roster::check_listed;
 use crate::state::{
@@ -42,6 +43,7 @@ pub struct AnnounceDelivery<'info> {
     #[account(address = attestor.key() @ EngineError::CommitteeMismatch)]
     pub committee: Option<AccountLoader<'info, Committee>>,
     #[account(
+        mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
         bump = board.load()?.bump,
         constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::AccountOutdated
@@ -74,6 +76,7 @@ struct Checked {
     attestor: Pubkey,
     expires_at: i64,
     fee: u64,
+    claims: bool,
 }
 
 fn check_intent(ctx: &Context<AnnounceDelivery>, now: i64) -> Result<Checked> {
@@ -114,6 +117,7 @@ fn check_intent(ctx: &Context<AnnounceDelivery>, now: i64) -> Result<Checked> {
         attestor: ctx.accounts.attestor.key(),
         expires_at: intent.expires_at,
         fee: u64::from(config.announce_fee),
+        claims: intent.claims == CLAIMS_OPEN,
     })
 }
 
@@ -181,6 +185,45 @@ fn next_seq(ctx: &Context<AnnounceDelivery>) -> Result<u64> {
     Ok(seq)
 }
 
+fn arm(
+    ctx: &Context<AnnounceDelivery>,
+    checked: &Checked,
+    now: i64,
+) -> Result<Option<ReviewArmed>> {
+    if !checked.claims {
+        return Ok(None);
+    }
+    let loader = ctx
+        .accounts
+        .board
+        .as_ref()
+        .ok_or(EngineError::ClaimsMissing)?;
+    let mut board = loader.load_mut()?;
+    let worker = ctx.accounts.worker.key();
+    let raw = Slot::at(board.worker.to_bytes(), board.until, now);
+    let Some(review_until) = arm_review(
+        board.review_secs,
+        board.review_until,
+        raw,
+        worker.to_bytes(),
+        now,
+        checked.expires_at,
+    ) else {
+        return Ok(None);
+    };
+    let announcement = ctx.accounts.announcement.key();
+    board.review_ann = announcement;
+    board.review_until = review_until;
+    Ok(Some(ReviewArmed {
+        intent: ctx.accounts.intent.key(),
+        announcement,
+        worker,
+        attestor: checked.attestor,
+        review_until,
+        kill_fee: board.kill_fee,
+    }))
+}
+
 pub fn handle_announce_delivery(
     ctx: Context<AnnounceDelivery>,
     commitment: [u8; 32],
@@ -233,6 +276,7 @@ pub fn handle_announce_delivery(
             .ok_or(EngineError::BlobMalformed)?
             .copy_from_slice(&blob);
     }
+    let armed = arm(&ctx, &checked, clock.unix_timestamp)?;
     emit_cpi!(DeliveryAnnounced {
         intent,
         announcement: ctx.accounts.announcement.key(),
@@ -244,5 +288,8 @@ pub fn handle_announce_delivery(
         slot: clock.slot,
         recipients,
     });
+    if let Some(armed) = armed {
+        emit_cpi!(armed);
+    }
     Ok(())
 }

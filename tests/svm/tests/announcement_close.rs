@@ -76,6 +76,7 @@ impl World {
 
     fn cancel(&mut self) -> TestResult {
         let trader = self.trader.key.insecure_clone();
+        self.env.give_notice(&trader, &self.intent)?;
         let ix = self
             .env
             .cancel_ix(&trader.pubkey(), &self.market, 0, &self.trader.input);

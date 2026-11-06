@@ -1,11 +1,12 @@
 use anchor_lang::Discriminator;
 use core::mem::{offset_of, size_of};
 use intent_engine::state::{
-    ClaimBoard, Committee, Config, Intent, Mandate, MintCap, Profile, Standby, UserState,
+    ClaimBoard, Committee, Config, DeliveryBook, Intent, Mandate, MintCap, Profile, Standby,
+    UserState,
 };
 use intent_engine::versions::{
     migration_of, Outdated, FIRST_VERSION, LAYOUTS, LEGACY_BOARD_SPACE, LEGACY_CONFIG_SPACE,
-    OUTDATED, UNVERSIONED,
+    OUTDATED, UNVERSIONED, V1_BOOK_SPACE, V2_BOARD_SPACE, V2_BOARD_VERSION,
 };
 
 #[allow(dead_code)]
@@ -492,7 +493,14 @@ fn main_puts_new_fields_only_where_the_stand_by_line_kept_zeros() {
         offsets!(ClaimBoard, [listed, padding]),
         [offset_of!(old::ClaimBoard, padding), 127]
     );
-    assert_eq!(size_of::<ClaimBoard>(), size_of::<old::ClaimBoard>());
+    assert_eq!(
+        offset_of!(ClaimBoard, review_ann),
+        size_of::<old::ClaimBoard>()
+    );
+    assert_eq!(
+        size_of::<ClaimBoard>(),
+        size_of::<old::ClaimBoard>().saturating_add(56)
+    );
     assert_eq!(
         offset_of!(Profile, encryption_key),
         offset_of!(old::Profile, reserved)
@@ -525,9 +533,11 @@ fn every_outdated_layout_names_a_current_type_and_its_version_byte() {
         (4, MintCap::SPACE, FIRST_VERSION, MintCap::SPACE),
         (5, Committee::SPACE, FIRST_VERSION, Committee::SPACE),
         (6, LEGACY_BOARD_SPACE, FIRST_VERSION, ClaimBoard::SPACE),
-        (6, ClaimBoard::SPACE, FIRST_VERSION, ClaimBoard::SPACE),
+        (6, V2_BOARD_SPACE, FIRST_VERSION, ClaimBoard::SPACE),
+        (6, V2_BOARD_SPACE, V2_BOARD_VERSION, ClaimBoard::SPACE),
         (7, Standby::SPACE, UNVERSIONED, Standby::SPACE),
         (8, Profile::SPACE, FIRST_VERSION, Profile::SPACE),
+        (10, V1_BOOK_SPACE, FIRST_VERSION, DeliveryBook::SPACE),
     ];
     let found: Vec<(usize, usize, u8, usize)> = OUTDATED
         .iter()

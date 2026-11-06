@@ -3,7 +3,7 @@ use core::mem::offset_of;
 use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
 use intent_engine::state::{ClaimBoard, Intent, Standby};
-use intent_engine::versions::is_current;
+use intent_engine::versions::{is_current, V2_BOARD_SPACE, V2_BOARD_VERSION};
 use litesvm::types::TransactionMetadata;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
@@ -93,16 +93,27 @@ impl World {
         self.env.send(caller, &[ix], &[])
     }
 
+    fn as_v2_board(&mut self, address: &Pubkey) -> TestResult {
+        let mut account = self.env.svm.get_account(address).ok_or("missing")?;
+        let rent = |space: usize| self.env.svm.minimum_balance_for_rent_exemption(space);
+        let held = account
+            .lamports
+            .checked_sub(rent(ClaimBoard::SPACE))
+            .ok_or("below rent")?;
+        account.data.truncate(V2_BOARD_SPACE);
+        account.lamports = rent(V2_BOARD_SPACE).saturating_add(held);
+        let at = HEAD.saturating_add(offset_of!(ClaimBoard, version));
+        *account.data.get_mut(at).ok_or("short")? = V2_BOARD_VERSION;
+        self.env.svm.set_account(*address, account)?;
+        Ok(())
+    }
+
     fn outdate_escrow(&mut self) -> TestResult {
         let intent = self.intent();
         let intent_version = HEAD.saturating_add(offset_of!(Intent, version));
         let intent_fee = HEAD.saturating_add(offset_of!(Intent, fee_bps));
         self.as_stand_by_line_wrote(&intent, &[(intent_version, &[1]), (intent_fee, &[0, 0])])?;
-        let board = claims_pda(&intent);
-        self.as_stand_by_line_wrote(
-            &board,
-            &[(HEAD.saturating_add(offset_of!(ClaimBoard, version)), &[1])],
-        )
+        self.as_v2_board(&claims_pda(&intent))
     }
 
     fn outdate_entry(&mut self, seq: u32) -> TestResult {
@@ -221,6 +232,7 @@ fn nl3_an_outdated_board_of_an_open_escrow_migrates_and_keeps_its_line() -> Test
     w.run(&[join], &[&first])?;
     let join = stand_by_ix(&second.pubkey(), &intent, 1, 600);
     w.run(&[join], &[&second])?;
+    let before: ClaimBoard = load(&w.env.svm, &board)?;
     w.outdate_escrow()?;
     let migrate = migrate_ix(&second.pubkey(), &intent, Some(config_pda()));
     w.run(&[migrate], &[&second])?;
@@ -230,7 +242,6 @@ fn nl3_an_outdated_board_of_an_open_escrow_migrates_and_keeps_its_line() -> Test
         Some(engine_error(EngineError::LegacyLineOpen)),
         "an outdated board of an open escrow is migrated, never closed"
     );
-    let before: ClaimBoard = load(&w.env.svm, &board)?;
     let migrate = migrate_ix(&second.pubkey(), &board, Some(config_pda()));
     w.run(&[migrate], &[&second])?;
     let after: ClaimBoard = load(&w.env.svm, &board)?;
@@ -268,10 +279,7 @@ fn nl3_once_the_escrow_ends_close_legacy_returns_an_outdated_entry_and_board() -
     w.env.send(&trader, &[cancel], &[])?;
 
     w.outdate_entry(0)?;
-    w.as_stand_by_line_wrote(
-        &board,
-        &[(HEAD.saturating_add(offset_of!(ClaimBoard, version)), &[1])],
-    )?;
+    w.as_v2_board(&board)?;
     let held = w.env.lamports(&w.entry(0));
     let before = w.env.lamports(&waiter.pubkey());
     w.close_line(&holder, &w.entry(0), &waiter.pubkey())?;

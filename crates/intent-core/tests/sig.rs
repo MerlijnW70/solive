@@ -469,3 +469,75 @@ fn a_non_attested_intent_has_no_proof_spec_or_judge_fee() {
         assert_eq!(intent.judge_fee(), 0);
     }
 }
+
+mod reject {
+    use intent_core::sig::{
+        RejectDelivery, ATTEST_DELIVERY_TAG, ATTEST_SPLIT_DELIVERY_TAG, ATTEST_TAG, INTENT_TAG,
+        REJECT_PREIMAGE_LEN, REJECT_TAG, RETIRED_TAGS,
+    };
+
+    fn base() -> RejectDelivery {
+        RejectDelivery {
+            program: [1; 32],
+            domain: [2; 32],
+            intent: [3; 32],
+            announcement: [4; 32],
+            seq: 0x0102_0304_0506_0708,
+        }
+    }
+
+    #[test]
+    fn the_reject_preimage_is_pinned() {
+        assert_eq!(&REJECT_TAG, b"intent-engine-rj");
+        assert_eq!(REJECT_PREIMAGE_LEN, 152);
+        let p = base().preimage();
+        assert_eq!(p.get(0..16), Some(&REJECT_TAG[..]));
+        assert_eq!(p.get(16..48), Some(&[1u8; 32][..]));
+        assert_eq!(p.get(48..80), Some(&[2u8; 32][..]));
+        assert_eq!(p.get(80..112), Some(&[3u8; 32][..]));
+        assert_eq!(p.get(112..144), Some(&[4u8; 32][..]));
+        assert_eq!(p.get(144..152), Some(&[8u8, 7, 6, 5, 4, 3, 2, 1][..]));
+    }
+
+    #[test]
+    fn the_reject_preimage_binds_every_field() {
+        let b = base();
+        let variants = [
+            RejectDelivery {
+                program: [9; 32],
+                ..b
+            },
+            RejectDelivery {
+                domain: [9; 32],
+                ..b
+            },
+            RejectDelivery {
+                intent: [9; 32],
+                ..b
+            },
+            RejectDelivery {
+                announcement: [9; 32],
+                ..b
+            },
+            RejectDelivery { seq: 9, ..b },
+        ];
+        for v in variants {
+            assert_ne!(v.preimage(), b.preimage());
+        }
+    }
+
+    #[test]
+    fn the_reject_tag_differs_from_every_live_and_retired_tag() {
+        let [a, b] = RETIRED_TAGS;
+        for tag in [
+            INTENT_TAG,
+            ATTEST_TAG,
+            ATTEST_DELIVERY_TAG,
+            ATTEST_SPLIT_DELIVERY_TAG,
+            a,
+            b,
+        ] {
+            assert_ne!(tag, REJECT_TAG);
+        }
+    }
+}

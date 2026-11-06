@@ -60,6 +60,7 @@ export type OpenClaimsInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountIntent extends string | AccountMeta<string> = string,
   TAccountBoard extends string | AccountMeta<string> = string,
+  TAccountBook extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TAccountEventAuthority extends string | AccountMeta<string> = string,
@@ -79,6 +80,9 @@ export type OpenClaimsInstruction<
       TAccountBoard extends string
         ? WritableAccount<TAccountBoard>
         : TAccountBoard,
+      TAccountBook extends string
+        ? ReadonlyAccount<TAccountBook>
+        : TAccountBook,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -96,11 +100,15 @@ export type OpenClaimsInstructionData = {
   discriminator: ReadonlyUint8Array;
   maxSecs: number;
   stake: bigint;
+  reviewSecs: number;
+  killFee: bigint;
 };
 
 export type OpenClaimsInstructionDataArgs = {
   maxSecs: number;
   stake: number | bigint;
+  reviewSecs: number;
+  killFee: number | bigint;
 };
 
 export function getOpenClaimsInstructionDataEncoder(): FixedSizeEncoder<OpenClaimsInstructionDataArgs> {
@@ -109,6 +117,8 @@ export function getOpenClaimsInstructionDataEncoder(): FixedSizeEncoder<OpenClai
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["maxSecs", getU32Encoder()],
       ["stake", getU64Encoder()],
+      ["reviewSecs", getU32Encoder()],
+      ["killFee", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: OPEN_CLAIMS_DISCRIMINATOR }),
   );
@@ -119,6 +129,8 @@ export function getOpenClaimsInstructionDataDecoder(): FixedSizeDecoder<OpenClai
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["maxSecs", getU32Decoder()],
     ["stake", getU64Decoder()],
+    ["reviewSecs", getU32Decoder()],
+    ["killFee", getU64Decoder()],
   ]);
 }
 
@@ -136,6 +148,7 @@ export type OpenClaimsAsyncInput<
   TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput = InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
@@ -145,17 +158,21 @@ export type OpenClaimsAsyncInput<
   owner: TAccountOwner;
   intent: TAccountIntent;
   board?: TAccountBoard;
+  book: TAccountBook;
   systemProgram?: TAccountSystemProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   maxSecs: OpenClaimsInstructionDataArgs["maxSecs"];
   stake: OpenClaimsInstructionDataArgs["stake"];
+  reviewSecs: OpenClaimsInstructionDataArgs["reviewSecs"];
+  killFee: OpenClaimsInstructionDataArgs["killFee"];
 };
 
 export async function getOpenClaimsInstructionAsync<
   TAccountOwner extends InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
@@ -165,6 +182,7 @@ export async function getOpenClaimsInstructionAsync<
     TAccountOwner,
     TAccountIntent,
     TAccountBoard,
+    TAccountBook,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -184,6 +202,10 @@ export async function getOpenClaimsInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountBoard,
       InstructionAccountInputAddress<TAccountBoard>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBook,
+      InstructionAccountInputAddress<TAccountBook>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSystemProgram,
@@ -211,6 +233,7 @@ export async function getOpenClaimsInstructionAsync<
     owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
     intent: { value: input.intent ?? null, isSigner: false, isWritable: true },
     board: { value: input.board ?? null, isSigner: false, isWritable: true },
+    book: { value: input.book ?? null, isSigner: false, isWritable: false },
     systemProgram: {
       value: input.systemProgram ?? null,
       isSigner: false,
@@ -257,6 +280,7 @@ export async function getOpenClaimsInstructionAsync<
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("intent", accounts.intent),
       getAccountMeta("board", accounts.board),
+      getAccountMeta("book", accounts.book),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
@@ -280,6 +304,10 @@ export async function getOpenClaimsInstructionAsync<
       InstructionAccountInputAddress<TAccountBoard>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBook,
+      InstructionAccountInputAddress<TAccountBook>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountSystemProgram,
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
@@ -298,6 +326,7 @@ export type OpenClaimsInput<
   TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput = InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
@@ -307,17 +336,21 @@ export type OpenClaimsInput<
   owner: TAccountOwner;
   intent: TAccountIntent;
   board: TAccountBoard;
+  book: TAccountBook;
   systemProgram?: TAccountSystemProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   maxSecs: OpenClaimsInstructionDataArgs["maxSecs"];
   stake: OpenClaimsInstructionDataArgs["stake"];
+  reviewSecs: OpenClaimsInstructionDataArgs["reviewSecs"];
+  killFee: OpenClaimsInstructionDataArgs["killFee"];
 };
 
 export function getOpenClaimsInstruction<
   TAccountOwner extends InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput,
+  TAccountBook extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
@@ -327,6 +360,7 @@ export function getOpenClaimsInstruction<
     TAccountOwner,
     TAccountIntent,
     TAccountBoard,
+    TAccountBook,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -345,6 +379,10 @@ export function getOpenClaimsInstruction<
   ResolvedInstructionAccountMeta<
     TAccountBoard,
     InstructionAccountInputAddress<TAccountBoard>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBook,
+    InstructionAccountInputAddress<TAccountBook>
   >,
   ResolvedInstructionAccountMeta<
     TAccountSystemProgram,
@@ -371,6 +409,7 @@ export function getOpenClaimsInstruction<
     owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
     intent: { value: input.intent ?? null, isSigner: false, isWritable: true },
     board: { value: input.board ?? null, isSigner: false, isWritable: true },
+    book: { value: input.book ?? null, isSigner: false, isWritable: false },
     systemProgram: {
       value: input.systemProgram ?? null,
       isSigner: false,
@@ -406,6 +445,7 @@ export function getOpenClaimsInstruction<
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("intent", accounts.intent),
       getAccountMeta("board", accounts.board),
+      getAccountMeta("book", accounts.book),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
@@ -427,6 +467,10 @@ export function getOpenClaimsInstruction<
     ResolvedInstructionAccountMeta<
       TAccountBoard,
       InstructionAccountInputAddress<TAccountBoard>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBook,
+      InstructionAccountInputAddress<TAccountBook>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSystemProgram,
@@ -452,9 +496,10 @@ export type ParsedOpenClaimsInstruction<
     owner: TAccountMetas[0];
     intent: TAccountMetas[1];
     board: TAccountMetas[2];
-    systemProgram: TAccountMetas[3];
-    eventAuthority: TAccountMetas[4];
-    program: TAccountMetas[5];
+    book: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
+    eventAuthority: TAccountMetas[5];
+    program: TAccountMetas[6];
   };
   data: OpenClaimsInstructionData;
 };
@@ -467,12 +512,12 @@ export function parseOpenClaimsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedOpenClaimsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 6,
+        expectedAccountMetas: 7,
       },
     );
   }
@@ -488,6 +533,7 @@ export function parseOpenClaimsInstruction<
       owner: getNextAccount(),
       intent: getNextAccount(),
       board: getNextAccount(),
+      book: getNextAccount(),
       systemProgram: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),

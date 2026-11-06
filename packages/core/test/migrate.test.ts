@@ -13,6 +13,8 @@ import {
   migrationOf,
   OUTDATED_LAYOUTS,
   UNVERSIONED,
+  V1_BOOK_SPACE,
+  V2_BOARD_SPACE,
 } from "../src/internal.js";
 
 const PAYER = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" as Address;
@@ -42,9 +44,11 @@ describe("migration", () => {
       ["mint cap", named("mint cap").space, 1],
       ["committee", named("committee").space, 1],
       ["claim board", LEGACY_BOARD_SPACE, 1],
-      ["claim board", named("claim board").space, 1],
+      ["claim board", V2_BOARD_SPACE, 1],
+      ["claim board", V2_BOARD_SPACE, 2],
       ["stand-by entry", named("stand-by entry").space, UNVERSIONED],
       ["profile", named("profile").space, 1],
+      ["delivery book", V1_BOOK_SPACE, 1],
     ]);
   });
 

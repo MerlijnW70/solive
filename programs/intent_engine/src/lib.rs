@@ -149,8 +149,14 @@ pub mod intent_engine {
         handle_fill_attested_split_committee(ctx, fill, signers, claim, opening, ext)
     }
 
-    pub fn open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {
-        handle_open_claims(ctx, max_secs, stake)
+    pub fn open_claims(
+        ctx: Context<OpenClaims>,
+        max_secs: u32,
+        stake: u64,
+        review_secs: u32,
+        kill_fee: u64,
+    ) -> Result<()> {
+        handle_open_claims(ctx, max_secs, stake, review_secs, kill_fee)
     }
 
     pub fn open_claims_listed(
@@ -159,8 +165,10 @@ pub mod intent_engine {
         stake: u64,
         size: u8,
         workers: Vec<Pubkey>,
+        review_secs: u32,
+        kill_fee: u64,
     ) -> Result<()> {
-        handle_open_claims_listed(ctx, max_secs, stake, size, workers)
+        handle_open_claims_listed(ctx, max_secs, stake, size, workers, review_secs, kill_fee)
     }
 
     pub fn list_claimants(
@@ -283,6 +291,14 @@ pub mod intent_engine {
 
     pub fn close_delivery_book(ctx: Context<CloseDeliveryBook>) -> Result<()> {
         handle_close_delivery_book(ctx)
+    }
+
+    pub fn request_cancel(ctx: Context<RequestCancel>) -> Result<()> {
+        handle_request_cancel(ctx)
+    }
+
+    pub fn reject_delivery(ctx: Context<RejectDeliveryAccounts>, signers_mask: u8) -> Result<()> {
+        handle_reject_delivery(ctx, signers_mask)
     }
 
     pub fn refute_release(

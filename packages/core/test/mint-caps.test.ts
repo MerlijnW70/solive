@@ -130,7 +130,7 @@ describe("mint cap accounts", () => {
     const attested = { solver: signer, owner, nonce: 0n, inputMint: MINT, inputTokenProgram: TOKEN_PROGRAM_ADDRESS, amountIn: 10n, result: 1n, maxFeeBps: 0 };
     const announced = { announcement: owner, opening: { delivered: new Uint8Array(32), salt: new Uint8Array(16) } };
     const exits: [number, (capped?: bigint) => Promise<{ accounts?: readonly unknown[] } | undefined>][] = [
-      [-3, (capped?: bigint) => buildCancelIntent({ ...ref, owner: signer, ...(capped === undefined ? {} : { capped }) })],
+      [-4, (capped?: bigint) => buildCancelIntent({ ...ref, owner: signer, ...(capped === undefined ? {} : { capped }) })],
       [-3, (capped?: bigint) => buildExpireIntent({ ...ref, cranker: signer, ...(capped === undefined ? {} : { capped }) })],
       [-3, (capped?: bigint) => buildCloseIntent({ ...ref, cranker: signer, ...(capped === undefined ? {} : { capped }) })],
       [-3, (capped?: bigint) => buildFillIntent({ ...fill, ...(capped === undefined ? {} : { capped }) })],

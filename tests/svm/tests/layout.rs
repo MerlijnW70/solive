@@ -21,11 +21,11 @@ fn account_sizes_are_frozen() {
     assert_eq!(UserState::SPACE, 152);
     assert_eq!(Intent::SPACE, 464);
     assert_eq!(Mandate::SPACE, 384);
-    assert_eq!(ClaimBoard::SPACE, 176);
+    assert_eq!(ClaimBoard::SPACE, 232);
     assert_eq!(Standby::SPACE, 88);
     assert_eq!(ClaimList::SPACE, 1104);
     assert_eq!(Committee::SPACE, 408);
-    assert_eq!(DeliveryBook::SPACE, 96);
+    assert_eq!(DeliveryBook::SPACE, 104);
     assert_eq!(Announcement::SPACE, 920);
     assert_eq!(Refutation::SPACE, 1040);
 }
@@ -41,6 +41,16 @@ fn claim_list_field_offsets_are_frozen() {
     assert_eq!(offset_of!(ClaimList, bump), 1091);
     assert_eq!(offset_of!(ClaimList, padding), 1092);
     assert_eq!(offset_of!(ClaimBoard, listed), 126);
+}
+
+#[test]
+fn review_and_notice_field_offsets_are_frozen() {
+    assert_eq!(offset_of!(ClaimBoard, review_ann), 168);
+    assert_eq!(offset_of!(ClaimBoard, review_until), 200);
+    assert_eq!(offset_of!(ClaimBoard, kill_fee), 208);
+    assert_eq!(offset_of!(ClaimBoard, review_secs), 216);
+    assert_eq!(offset_of!(ClaimBoard, padding2), 220);
+    assert_eq!(offset_of!(DeliveryBook, cancel_at), 88);
 }
 
 #[test]
@@ -69,11 +79,11 @@ fn version_and_payer_offsets_are_frozen() {
             (384, 307, 2, Some(0)),
             (136, 68, 2, None),
             (408, 330, 2, None),
-            (176, 124, 2, Some(32)),
+            (232, 124, 3, Some(32)),
             (88, 73, 1, Some(0)),
             (504, 456, 2, Some(0)),
             (1104, 1090, 1, Some(32)),
-            (96, 80, 1, Some(32)),
+            (104, 80, 2, Some(32)),
             (920, 282, 1, Some(96)),
             (1040, 402, 1, Some(192)),
         ]

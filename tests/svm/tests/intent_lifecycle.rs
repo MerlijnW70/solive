@@ -242,9 +242,22 @@ fn cancel_expire_and_close_stay_within_measured_budgets() -> TestResult {
         let spec = swap_spec(0, ESCROW)?;
         env.create_intent(&trader, &market, &spec)?;
         env.create_intent(&trader, &market, &swap_spec(1, ESCROW)?)?;
+        let book_bump = Pubkey::find_program_address(
+            &[
+                intent_engine::state::DELIVERY_BOOK_SEED,
+                intent_pda(&owner, 1).as_ref(),
+            ],
+            &intent_engine::ID,
+        )
+        .1;
         let cancel = env.cancel_ix(&owner, &market, 1, &trader.input);
         let cancelled = env.send(&trader.key, &[cancel], &[])?;
-        measured.push((format!("cancel_{suffix}"), cancelled.compute_units_consumed));
+        measured.push((
+            format!("cancel_{suffix}"),
+            cancelled
+                .compute_units_consumed
+                .saturating_sub(bump_search_cost(book_bump)),
+        ));
         env.set_now(spec.expires_at);
         let cranker = env.funded()?;
         let expire = env.expire_ix(&cranker.pubkey(), &owner, &market, 0, &trader.input);

@@ -159,7 +159,7 @@ describe("account versions", () => {
   it("read the version and payer of delivery records where the generated codecs put them", () => {
     const [intent, worker, other] = [1, 2, 3].map((n) => getAddressDecoder().decode(new Uint8Array(32).fill(n))) as [Address, Address, Address];
     const zeros = (n: number) => new Uint8Array(n);
-    const book = getDeliveryBookEncoder().encode({ intent, payer: PAYER, nextSeq: 2n, live: 1n, version: 1, bump: 255, padding: zeros(6) });
+    const book = getDeliveryBookEncoder().encode({ intent, payer: PAYER, nextSeq: 2n, live: 1n, version: 2, bump: 255, padding: zeros(6), cancelAt: 0n });
     const announcement = getAnnouncementEncoder().encode({
       intent, worker, attestor: other, payer: PAYER, commitment: zeros(32), delivered: zeros(32), splitHash: zeros(32), seq: 1n, slot: 2n, announcedAt: 3n, expiresAt: 4n, paidAt: 0n,
       salt: zeros(16), blobLen: 0, version: 1, bump: 255, state: 0, recipients: 1, held: 0, padding: zeros(1), blob: zeros(624),
@@ -170,7 +170,7 @@ describe("account versions", () => {
     });
     for (const [name, data] of [["delivery book", book], ["announcement", announcement], ["refutation", refutation]] as const) {
       const bytes = new Uint8Array(data);
-      expect(storedVersion(bytes), name).toEqual({ layout: named(name), version: 1 });
+      expect(storedVersion(bytes), name).toEqual({ layout: named(name), version: named(name).version });
       expect(isCurrentAccount(bytes), name).toBe(true);
       expect(recordedPayer(bytes), name).toBe(PAYER);
       expect(bytes.length, name).toBe(named(name).space);

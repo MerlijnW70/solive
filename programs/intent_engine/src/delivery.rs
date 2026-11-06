@@ -6,7 +6,8 @@ use anchor_lang::Discriminator;
 use intent_core::delivery::{fingerprint_preimage, BlobHead, FINGERPRINT_LEN};
 
 use crate::errors::EngineError;
-use crate::state::{Committee, Profile, COMMITTEE_VERSION, PROFILE_VERSION};
+use crate::state::{Committee, DeliveryBook, Profile, COMMITTEE_VERSION, PROFILE_VERSION};
+use crate::versions::book_readable;
 
 pub fn fingerprint(key: &[u8; 32]) -> [u8; FINGERPRINT_LEN] {
     let digest = solana_sha256_hasher::hashv(&[&fingerprint_preimage(key)]).to_bytes();
@@ -169,4 +170,73 @@ pub fn intent_open(intent: &AccountInfo, now: i64) -> Result<bool> {
 
 pub fn blob_digest(blob: &[u8]) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[blob]).to_bytes()
+}
+
+pub fn read_book(book: &AccountInfo) -> Result<DeliveryBook> {
+    require_keys_eq!(*book.owner, crate::ID, EngineError::BookMismatch);
+    let data = book.try_borrow_data()?;
+    require!(
+        data.get(..DeliveryBook::DISCRIMINATOR.len()) == Some(DeliveryBook::DISCRIMINATOR),
+        EngineError::BookMismatch
+    );
+    require!(book_readable(&data), EngineError::AccountOutdated);
+    let head = DeliveryBook::DISCRIMINATOR.len();
+    let body = data.get(head..).ok_or(EngineError::BookMismatch)?;
+    let mut copy = <DeliveryBook as bytemuck::Zeroable>::zeroed();
+    let view = bytemuck::bytes_of_mut(&mut copy);
+    let shared = view.len().min(body.len());
+    view.get_mut(..shared)
+        .ok_or(EngineError::BookMismatch)?
+        .copy_from_slice(body.get(..shared).ok_or(EngineError::BookMismatch)?);
+    Ok(copy)
+}
+
+pub fn write_book(book: &AccountInfo, write: impl FnOnce(&mut DeliveryBook)) -> Result<()> {
+    let mut copy = read_book(book)?;
+    write(&mut copy);
+    let mut data = book.try_borrow_mut_data()?;
+    let head = DeliveryBook::DISCRIMINATOR.len();
+    let body = data.get_mut(head..).ok_or(EngineError::BookMismatch)?;
+    let view = bytemuck::bytes_of(&copy);
+    let shared = view.len().min(body.len());
+    body.get_mut(..shared)
+        .ok_or(EngineError::BookMismatch)?
+        .copy_from_slice(view.get(..shared).ok_or(EngineError::BookMismatch)?);
+    Ok(())
+}
+
+pub fn stored_book_bump(book: &AccountInfo) -> Result<u8> {
+    Ok(read_book(book)?.bump)
+}
+
+pub fn checked_book(book: &AccountInfo, intent: &Pubkey) -> Result<Option<DeliveryBook>> {
+    if *book.owner != crate::ID {
+        let (canonical, _) = Pubkey::find_program_address(
+            &[crate::state::DELIVERY_BOOK_SEED, intent.as_ref()],
+            &crate::ID,
+        );
+        require_keys_eq!(
+            canonical,
+            *book.key,
+            anchor_lang::error::ErrorCode::ConstraintSeeds
+        );
+        return Ok(None);
+    }
+    let stored = read_book(book)?;
+    let derived = Pubkey::create_program_address(
+        &[
+            crate::state::DELIVERY_BOOK_SEED,
+            intent.as_ref(),
+            &[stored.bump],
+        ],
+        &crate::ID,
+    )
+    .map_err(|_| error!(anchor_lang::error::ErrorCode::ConstraintSeeds))?;
+    require_keys_eq!(
+        derived,
+        *book.key,
+        anchor_lang::error::ErrorCode::ConstraintSeeds
+    );
+    require_keys_eq!(stored.intent, *intent, EngineError::BookMismatch);
+    Ok(Some(stored))
 }

@@ -12,7 +12,7 @@ import { createArgs, events, INSTRUCTIONS_SYSVAR_ADDRESS, intentOf, settleExt } 
 import type { Partner } from "./ext.js";
 import type { IntentParams } from "./kinds.js";
 import { capAccount, mintCapSlot, withMintCap } from "./mint-caps.js";
-import { findAssociatedTokenAddress, findMandatePda } from "./pdas.js";
+import { findAssociatedTokenAddress, findDeliveryBookPda, findMandatePda } from "./pdas.js";
 
 export type CreateIntentSpec = {
   owner: TransactionSigner;
@@ -93,9 +93,11 @@ export async function buildCancelIntent(
 ) {
   const ref = { ...input, owner: input.owner.address };
   const ext = settleExt(input.ext);
+  const intent = await intentOf(ref.owner, input.nonce);
   return getCancelIntentInstructionAsync({
     owner: input.owner,
-    intent: await intentOf(ref.owner, input.nonce),
+    intent,
+    book: (await findDeliveryBookPda({ intent }))[0],
     inputMint: input.inputMint,
     refundTo: input.refundTo ?? (await canonicalRefund(ref)),
     tokenProgram: input.tokenProgram,

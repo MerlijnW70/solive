@@ -1,4 +1,4 @@
-use crate::claim::Slot;
+use crate::claim::{Slot, MAX_CLAIM_SECS};
 use crate::clock::elapsed;
 use crate::Error;
 
@@ -14,6 +14,9 @@ pub const BLOB_FIXED_LEN: usize = BLOB_HEAD_LEN + 32 + 32 + SALT_LEN + 16;
 pub const BLOB_PER_RECIPIENT_LEN: usize = FINGERPRINT_LEN + 32;
 pub const MAX_SEALED_BLOB: usize = 624;
 pub const REFUTE_WINDOW_SECS: i64 = 30 * 86_400;
+pub const CANCEL_NOTICE_SECS: i64 = 86_400;
+pub const MIN_REVIEW_SECS: u32 = 3_600;
+pub const MAX_REVIEW_SECS: u32 = MAX_CLAIM_SECS;
 pub const MAX_SPLIT_RECIPIENTS: usize = 8;
 pub const SPLIT_ENTRY_LEN: usize = 34;
 pub const COMMITMENT_PREIMAGE_LEN: usize = 16 + 32 + 32 + SALT_LEN + 32;
@@ -99,6 +102,7 @@ pub fn may_announce(slot: Slot, worker: [u8; 32]) -> Result<(), Error> {
 pub enum AnnState {
     Announced,
     Paid,
+    Rejected,
 }
 
 impl TryFrom<u8> for AnnState {
@@ -108,6 +112,7 @@ impl TryFrom<u8> for AnnState {
         match byte {
             0 => Ok(Self::Announced),
             1 => Ok(Self::Paid),
+            2 => Ok(Self::Rejected),
             _ => Err(Error::AnnouncementState),
         }
     }
@@ -118,6 +123,7 @@ impl From<AnnState> for u8 {
         match state {
             AnnState::Announced => 0,
             AnnState::Paid => 1,
+            AnnState::Rejected => 2,
         }
     }
 }
@@ -138,16 +144,30 @@ pub fn closable(
         }
     };
     match state {
-        AnnState::Announced if by_worker => {
+        AnnState::Announced | AnnState::Rejected if by_worker => {
             if intent_open {
                 Err(Error::AnnouncementOpen)
             } else {
                 Ok(())
             }
         }
-        AnnState::Announced => after(expires_at),
+        AnnState::Announced | AnnState::Rejected => after(expires_at),
         AnnState::Paid => after(paid_at),
     }
+}
+
+pub fn cancel_at(now: i64) -> i64 {
+    now.saturating_add(CANCEL_NOTICE_SECS)
+}
+
+pub fn cancel_ready(cancel_at: i64, now: i64) -> Result<(), Error> {
+    if cancel_at == 0 {
+        return Err(Error::CancelNoticeRequired);
+    }
+    if now < cancel_at {
+        return Err(Error::CancelNoticeRunning);
+    }
+    Ok(())
 }
 
 pub fn refutes(

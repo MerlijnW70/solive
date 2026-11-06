@@ -1,11 +1,21 @@
 use intent_core::lifecycle::Status;
 use intent_engine::errors::EngineError;
-use intent_engine::instructions::open_claims::{check_stake, open_terms};
+use intent_engine::instructions::open_claims::{check_stake, open_terms, Asked};
 use intent_engine::state::{Intent, CLAIMS_OPEN};
 
 const NOW: i64 = 1_700_000_000;
 const HOUR: u32 = 3_600;
 const STAKE: u64 = 50_000_000;
+
+fn asked() -> Asked {
+    Asked {
+        max_secs: HOUR,
+        stake: STAKE,
+        review_secs: 0,
+        kill_fee: 0,
+        floor: 890_880,
+    }
+}
 
 fn open_intent(claims: u8) -> Intent {
     let mut intent: Intent = bytemuck::Zeroable::zeroed();
@@ -18,7 +28,7 @@ fn open_intent(claims: u8) -> Intent {
 #[test]
 fn claims_already_open_on_an_escrow_are_refused_before_its_terms_are_read() {
     let mut intent = open_intent(CLAIMS_OPEN);
-    let refused = open_terms(&mut intent, NOW, HOUR, STAKE).err();
+    let refused = open_terms(&mut intent, NOW, asked(), false).err();
     assert_eq!(refused, Some(EngineError::ClaimsOpen.into()));
     assert_eq!(intent.claims, CLAIMS_OPEN);
 }
@@ -26,7 +36,7 @@ fn claims_already_open_on_an_escrow_are_refused_before_its_terms_are_read() {
 #[test]
 fn claims_on_an_escrow_without_them_go_on_to_its_terms() {
     let mut intent = open_intent(0);
-    let refused = open_terms(&mut intent, NOW, HOUR, STAKE).err();
+    let refused = open_terms(&mut intent, NOW, asked(), false).err();
     assert_ne!(refused, Some(EngineError::ClaimsOpen.into()));
 }
 

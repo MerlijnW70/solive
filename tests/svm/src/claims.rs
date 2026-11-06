@@ -5,16 +5,33 @@ pub fn claims_pda(intent: &Pubkey) -> Pubkey {
 }
 
 pub fn open_claims_ix(owner: &Pubkey, intent: &Pubkey, max_secs: u32, stake: u64) -> Instruction {
+    open_claims_review_ix(owner, intent, max_secs, stake, 0, 0)
+}
+
+pub fn open_claims_review_ix(
+    owner: &Pubkey,
+    intent: &Pubkey,
+    max_secs: u32,
+    stake: u64,
+    review_secs: u32,
+    kill_fee: u64,
+) -> Instruction {
     engine_ix(
         intent_engine::accounts::OpenClaims {
             owner: *owner,
             intent: *intent,
             board: claims_pda(intent),
+            book: book_pda(intent),
             system_program: anchor_lang::system_program::ID,
             event_authority: event_authority(),
             program: intent_engine::ID,
         },
-        intent_engine::instruction::OpenClaims { max_secs, stake },
+        intent_engine::instruction::OpenClaims {
+            max_secs,
+            stake,
+            review_secs,
+            kill_fee,
+        },
     )
 }
 
@@ -57,21 +74,35 @@ pub fn open_claims_listed_ix(
     size: u8,
     workers: &[Pubkey],
 ) -> Instruction {
+    open_claims_listed_review_ix(owner, intent, (max_secs, stake), size, workers, (0, 0))
+}
+
+pub fn open_claims_listed_review_ix(
+    owner: &Pubkey,
+    intent: &Pubkey,
+    terms: (u32, u64),
+    size: u8,
+    workers: &[Pubkey],
+    review: (u32, u64),
+) -> Instruction {
     engine_ix(
         intent_engine::accounts::OpenClaimsListed {
             owner: *owner,
             intent: *intent,
             board: claims_pda(intent),
             claim_list: claim_list_pda(intent),
+            book: book_pda(intent),
             system_program: anchor_lang::system_program::ID,
             event_authority: event_authority(),
             program: intent_engine::ID,
         },
         intent_engine::instruction::OpenClaimsListed {
-            max_secs,
-            stake,
+            max_secs: terms.0,
+            stake: terms.1,
             size,
             workers: workers.to_vec(),
+            review_secs: review.0,
+            kill_fee: review.1,
         },
     )
 }

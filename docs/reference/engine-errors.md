@@ -158,3 +158,12 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index |
 | 6150 | `HolderStandsBy` | no | the wallet holding a job's claim cannot stand by in that job's line |
 | 6151 | `StakeBelowRent` | no | a claim stake is 0 or at least the rent-exempt minimum of an empty account on this cluster, so the program can always pay a stake back to a wallet that holds nothing |
+| 6152 | `ClaimsAfterDelivery` | no | claims open only before the first announcement on an escrow |
+| 6153 | `ReviewTerms` | no | a review window is 0 or 3600 to 604800 seconds, and a kill fee needs a review window and a stake and is at most 100 SOL |
+| 6154 | `ReviewPastExpiry` | no | this claim leaves no whole review window before the escrow expires |
+| 6155 | `ReviewPending` | yes | the judge's review of the holder's delivery is still running |
+| 6156 | `ReviewLapsed` | no | the review window has ended, so this announcement can no longer be rejected |
+| 6157 | `DeliveryNotPending` | no | only an announcement that is neither paid nor rejected can be rejected |
+| 6158 | `CancelNoticeRequired` | no | this escrow has an announcement, so its owner first requests a cancel and waits the notice |
+| 6159 | `CancelNoticeRunning` | yes | the cancel notice is still running |
+| 6160 | `CancelAlreadyRequested` | no | a cancel was already requested for this escrow |

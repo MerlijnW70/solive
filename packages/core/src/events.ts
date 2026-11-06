@@ -52,6 +52,10 @@ import {
   parseRelayerPaidEvent,
   parseShareHeldEvent,
   parseUserInitializedEvent,
+  parseCancelRequestedEvent,
+  parseDeliveryRejectedEvent,
+  parseReviewArmedEvent,
+  parseReviewLapsedEvent,
 } from "../generated/client/index.js";
 
 export const EVENT_IX_TAG = new Uint8Array([0xe4, 0x45, 0xa5, 0x2e, 0x51, 0xcb, 0x9a, 0x1d]);
@@ -110,6 +114,10 @@ const PARSERS = {
   RelayerPaid: parseRelayerPaidEvent,
   ShareHeld: parseShareHeldEvent,
   UserInitialized: parseUserInitializedEvent,
+  CancelRequested: parseCancelRequestedEvent,
+  DeliveryRejected: parseDeliveryRejectedEvent,
+  ReviewArmed: parseReviewArmedEvent,
+  ReviewLapsed: parseReviewLapsedEvent,
 } satisfies Record<EngineEventName, (data: Uint8Array) => object>;
 
 export const ENGINE_EVENT_NAMES = Object.freeze(Object.keys(PARSERS)) as readonly EngineEventName[];

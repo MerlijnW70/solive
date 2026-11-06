@@ -105,7 +105,7 @@ export type AnnounceDeliveryInstruction<
         ? ReadonlyAccount<TAccountCommittee>
         : TAccountCommittee,
       TAccountBoard extends string
-        ? ReadonlyAccount<TAccountBoard>
+        ? WritableAccount<TAccountBoard>
         : TAccountBoard,
       TAccountClaimList extends string
         ? ReadonlyAccount<TAccountClaimList>
@@ -341,7 +341,7 @@ export async function getAnnounceDeliveryInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
-    board: { value: input.board ?? null, isSigner: false, isWritable: false },
+    board: { value: input.board ?? null, isSigner: false, isWritable: true },
     claimList: {
       value: input.claimList ?? null,
       isSigner: false,
@@ -653,7 +653,7 @@ export function getAnnounceDeliveryInstruction<
       isSigner: false,
       isWritable: false,
     },
-    board: { value: input.board ?? null, isSigner: false, isWritable: false },
+    board: { value: input.board ?? null, isSigner: false, isWritable: true },
     claimList: {
       value: input.claimList ?? null,
       isSigner: false,

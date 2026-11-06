@@ -378,3 +378,115 @@ pub fn refute_ix(
         },
     )
 }
+
+pub fn request_cancel_ix(owner: &Pubkey, intent: &Pubkey) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::RequestCancel {
+            owner: *owner,
+            intent: *intent,
+            book: book_pda(intent),
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::RequestCancel {},
+    )
+}
+
+pub struct Reject {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub attestor: Pubkey,
+    pub committee: bool,
+    pub board: Option<Pubkey>,
+    pub stake_to: Option<Pubkey>,
+    pub mask: u8,
+}
+
+impl Reject {
+    pub fn new(intent: Pubkey, announcement: Pubkey, attestor: Pubkey) -> Self {
+        Self {
+            intent,
+            announcement,
+            attestor,
+            committee: false,
+            board: None,
+            stake_to: None,
+            mask: 0,
+        }
+    }
+
+    pub fn ix(&self) -> Instruction {
+        engine_ix(
+            intent_engine::accounts::RejectDeliveryAccounts {
+                config: config_pda(),
+                intent: self.intent,
+                announcement: self.announcement,
+                attestor: self.attestor,
+                committee: self.committee.then_some(self.attestor),
+                board: self.board,
+                stake_to: self.stake_to,
+                instructions: solana_instructions_sysvar::ID,
+                event_authority: event_authority(),
+                program: intent_engine::ID,
+            },
+            intent_engine::instruction::RejectDelivery {
+                signers_mask: self.mask,
+            },
+        )
+    }
+}
+
+pub fn reject_preimage(
+    domain: [u8; 32],
+    intent: &Pubkey,
+    announcement: &Pubkey,
+    seq: u64,
+) -> Vec<u8> {
+    intent_core::sig::RejectDelivery {
+        program: intent_engine::ID.to_bytes(),
+        domain,
+        intent: intent.to_bytes(),
+        announcement: announcement.to_bytes(),
+        seq,
+    }
+    .preimage()
+    .to_vec()
+}
+
+pub fn reject_envelope(
+    judge: &Pubkey,
+    domain: [u8; 32],
+    intent: &Pubkey,
+    announcement: &Pubkey,
+    seq: u64,
+) -> Vec<u8> {
+    let digest = sha256(&reject_preimage(domain, intent, announcement, seq));
+    intent_core::sig::offchain_envelope(&judge.to_bytes(), &digest).to_vec()
+}
+
+pub fn reject_committee_digest(
+    domain: [u8; 32],
+    intent: &Pubkey,
+    announcement: &Pubkey,
+    seq: u64,
+) -> [u8; 32] {
+    solana_sha256_hasher::hashv(&[
+        &intent_core::committee::COMMITTEE_COSIGN_TAG,
+        &reject_preimage(domain, intent, announcement, seq),
+    ])
+    .to_bytes()
+}
+
+impl Env {
+    pub fn give_notice(&mut self, owner: &Keypair, intent: &Pubkey) -> TestResult {
+        let ix = request_cancel_ix(&owner.pubkey(), intent);
+        let signer = owner.insecure_clone();
+        self.send(&signer, &[ix], &[])
+            .map_err(|e| format!("request_cancel: {e:?}"))?;
+        let at = self
+            .now()
+            .saturating_add(intent_core::delivery::CANCEL_NOTICE_SECS);
+        self.set_now(at);
+        Ok(())
+    }
+}

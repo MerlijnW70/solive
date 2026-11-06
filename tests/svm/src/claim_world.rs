@@ -14,7 +14,14 @@ pub struct ClaimWorld {
 
 impl ClaimWorld {
     pub fn new(path: ReleasePath, terms: ReleaseTerms) -> TestResult<Self> {
-        let mut release = ReleaseWorld::new(&[], path, terms)?;
+        Self::from_release(ReleaseWorld::new(&[], path, terms)?)
+    }
+
+    pub fn expiring(path: ReleasePath, terms: ReleaseTerms, expires_at: i64) -> TestResult<Self> {
+        Self::from_release(ReleaseWorld::expiring(&[], path, terms, expires_at)?)
+    }
+
+    fn from_release(mut release: ReleaseWorld) -> TestResult<Self> {
         let payer = release.env.funded()?;
         let cranker = release.env.funded()?;
         Ok(Self {
@@ -115,6 +122,84 @@ impl ClaimWorld {
         };
         self.listed = listed.is_some();
         self.send(&[ix], &[&owner])
+    }
+
+    pub fn open_review(
+        &mut self,
+        max_secs: u32,
+        stake: u64,
+        review_secs: u32,
+        kill_fee: u64,
+    ) -> Result<TransactionMetadata, TransactionError> {
+        let owner = self.release.trader.key.insecure_clone();
+        let ix = open_claims_review_ix(
+            &self.owner(),
+            &self.intent(),
+            max_secs,
+            stake,
+            review_secs,
+            kill_fee,
+        );
+        self.listed = false;
+        self.send(&[ix], &[&owner])
+    }
+
+    pub fn request_cancel(&mut self) -> Result<TransactionMetadata, TransactionError> {
+        let owner = self.release.trader.key.insecure_clone();
+        let ix = request_cancel_ix(&owner.pubkey(), &self.intent());
+        self.send(&[ix], &[&owner])
+    }
+
+    pub fn reject_ixs(&self, delivery: &Delivery) -> TestResult<Vec<Instruction>> {
+        let intent = self.intent();
+        let board = self.exists(&self.board_key()).then(|| self.board_key());
+        let stake_to = board
+            .and_then(|_| self.board().ok())
+            .map(|b| b.worker)
+            .filter(|w| *w != Pubkey::default());
+        match &self.release.panel {
+            Some(panel) => {
+                let digest =
+                    reject_committee_digest(DOMAIN, &intent, &delivery.announcement, delivery.seq);
+                let ix = Reject {
+                    committee: true,
+                    board,
+                    stake_to,
+                    mask: RELEASE_QUORUM_MASK,
+                    ..Reject::new(intent, delivery.announcement, panel.address)
+                }
+                .ix();
+                Ok(vec![
+                    committee_batch_ix(&panel.keys, &panel.signers(&RELEASE_QUORUM), &digest)?,
+                    ix,
+                ])
+            }
+            None => {
+                let judge = &self.release.attestor;
+                let message = reject_envelope(
+                    &judge.pubkey(),
+                    DOMAIN,
+                    &intent,
+                    &delivery.announcement,
+                    delivery.seq,
+                );
+                let ix = Reject {
+                    board,
+                    stake_to,
+                    ..Reject::new(intent, delivery.announcement, judge.pubkey())
+                }
+                .ix();
+                Ok(vec![ed25519_ix(judge, &message), ix])
+            }
+        }
+    }
+
+    pub fn reject(
+        &mut self,
+        delivery: &Delivery,
+    ) -> TestResult<Result<TransactionMetadata, TransactionError>> {
+        let ixs = self.reject_ixs(delivery)?;
+        Ok(self.send(&ixs, &[]))
     }
 
     pub fn announce(&mut self, worker: &Keypair) -> TestResult<Delivery> {
@@ -327,7 +412,7 @@ impl ClaimWorld {
         stake_to: Option<&Pubkey>,
     ) -> TestResult<Result<TransactionMetadata, TransactionError>> {
         let delivery = self.delivery.ok_or("nothing announced")?;
-        self.release.env.claims = Some(self.board_key());
+        self.release.env.claims = self.exists(&self.board_key()).then(|| self.board_key());
         self.release.env.stake_to = stake_to.copied();
         let payee = self.release.atas[0];
         let sent = self.release.release_to(path, &delivery, &payee);
@@ -344,6 +429,7 @@ impl ClaimWorld {
         let expected = self
             .board_rent()
             .checked_add(board.held)
+            .and_then(|v| v.checked_add(board.kill_fee))
             .ok_or("board overflow")?;
         if self.lamports(&self.board_key()) != expected {
             return Err(format!(

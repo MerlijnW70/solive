@@ -3,9 +3,9 @@ import {
   CLAIM_BOARD_DISCRIMINATOR,
   COMMITTEE_DISCRIMINATOR,
   CONFIG_DISCRIMINATOR,
-  getClaimBoardSize,
   getCommitteeSize,
   getConfigSize,
+  DELIVERY_BOOK_DISCRIMINATOR,
   getIntentSize,
   getMandateSize,
   getMigrateInstruction,
@@ -25,6 +25,9 @@ import { type AccountLayout, storedVersion } from "./versions.js";
 
 export const LEGACY_CONFIG_SPACE = 216;
 export const LEGACY_BOARD_SPACE = 168;
+export const V2_BOARD_SPACE = 176;
+export const V2_BOARD_VERSION = 2;
+export const V1_BOOK_SPACE = 96;
 export const FIRST_VERSION = 1;
 export const UNVERSIONED = 0;
 
@@ -45,9 +48,11 @@ export const OUTDATED_LAYOUTS: readonly OutdatedLayout[] = [
   outdated(MINT_CAP_DISCRIMINATOR, getMintCapSize()),
   outdated(COMMITTEE_DISCRIMINATOR, getCommitteeSize()),
   outdated(CLAIM_BOARD_DISCRIMINATOR, LEGACY_BOARD_SPACE),
-  outdated(CLAIM_BOARD_DISCRIMINATOR, getClaimBoardSize()),
+  outdated(CLAIM_BOARD_DISCRIMINATOR, V2_BOARD_SPACE),
+  outdated(CLAIM_BOARD_DISCRIMINATOR, V2_BOARD_SPACE, V2_BOARD_VERSION),
   outdated(STANDBY_DISCRIMINATOR, getStandbySize(), UNVERSIONED),
   outdated(PROFILE_DISCRIMINATOR, getProfileSize()),
+  outdated(DELIVERY_BOOK_DISCRIMINATOR, V1_BOOK_SPACE),
 ];
 
 export type Migration = { layout: AccountLayout; from: OutdatedLayout };
