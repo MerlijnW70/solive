@@ -11,6 +11,7 @@ import type { Command } from "./command-types.js";
 import { encryptionKeyFile } from "./delivery-shared.js";
 import { FlowRefused } from "./flows.js";
 import type { Runtime } from "./runtime.js";
+import { runProblem, runRead } from "./judge-run.js";
 
 type Sealing = Extract<Command, { name: "seal" | "unseal" }>;
 type Reading = Extract<Command, { name: "spec" }>;
@@ -48,6 +49,15 @@ export const jobClosed = (intent: Address): string => `the job ${intent} is clos
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
+export const runRefused = (label: string, problem: string): string => `${label}: ${problem}, so no judge can run it; fix the block, nothing was sent or written`;
+
+export function refuseMalformedRun(bytes: Uint8Array, label: string): void {
+  const problem = runProblem(bytes);
+  if (problem !== undefined) {
+    throw new FlowRefused(runRefused(label, problem));
+  }
+}
+
 async function bounded(path: string): Promise<Uint8Array> {
   const bytes = new Uint8Array(await readFile(path));
   if (bytes.length > MAX_SEALED_INPUT) {
@@ -59,6 +69,7 @@ async function bounded(path: string): Promise<Uint8Array> {
 export async function sealing(command: Sealing, runtime: Runtime): Promise<object> {
   const input = await bounded(command.file);
   if (command.name === "seal") {
+    refuseMalformedRun(input, command.file);
     let sealed: Uint8Array;
     try {
       sealed = await seal(input, await sealRecipients(runtime.transport(command.url), command.to));
@@ -111,6 +122,7 @@ export async function readJobSpec(command: Reading, runtime: Runtime, transport:
     sha256: spec.sha256,
     matches: spec.matches,
     ...(sealed === undefined ? {} : { sealed_to: sealed }),
+    ...runRead(spec.bytes),
     ...(command.out === undefined ? { text: spec.text } : { out: command.out }),
   };
 }

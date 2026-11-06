@@ -8,6 +8,7 @@ import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { InvalidInput, account, list, object, optional, text } from "../schema.js";
 import { signerOf, walletOpeners } from "./guard.js";
+import { runProblem } from "../../judge-run.js";
 
 export const SEAL_LIMIT = `seal to at most ${MAX_SEALED_RECIPIENTS} wallets in all, the attestor or each member of its committee included`;
 
@@ -16,6 +17,17 @@ export const SEALED_UNCHECKED = "spec_url holds a sealed spec this wallet cannot
 export const SEALED_NEXT = `host sealed at an https url, byte for byte, then pass that url as spec_url and sha256 as spec_hash to ${tool("wallet_escrow")}`;
 
 export const sealedTooLarge = (bytes: number): string => `sealed, it is ${bytes} bytes, over the ${MAX_SPEC_BYTES} bytes ${tool("get_spec")} reads; shorten the spec`;
+
+export const RUN_UNJUDGEABLE = "no judge can run it, so nothing was sent; fix the block, then hash the spec again";
+
+export const malformedRun = (problem: string): string => `${problem}; ${RUN_UNJUDGEABLE}`;
+
+export function refuseMalformedText(specText: string, path: string): void {
+  const problem = runProblem(new TextEncoder().encode(specText));
+  if (problem !== undefined) {
+    throw new InvalidInput([{ path, message: malformedRun(problem) }]);
+  }
+}
 
 const sha256 = (bytes: Uint8Array | string): string => createHash("sha256").update(bytes).digest("hex");
 
@@ -45,6 +57,7 @@ export const walletSealSpec = define({
     next: text(),
   }),
   run: async (ctx: AgentContext, input) => {
+    refuseMalformedText(input.text, "text");
     const attestor: Address = input.attestor ?? (await signerOf(ctx)).address;
     const recipients = await sealRecipients(ctx.transport, [...input.invite, attestor]);
     if (recipients.length > MAX_SEALED_RECIPIENTS) {

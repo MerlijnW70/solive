@@ -43,6 +43,8 @@ export const containerLeft = (name: string): string => `warning: the check's con
 
 export const INSPECT_SECONDS = 30;
 
+export const STATUS_POLL_MS = 100;
+
 const NEVER = "0001-01-01T00:00:00Z";
 
 export type Inspected = { state: ContainerState } | { state: null; problem: string };
@@ -78,7 +80,71 @@ export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Pro
 
 export type ContainerRun = Check & ContainerFacts;
 
-export function runContainer(args: readonly string[], name: string, env: NodeJS.ProcessEnv, timeoutSeconds: number, inspectSeconds: number = INSPECT_SECONDS): Promise<ContainerRun> {
+type Seen = { asked: number; answered: number; status: string | undefined };
+
+type PinWatch = { overran(): boolean; ranAtMostMs(endedAt: number): number; stop(): void };
+
+const pause = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms).unref());
+
+function watchPin(name: string, env: NodeJS.ProcessEnv, seconds: number, inspectSeconds: number, overrun: () => void): PinWatch {
+  let notBefore = performance.now();
+  let overran = false;
+  let ended = false;
+  let timer: NodeJS.Timeout | undefined;
+  const ask = async (): Promise<Seen> => {
+    const asked = performance.now();
+    const read = await docker(["container", "inspect", "--format", "{{.State.Status}}", name], env, false, inspectSeconds);
+    return { asked, answered: performance.now(), status: read.status === 0 ? read.out.trim() : undefined };
+  };
+  const recheck = async (startedBy: number): Promise<void> => {
+    const seen = await ask();
+    if (ended || seen.status !== "running") {
+      return;
+    }
+    if (seen.asked >= startedBy + seconds * 1000) {
+      overran = true;
+      overrun();
+      return;
+    }
+    timer = setTimeout(() => void recheck(startedBy), Math.max(1, startedBy + seconds * 1000 - performance.now()));
+  };
+  const poll = async (): Promise<void> => {
+    while (!ended) {
+      const seen = await ask();
+      if (ended) {
+        return;
+      }
+      if (seen.status === "running") {
+        timer = setTimeout(() => void recheck(seen.answered), Math.max(0, seen.answered + seconds * 1000 - performance.now()));
+        return;
+      }
+      if (seen.status === "created") {
+        notBefore = seen.asked;
+      } else if (seen.status !== undefined) {
+        return;
+      }
+      await pause(STATUS_POLL_MS);
+    }
+  };
+  void poll();
+  return {
+    overran: () => overran,
+    ranAtMostMs: (endedAt) => endedAt - notBefore,
+    stop: () => {
+      ended = true;
+      clearTimeout(timer);
+    },
+  };
+}
+
+export function runContainer(
+  args: readonly string[],
+  name: string,
+  env: NodeJS.ProcessEnv,
+  timeoutSeconds: number,
+  inspectSeconds: number = INSPECT_SECONDS,
+  pinnedSeconds?: number,
+): Promise<ContainerRun> {
   return new Promise((done, failed) => {
     const child = spawn("docker", ["run", "--name", name, ...args], {
       env,
@@ -97,6 +163,7 @@ export function runContainer(args: readonly string[], name: string, env: NodeJS.
     let timedOut = false;
     let interrupted: InterruptSignal | undefined;
     let killing: Promise<void> = Promise.resolve();
+    const pin = pinnedSeconds === undefined ? undefined : watchPin(name, env, pinnedSeconds, inspectSeconds, () => (killing = kill()));
     const handlers = (Object.keys(SIGNAL_EXIT) as InterruptSignal[]).map((signal) => {
       const handler = () => {
         interrupted ??= signal;
@@ -111,6 +178,7 @@ export function runContainer(args: readonly string[], name: string, env: NodeJS.
     }, timeoutSeconds * 1000);
     const settle = () => {
       clearTimeout(timer);
+      pin?.stop();
       for (const [signal, handler] of handlers) {
         process.removeListener(signal, handler);
       }
@@ -124,8 +192,11 @@ export function runContainer(args: readonly string[], name: string, env: NodeJS.
     });
     child.once("exit", () => {
       clearTimeout(timer);
+      const endedAt = performance.now();
+      pin?.stop();
       void killing.finally(async () => {
-        const stopped = timedOut || interrupted !== undefined;
+        const overran = pin?.overran() === true;
+        const stopped = timedOut || interrupted !== undefined || overran;
         const inspected: Inspected = stopped ? { state: null, problem: "" } : await endedState(name, env, inspectSeconds);
         await removeContainer(name, env);
         settle();
@@ -136,6 +207,7 @@ export function runContainer(args: readonly string[], name: string, env: NodeJS.
           state: inspected.state,
           ...(interrupted === undefined ? {} : { interrupted }),
           ...(inspected.state === null && !stopped ? { inspect: inspected.problem } : {}),
+          ...(pin === undefined ? {} : { overran, ranAtMostMs: pin.ranAtMostMs(endedAt) }),
         });
       });
     });

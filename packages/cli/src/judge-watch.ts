@@ -12,6 +12,7 @@ import { infraSkipped, type InterruptSignal, JudgeDeferred, JudgeInfraError, Jud
 import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, pinnedSpec, type Verdict } from "./judge.js";
 import { messageSigner } from "./ledger-keys.js";
 import { rpcFailed } from "./rpc-failure.js";
+import { checkFilesOf, runPlan } from "./run-plan.js";
 import type { Runtime } from "./runtime.js";
 import { escapedJson } from "./untrusted-text.js";
 
@@ -122,7 +123,10 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
   if (isDevice(signer)) {
     await deviceJudgeReady(transport, signer.address, address).catch(historyRefused);
   }
-  await pinnedSpec(command.spec, address, specHash);
+  const plan = runPlan(await pinnedSpec(command.spec, address, specHash), command);
+  if (plan.pinned !== undefined) {
+    await checkFilesOf(command.check, plan);
+  }
   const client = createClient({ url: command.url, transport });
   const seen = new Set<Address>();
   const judgedWork = new Set<string>();

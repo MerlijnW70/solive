@@ -38,6 +38,12 @@ export const DOCKER_ENV = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DO
 const DIGESTED = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/;
 const MEMORY = /^[1-9]\d{0,5}[mg]$/;
 const CPUS = /^\d{1,3}(\.\d{1,2})?$/;
+const MEGABYTES_PER_GIGABYTE = 1024;
+
+export const imageValid = (image: string): boolean => DIGESTED.test(image);
+export const memoryValid = (memory: string): boolean => MEMORY.test(memory);
+export const cpusValid = (cpus: string): boolean => CPUS.test(cpus) && Number(cpus) > 0;
+export const megabytesOf = (memory: string): number => Number(memory.slice(0, -1)) * (memory.endsWith("g") ? MEGABYTES_PER_GIGABYTE : 1);
 const SANDBOX_ONLY = ["sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu"] as const;
 const READABLE = 0o444;
 const SEARCHABLE = 0o755;
@@ -49,19 +55,19 @@ export const SANDBOX_NEEDS_DOCTOR = "sandbox needs doctor";
 
 export function boxOf(values: Values): Box {
   const image = values["sandbox-image"] ?? SANDBOX_IMAGE;
-  if (!DIGESTED.test(image)) {
+  if (!imageValid(image)) {
     throw new UsageError(IMAGE_NEEDS_DIGEST);
   }
   const memory = values["sandbox-memory"] ?? SANDBOX_MEMORY;
-  if (!MEMORY.test(memory)) {
+  if (!memoryValid(memory)) {
     throw new UsageError(MEMORY_FORMAT);
   }
   const cpus = values["sandbox-cpus"] ?? SANDBOX_CPUS;
-  if (!CPUS.test(cpus) || Number(cpus) <= 0) {
+  if (!cpusValid(cpus)) {
     throw new UsageError(CPUS_FORMAT);
   }
   const tmp = values["sandbox-tmp"] ?? SANDBOX_TMP;
-  if (!MEMORY.test(tmp)) {
+  if (!memoryValid(tmp)) {
     throw new UsageError(TMP_FORMAT);
   }
   return { image, memory, cpus, tmp, gpu: values["sandbox-gpu"] === true };

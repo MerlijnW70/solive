@@ -21,7 +21,17 @@ const DELIVERIES: Readonly<Record<string, Carried>> = { spec_hash: payer("hashed
 const RECEIPT_CARRIED: Readonly<Record<string, Carried>> = { delivered_sha256: worker("hashed"), "held[].close": SIGNATURE };
 
 export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>> = {
-  [tool("get_spec")]: { url: payer("sanitized"), text: payer("untrusted"), sha256: payer("hashed") },
+  [tool("get_spec")]: {
+    url: payer("sanitized"),
+    text: payer("untrusted"),
+    sha256: payer("hashed"),
+    "judge_run.image": payer("untrusted"),
+    "judge_run.run": payer("untrusted"),
+    "judge_run.memory": payer("untrusted"),
+    "judge_run.cpus": payer("untrusted"),
+    "judge_run.check_sha256": payer("hashed"),
+    judge_run_refused: payer("sanitized"),
+  },
   [tool("wallet_setup")]: { "faucet.refused": faucet("sanitized") },
   [tool("wallet_fetch_work")]: { url: worker("sanitized"), untrusted_text: worker("untrusted"), sha256: worker("hashed"), "first.commitment": worker("hashed") },
   [tool("wallet_judge_work")]: { sha256: worker("hashed"), "cases.failures[].detail": worker("sanitized"), "host.failures[].detail": worker("sanitized"), reason: worker("sanitized") },

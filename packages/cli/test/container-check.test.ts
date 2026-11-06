@@ -7,7 +7,7 @@ import { containerLeft, docker, removeContainer, runContainer } from "../src/che
 import { dockerTimedOut, startFailed } from "../src/container-check.js";
 import { JudgeInfraError, oomInfra, timedOutInfra } from "../src/judge-errors.js";
 import { dockerMissing, imageMissing, SANDBOX_IMAGE, sandboxReady } from "../src/sandbox.js";
-import { containerOutcome, exitedWith, inspectFailed, NEVER_STARTED } from "../src/verdict-model.js";
+import { containerOutcome, exitedWith, inspectFailed, NEVER_STARTED, oomPinned, ranPastPin, RUN_UNTIMED } from "../src/verdict-model.js";
 
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
@@ -29,6 +29,7 @@ case "$1" in
     exit 0 ;;
   rm) exit 0 ;;
   container)
+    if [ "$4" = "{{.State.Status}}" ]; then echo "\${FAKE_STATUS:-exited}"; exit 0; fi
     if [ "$3" = "--format" ]; then
       if [ "$FAKE_INSPECT_FAIL" = 1 ]; then echo "Error: No such container: $5" >&2; exit 1; fi
       if [ "$FAKE_INSPECT_HANG" = 1 ]; then sleep 10; fi
@@ -201,6 +202,46 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     const ran = await runContainer(["image"], "oom-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: killed }), 30);
     expect(ran).toStrictEqual({ exitCode: 3, timedOut: false, deadline: false, state: ended(3, { oomKilled: true }) });
     expect(containerOutcome(ran, limits)).toEqual({ outcome: "infra", reason: oomInfra("1g") });
+  });
+
+  it("under a pinned timeout, stops and fails a container its own clock saw still running at the timeout", async () => {
+    const started = performance.now();
+    const ran = await runContainer(["image"], "pin-1", envFor({ FAKE_RUN: "hang", FAKE_KILL: "stops", FAKE_STATUS: "running" }), 30, 30, 0.2);
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(ran).toStrictEqual({ exitCode: null, timedOut: false, deadline: false, state: null, overran: true, ranAtMostMs: expect.any(Number) });
+    expect(containerOutcome(ran, { ...limits, pinned: { seconds: 0.2 } })).toEqual({ outcome: "fail", reason: ranPastPin(0.2) });
+    const asked = await calls();
+    expect(asked).toContain("run --name pin-1 image");
+    expect(asked).toContain("kill pin-1");
+    expect(asked.indexOf("kill pin-1")).toBeGreaterThan(asked.lastIndexOf("container inspect --format {{.State.Status}} pin-1"));
+  });
+
+  it("under a pinned timeout, keeps a container never seen running until --timeout infra", async () => {
+    const ran = await runContainer(["image"], "pin-2", envFor({ FAKE_RUN: "hang", FAKE_KILL: "stops", FAKE_STATUS: "created" }), 0.5, 30, 0.2);
+    expect(ran).toMatchObject({ timedOut: true, deadline: true, state: null, overran: false });
+    expect(containerOutcome(ran, { ...limits, seconds: 0.5, pinned: { seconds: 0.2 } })).toEqual({ outcome: "infra", reason: timedOutInfra(0.5) });
+  });
+
+  it("under a pinned timeout, judges by exit code a container that ended sooner on its own clock, whatever Docker's times say, and only then", async () => {
+    const backwards = (code: number, oom = false) =>
+      `{"Running":false,"ExitCode":${code},"OOMKilled":${oom},"Error":"","StartedAt":"2026-01-01T00:00:05Z","FinishedAt":"2026-01-01T00:00:01Z"}`;
+    const pins = (seconds: number) => ({ ...limits, pinned: { seconds, memory: "64m" } });
+    const passed = await runContainer(["image"], "back-1", envFor({ FAKE_RUN: "exit", FAKE_STATE: backwards(0) }), 30, 30, 60);
+    expect(passed).toMatchObject({ state: ended(0), overran: false });
+    expect(passed.ranAtMostMs).toBeLessThan(60_000);
+    expect(containerOutcome(passed, pins(60))).toEqual({ outcome: "pass" });
+    const failed = await runContainer(["image"], "back-2", envFor({ FAKE_RUN: "exit" }), 30, 30, 60);
+    expect(containerOutcome(failed, pins(60))).toEqual({ outcome: "fail", reason: exitedWith(3) });
+    const killed = await runContainer(["image"], "back-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: backwards(137, true) }), 30, 30, 60);
+    expect(containerOutcome(killed, pins(60))).toEqual({ outcome: "fail", reason: oomPinned("64m") });
+    expect(containerOutcome(killed, { ...limits, pinned: { seconds: 60 } })).toEqual({ outcome: "infra", reason: oomInfra("1g") });
+    for (const fake of [{ FAKE_RUN: "slow", FAKE_STATE: backwards(0) }, { FAKE_RUN: "slow", FAKE_STATUS: "dead" }]) {
+      const long = await runContainer(["image"], "back-4", envFor(fake), 30, 30, 0.2);
+      expect(long.ranAtMostMs ?? 0, JSON.stringify(fake)).toBeGreaterThanOrEqual(200);
+      expect(containerOutcome(long, pins(0.2)), JSON.stringify(fake)).toEqual({ outcome: "infra", reason: RUN_UNTIMED });
+      expect(containerOutcome(long, pins(60)), JSON.stringify(fake)).toEqual({ outcome: "pass" });
+    }
+    expect((await runContainer(["image"], "back-5", envFor({ FAKE_RUN: "exit" }), 30)).state).toStrictEqual(ended(3));
   });
 
   it("shows what the container prints only with its control characters escaped", async () => {

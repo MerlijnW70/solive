@@ -20,6 +20,8 @@ import { HOST_ENGINE, judgeHost } from "../../host-judge.js";
 import { type Cases, casesOf, type Failure, judgeViper, MAX_CASES, pinnedWasm, REPORTED_FAILURES, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../../viper.js";
 import { combine, engineOutcome } from "../../verdict-model.js";
 import { sanitized } from "../../untrusted-text.js";
+import { RUN_FENCE } from "../../judge-run.js";
+import { fenceMentions } from "../../spec-blocks.js";
 
 export const ARTIFACT_PATH_LIMIT = 200;
 
@@ -30,6 +32,8 @@ export const DETAIL_LIMIT = 256;
 export const VERDICTS = ["pass", "wrong", "not-primitive", "threw", "stopped", "no-module", "engine", "crashed"] as const;
 
 export const NO_CASES = `this spec has no judge-cases block this tool can run; save the spec and the work and judge them with the CLI command judge --sandbox docker`;
+
+export const PINNED_RUN = "this spec pins its check in a judge-run block, a Docker check this tool does not run; save the spec and the work and judge them with the CLI command judge, which runs exactly the pinned check";
 
 export const DRAWS_CASES = "this spec draws its cases from a finalized block, which this tool does not wait for; judge it with the CLI command judge --sandbox viper";
 
@@ -85,6 +89,9 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
   }
   if (spec.text === undefined) {
     throw new AgentRefusal("NoJudgeCases", NO_CASES);
+  }
+  if (fenceMentions(spec.text, RUN_FENCE) > 0) {
+    throw new AgentRefusal("NoJudgeCases", PINNED_RUN);
   }
   let cases: Cases;
   try {

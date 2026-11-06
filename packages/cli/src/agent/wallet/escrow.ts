@@ -12,7 +12,7 @@ import { InvalidInput, account, amount, flag, hex32, integer, list, object, opti
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, oneAtATime, signerOf, termsApproval } from "./guard.js";
 import { createFeesOf, offerFields, type Token } from "./offer.js";
 import { costLines, escrowCosts, pieceCostLines } from "./costs.js";
-import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimTerms, refuseWrongSpec, specPreflight, wrongSpecLines } from "./escrow-terms.js";
+import { ALLOW_WRONG_SPEC, allowWrongSpec, CLAIMS_NEED_SPEC, claimInputs, claimTerms, refuseMalformedRun, refuseMalformedText, refuseWrongSpec, specPreflight, wrongSpecLines } from "./escrow-terms.js";
 import { pieceUploadPlans, planLines, readerLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
 import { type Claimants, claimantsOf, listedLines, offeredWithClaims, previewFees, specReader } from "./escrow-claims.js";
 
@@ -116,6 +116,7 @@ export const walletEscrow = define({
     }
     const spec = specReader(ctx);
     const preflight = input.spec_url !== undefined && specHash !== undefined ? await specPreflight(ctx, await spec(input.spec_url), specHash, input.attestor) : undefined;
+    refuseMalformedRun(preflight, "spec_url");
     if (input.send === true) {
       refuseWrongSpec(preflight, input.allow_wrong_spec, "spec_url");
     }
@@ -249,6 +250,7 @@ function checkedText(specText: string, specHash: string | undefined, path: strin
   if (problem !== undefined) {
     throw new InvalidInput([{ path, message: problem }]);
   }
+  refuseMalformedText(specText, path);
 }
 
 const specBytes = (specHash: string | undefined): Uint8Array => (specHash === undefined ? new Uint8Array(32) : Uint8Array.from(Buffer.from(specHash, "hex")));
@@ -383,6 +385,9 @@ export const walletEscrowPlan = define({
     const checks = await Promise.all(
       planned.map(async (piece) => (piece.specUrl === undefined || piece.specHash === undefined ? undefined : specPreflight(ctx, await spec(piece.specUrl), piece.specHash, piece.attestor))),
     );
+    for (const [i, piece] of planned.entries()) {
+      refuseMalformedRun(checks[i], input.pieces[i]?.spec_url === undefined ? "spec_url" : `pieces.${i}.spec_url`, `Piece ${i + 1} (${piece.name}): `);
+    }
     if (input.send === true) {
       for (const [i, piece] of planned.entries()) {
         refuseWrongSpec(checks[i], input.allow_wrong_spec, input.pieces[i]?.spec_url === undefined ? "spec_url" : `pieces.${i}.spec_url`, `Piece ${i + 1} (${piece.name}): `);

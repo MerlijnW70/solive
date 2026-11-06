@@ -219,6 +219,28 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artif
 
 `$IMAGE` is `<name>@sha256:<digest>`; `judge` refuses a tag alone. `sandbox doctor` must print `"ready": true` on the machine before it judges. Never pass `--sandbox none` for such work. Exit code 1 is a fail of the work. Exit code 75 is infra, no verdict on the work, such as a timeout, Docker down or an engine that crashed: nothing was signed, so run it again. [How the judge works](maintainers/judge-internals.md#outcomes) lists every outcome.
 
+## Pin the check in the spec
+
+Without more, each judge picks the check: its own `--run`, `--check`, `--timeout` and `--sandbox-*` options. A hirer who wants every judge to run one check pins it in the spec, in one block fenced as `judge-run` that holds a JSON object:
+
+````markdown
+```judge-run
+{"image": "node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392", "run": "node check/check.mjs", "timeout": 120, "check_sha256": "<64 hex>", "memory": "512m", "cpus": "1"}
+```
+````
+
+`image` names a Docker image by its digest, `run` is the command `judge` runs through `/bin/sh` in `/judge`, and `timeout` is the whole seconds the check may run; all three are required. `check_sha256` pins hidden check files, mounted at `/judge/check`. `memory` and `cpus` take the formats of `--sandbox-memory` and `--sandbox-cpus`; left out, they stay at the defaults.
+
+`judge` then runs exactly that check, in Docker. It refuses `--sandbox viper`, `--sandbox none` and `--sandbox-gpu`, and refuses `--run`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus` and `--sandbox-tmp` unless each equals the block, or the default where the block names none. Options left out take the block's values. Every route refuses the same way: `judge`, `judge --watch` and a committee member's `judge`.
+
+`--check` is needed when the block has `check_sha256`, refused when it has none, and refused when its files hash otherwise. `check_sha256` is what `intent-engine hash --artifact <directory>` prints for a directory that holds only the check file or directory. Every check file is mounted executable. `--timeout` stays the judge's own deadline: it must be at least `timeout` plus `RUN_OVERHEAD_SECONDS` from `packages/cli/src/judge-run.ts`, and left out it is exactly that.
+
+A pinned limit is part of the bar. A check still running at the pinned `timeout`, timed on the judge's own clock from when it saw the container running, fails, and so does a container killed for using all of the pinned `memory`. Running out of memory the spec did not pin, or reaching `--timeout` before the check ran its pinned time, stays infra.
+
+`judge` refuses a spec whose block has an unknown or repeated field, a bad value, a second `judge-run` block, a `judge-cases` block beside it, or a fence that names `judge-run` or `judge-cases` anywhere but on a plain top-level line, such as indented, behind `>` or a list marker, with `~~~`, or inside another fenced block.
+
+`solive_get_spec` and `intent-engine spec` show the pinned check as `judge_run`, or why the block is refused. `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `create attested` and `seal` refuse such a spec before anything is sent.
+
 ## Judge without Docker
 
 `--sandbox viper` judges a delivery that is one JavaScript module, with no Docker and no check of yours. It runs the cases the spec lists in [ViperJS](https://github.com/MerlijnW70/viperjs), a sandboxed JavaScript engine, and again in a second engine. With `OWNER` and `NONCE` from step 2:
@@ -251,7 +273,7 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/w
 
 An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, `pass`, `fail` or `infra`, each engine's failed cases and the work's sha256, and sends nothing. `infra` is no verdict: approve nothing and judge again later. On a pass, `solive_wallet_attest` with that sha256 pays.
 
-`solive_wallet_judge_work` refuses a spec without a `judge-cases` block: judge that with `--sandbox docker`. It does not wait for drawn cases, so it refuses a spec with a `draw`.
+`solive_wallet_judge_work` refuses a spec without a `judge-cases` block: judge that with `--sandbox docker`. It also refuses a spec with a `judge-run` block, which `judge` runs exactly. It does not wait for drawn cases, so it refuses a spec with a `draw`.
 
 So that a delivery cannot answer from a table of the published cases, the spec's `judge-cases` block can add `"draw": {"count": n, "generator": "<module>", "checker": "<module>", "k": K}`. `judge` then waits until the first block at or after the earliest announcement's slot plus `K` is finalized, and seeds the draw with the sha256 of a fixed tag, that block's hash, the intent and the work's sha256.
 

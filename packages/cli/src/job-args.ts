@@ -7,6 +7,8 @@ import { MAX_FOLLOW_INTERVAL } from "./arg-solve.js";
 import { sandboxOf } from "./sandbox.js";
 
 export const JUDGE_WATCH_INTERVAL = 30;
+
+export const RUN_OPTIONS = ["sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu", "plain-node", "i-trust-this-work", "timeout"] as const;
 export const WATCH_TAKES_NO_ARTIFACT = "judge --watch fetches each delivery from its url and takes no --artifact";
 
 function watchOf(values: Values): number | null {
@@ -105,6 +107,7 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "judge", sub: s
         verdict: values.verdict,
         check: values.check,
         sandbox,
+        given: RUN_OPTIONS.filter((option) => values[option] !== undefined),
         ...feePayerOf(values, keypair),
         ...encryptionKeypairOf(values),
         ...confirmUrlOf(values, remote.url),

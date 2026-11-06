@@ -18,6 +18,9 @@ import {
   NO_RULING,
   nothingJudged,
   notStarted,
+  oomPinned,
+  ranPastPin,
+  RUN_UNTIMED,
   type Ruling,
   shellOutcome,
   startFailed,
@@ -69,6 +72,40 @@ describe("the verdict model, row by row", () => {
     for (const state of [null, ran(0), ran(1), ran(137, { oomKilled: true })]) {
       expect(docker(state, { deadline: true })).toEqual(infra(timedOutInfra(30)));
     }
+  });
+
+  it("under a judge-run block, fails a check the judge's own clock saw still running at the pinned timeout, or out of pinned memory", () => {
+    const PINNED = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
+    const LEFT = { seconds: 90, memory: "1g", pinned: { seconds: 60 } };
+    type More = { deadline?: boolean; interrupted?: "SIGINT" | "SIGTERM"; inspect?: string; problem?: string; overran?: boolean; ranAtMostMs?: number };
+    const pinned = (state: ContainerState | null, more: More = {}, limits: typeof PINNED | typeof LEFT = PINNED) => containerOutcome({ deadline: false, state, ...more }, limits);
+    for (const state of [null, ran(0), ran(1), ran(137, { oomKilled: true })]) {
+      expect(pinned(state, { overran: true }), JSON.stringify(state)).toEqual(fail(ranPastPin(60)));
+      expect(pinned(state, { overran: true, deadline: true }), JSON.stringify(state)).toEqual(fail(ranPastPin(60)));
+    }
+    expect(pinned(ran(0), { ranAtMostMs: 59_999 })).toEqual(PASS);
+    for (const code of [1, 3, 137]) {
+      expect(pinned(ran(code), { ranAtMostMs: 100 }), String(code)).toEqual(fail(exitedWith(code)));
+    }
+    for (const code of [0, 1]) {
+      for (const more of [{ ranAtMostMs: 60_000 }, { ranAtMostMs: 600_000 }, {}]) {
+        expect(pinned(ran(code), more), `${code} ${JSON.stringify(more)}`).toEqual(infra(RUN_UNTIMED));
+      }
+    }
+    for (const ranAtMostMs of [100, 60_000, undefined]) {
+      const more = ranAtMostMs === undefined ? {} : { ranAtMostMs };
+      expect(pinned(ran(1, { oomKilled: true }), more), String(ranAtMostMs)).toEqual(fail(oomPinned("512m")));
+      expect(pinned(ran(1, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(infra(oomInfra("1g")));
+    }
+    expect(pinned(null, { deadline: true, ranAtMostMs: 90_000 })).toEqual(infra(timedOutInfra(90)));
+    expect(pinned(ran(0), { deadline: true, ranAtMostMs: 10 })).toEqual(infra(timedOutInfra(90)));
+    expect(pinned(ran(0, { error: "OCI runtime create failed" }), { ranAtMostMs: 10 })).toEqual(infra(startFailed(0, "OCI runtime create failed")));
+    expect(pinned(ran(0, { started: false }), { ranAtMostMs: 10 })).toEqual(infra(NEVER_STARTED));
+    expect(pinned(null, { inspect: "gone", ranAtMostMs: 10 })).toEqual(infra(inspectFailed("gone")));
+    expect(pinned(null, { problem: "spawn docker ENOENT" })).toEqual(infra(notStarted("docker", "spawn docker ENOENT")));
+    expect(pinned(ran(0), { overran: true, interrupted: "SIGINT" })).toEqual({ outcome: "interrupted", signal: "SIGINT" });
+    expect(containerOutcome({ deadline: false, state: ran(0), overran: true, ranAtMostMs: 999_999 }, LIMITS)).toEqual(PASS);
+    expect(docker(ran(1, { oomKilled: true }))).toEqual(infra(oomInfra("512m")));
   });
 
   it("lets an interrupt win over every Docker and shell outcome", () => {
@@ -134,13 +171,33 @@ const INTERNALS = readFileSync(join(ROOT, "docs/maintainers/judge-internals.md")
 const OUTCOME_ROWS: Record<string, Ruling> = {
   "`--sandbox docker`: the container started and exited 0": docker(ran(0)),
   "`--sandbox docker`: the container started and exited with any other code, 125 and 137 included": docker(ran(137)),
-  "`--sandbox docker`: Docker flags the container out of memory, whatever its exit code": docker(ran(1, { oomKilled: true })),
+  "`--sandbox docker`: Docker flags the container out of memory the judge chose, whatever its exit code": docker(ran(1, { oomKilled: true })),
+  "`--sandbox docker` under a `judge-run` block: Docker flags the container out of the pinned `memory`, whatever its exit code or how long it ran": containerOutcome(
+    { deadline: false, state: ran(0, { oomKilled: true }) },
+    { ...LIMITS, pinned: { seconds: 5, memory: "512m" } },
+  ),
+  "`--sandbox docker` under a `judge-run` block: on the judge's own clock the check was still running at the pinned `timeout` after it started, whatever its exit code": containerOutcome(
+    { deadline: true, state: null, overran: true },
+    { ...LIMITS, pinned: { seconds: 5 } },
+  ),
+  "`--sandbox docker` under a `judge-run` block: on the judge's own clock the container ended less than the pinned `timeout` after it could have started, and it exited 0": containerOutcome(
+    { deadline: false, state: ran(0), ranAtMostMs: 4_999 },
+    { ...LIMITS, pinned: { seconds: 5 } },
+  ),
+  "`--sandbox docker` under a `judge-run` block: on the judge's own clock the container ended less than the pinned `timeout` after it could have started, and it exited with any other code": containerOutcome(
+    { deadline: false, state: ran(2), ranAtMostMs: 10 },
+    { ...LIMITS, pinned: { seconds: 5 } },
+  ),
+  "`--sandbox docker` under a `judge-run` block: the container ended, but the judge's own clock cannot show that it ran less than the pinned `timeout`": containerOutcome(
+    { deadline: false, state: ran(0), ranAtMostMs: 5_000 },
+    { ...LIMITS, pinned: { seconds: 5 } },
+  ),
   "`--sandbox docker`: Docker reports an error for the container, or the container never started": docker(ran(0, { started: false })),
   "`--sandbox docker`: `docker container inspect` fails or gives no answer in time": docker(null, { inspect: "timeout" }),
   "`--sandbox none`: the check exits 0": shell(0),
   "`--sandbox none`: the check exits with any other code, or a signal the judge did not send ends it": shell(null, { signal: "SIGKILL" }),
   "Docker or the shell cannot start the check": shell(null, { problem: "ENOENT" }),
-  "the check runs past `--timeout`, so the judge stops it": docker(ran(0), { deadline: true }),
+  "the check runs past `--timeout`, so the judge stops it, and the judge never saw it run a pinned `timeout`": containerOutcome({ deadline: true, state: null, ranAtMostMs: 4_000 }, { ...LIMITS, pinned: { seconds: 5 } }),
   "an engine runs past `--timeout`, or past the MCP tool's own time budget": engineOutcome(ENGINE, { total: 1, passed: 0, stop: stopAt("deadline", 1) }),
   "a case reaches a limit of its own: the host engine's per-call limit, the plain Node per-case limit, or the spec's `steps` or `heap`": engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "a case answers wrongly, throws, answers no primitive, or the module does not load": engineOutcome(ENGINE, { total: 2, passed: 1 }),

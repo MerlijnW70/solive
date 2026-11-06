@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { JudgeRefused } from "./judge-errors.js";
+import { ambiguous, blockFields, readBlocks, specText, strayFence } from "./spec-blocks.js";
 import { deadlineOf, ENGINE_FAULT, EngineStopped, faultOf, type Stop } from "./verdict-model.js";
 import { Wtf8Refused, wtf8Decode, wtf8Encode } from "./wtf8.js";
 
@@ -99,25 +100,15 @@ function drawOf(value: unknown): Draw {
 }
 
 export function casesOf(spec: Uint8Array): Cases {
-  const text = new TextDecoder().decode(spec);
-  const blocks = [...text.matchAll(new RegExp(`^\`\`\`${CASES_FENCE}[ \\t]*\\r?\\n([\\s\\S]*?)^\`\`\`[ \\t]*$`, "gm"))];
+  const read = readBlocks(specText(spec), CASES_FENCE);
+  if (ambiguous(read)) {
+    throw new JudgeRefused(`the spec ${strayFence(CASES_FENCE, read.mentions, read.plain)}; nothing was run or paid`);
+  }
+  const blocks = read.bodies;
   if (blocks.length !== 1) {
     throw new JudgeRefused(casesMissing(blocks.length));
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(blocks[0]?.[1] ?? "");
-  } catch (error) {
-    return refuse(`is not JSON: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return refuse("is not a JSON object");
-  }
-  const fields = parsed as Record<string, unknown>;
-  const unknown = Object.keys(fields).find((key) => !["steps", "heap", "seed", "clock", "cases", "draw"].includes(key));
-  if (unknown !== undefined) {
-    return refuse(`has a field ${JSON.stringify(unknown)} it does not know`);
-  }
+  const fields = blockFields(blocks[0] ?? "", ["steps", "heap", "seed", "clock", "cases", "draw"], refuse);
   const raw = fields["cases"];
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_CASES) {
     return refuse(`must list from 1 to ${MAX_CASES} cases`);

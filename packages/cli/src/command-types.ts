@@ -129,6 +129,7 @@ export type Command =
       verdict: string | undefined;
       check: string | undefined;
       sandbox: Sandbox;
+      given?: readonly string[] | undefined;
       feePayer?: string | undefined;
       encryptionKeypairs?: string[] | undefined;
       confirmUrl?: string | undefined;

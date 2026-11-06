@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
 import { type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
 import { decodeParams } from "@intent-engine/core/internal";
@@ -13,10 +13,13 @@ import { memberVote, type VoteFile } from "./committee-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
 import { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
-import { combine, containerOutcome, decided, engineOutcome, type Ruling, shellOutcome } from "./verdict-model.js";
-import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
-import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
-import { containerArgs, containerName, dockerEnv, GPU_SHARED, NO_ISOLATION, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
+import { combine, decided, engineOutcome, type Ruling } from "./verdict-model.js";
+import { type Artifact, type CheckFiles, readArtifact } from "./artifact.js";
+import { type Check, type HeldSignals, holdSignals } from "./check-process.js";
+import { dockerEnv, GPU_SHARED, NO_ISOLATION, sandboxReady } from "./sandbox.js";
+import { type PinnedRun, RUN_FENCE, runProblem } from "./judge-run.js";
+import { checkFilesOf, type Plan, runPlan, runPlanned } from "./run-plan.js";
+import { fenceMentions, specText } from "./spec-blocks.js";
 import { HOST_ENGINE, type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, NODE_ENGINE, type NodeJudged } from "./node-judge.js";
 import { checkInvited } from "./invites.js";
@@ -60,6 +63,7 @@ export type Verdict = {
   command: string;
   sandbox: "docker" | "viper" | "none";
   image?: string;
+  judgeRun?: PinnedRun;
   warnings?: string[];
   engine?: { wasmSha256: string; commit: string };
   cases?: CasesJudged;
@@ -86,6 +90,11 @@ export type Verdict = {
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+async function mentionsRun(spec: string): Promise<boolean> {
+  const bytes = await readFile(resolve(spec)).catch(() => Buffer.alloc(0));
+  return fenceMentions(specText(bytes), RUN_FENCE) > 0 || runProblem(bytes) !== undefined;
+}
 
 export const sealedOnDevice = (path: string, intent: Address): string =>
   `a judge on the Ledger ${path} cannot open the salts sealed in the announcements for intent ${intent}, so it cannot know which announcement came first; pass --encryption-keypair with the encryption key file whose public key its profile publishes, or judge with a key file; nothing was run or paid`;
@@ -182,7 +191,9 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (command.verdict !== undefined) {
     await rm(command.verdict, { force: true });
   }
-  await sandboxReady(command.sandbox, dockerEnv(process.env));
+  if (!(await mentionsRun(command.spec))) {
+    await sandboxReady(command.sandbox, dockerEnv(process.env));
+  }
   const held = await messageSigner(runtime, command.keypair);
   const signer = isDevice(held) ? messageOnly(held) : held;
   const feePayer = command.feePayer === undefined ? undefined : await runtime.loadSigner(command.feePayer);
@@ -203,14 +214,18 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
   }
   const specBytes = await pinnedSpec(command.spec, address, specHash);
-  const viper = command.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
+  const plan = runPlan(specBytes, command);
+  const viper = plan.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
   if (viper !== undefined && !read.single) {
     throw new JudgeRefused(`--sandbox viper judges one module file, and --artifact ${command.artifact} is a directory; nothing was run or paid`);
   }
   const sha256 = read.sha256;
-  const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
+  const check = await checkFilesOf(command.check, plan);
+  if (plan.pinned !== undefined) {
+    await sandboxReady(plan.sandbox, dockerEnv(process.env));
+  }
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
   if (isSdkError(opening, "first-opening-refused")) {
@@ -241,6 +256,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
       attestor,
       committee,
       specHash,
+      plan,
       sha256,
       salt: opening.salt,
       announcement: opening.announcement,
@@ -321,6 +337,7 @@ type Judged = {
   attestor: Address;
   committee: CommitteeView | null;
   specHash: string;
+  plan: Plan;
   sha256: string;
   salt: string;
   announcement: Address;
@@ -343,9 +360,9 @@ async function checkAndSettle(
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped }: Judged,
+  { address, attestor, committee, specHash, plan, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped }: Judged,
 ): Promise<Verdict> {
-  const { sandbox } = command;
+  const { sandbox } = plan;
   let check: Check = { exitCode: null, timedOut: false };
   let cases: CasesJudged | undefined;
   let drawn: DrawJudged | undefined;
@@ -354,12 +371,11 @@ async function checkAndSettle(
   let cleanup: string | undefined;
   let ruled: Ruling | undefined;
   const plainNode = sandbox.kind === "viper" ? sandbox.node : undefined;
-  const limits = { seconds: command.timeout, memory: sandbox.kind === "docker" ? sandbox.memory : "allowed" };
   if (viper !== undefined) {
     const [entry] = read.entries;
     const module = entry?.bytes ?? new Uint8Array();
     const run = runOf(viper.cases);
-    const deadline = Date.now() + command.timeout * 1000;
+    const deadline = Date.now() + plan.timeout * 1000;
     const left = () => Math.max(0, deadline - Date.now()) / 1000;
     if (signals.caught() === undefined && beacon !== undefined) {
       drawn = await judgeDraw(viper.wasm, module, viper.cases, beacon, left, run);
@@ -383,27 +399,7 @@ async function checkAndSettle(
     ];
     ruled = combine(engines);
   } else {
-    const copy = await copyOf(read, specBytes, checkFiles, sandbox.kind === "docker");
-    const run = command.run ?? "";
-    const unstarted = (error: unknown) => ({ exitCode: null, timedOut: false, deadline: false, state: null, problem: reasonOf(error) });
-    try {
-      if (signals.caught() === undefined) {
-        if (sandbox.kind === "docker") {
-          await shareable(copy.root);
-          const ran = await runContainer(containerArgs(sandbox, copy, sha256, run), containerName(), dockerEnv(process.env), command.timeout).catch(unstarted);
-          check = ran;
-          ruled = containerOutcome(ran, limits);
-        } else {
-          const ran = await runCheck(run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root }).catch(unstarted);
-          process.stderr.write(`${NO_SANDBOX}
-`);
-          check = ran;
-          ruled = shellOutcome({ ...ran, deadline: ran.timedOut }, limits);
-        }
-      }
-    } finally {
-      cleanup = await removeCopy(copy.root);
-    }
+    ({ check, ruled, cleanup } = await runPlanned(plan, read, specBytes, checkFiles, sha256, signals));
   }
   const caught = signals.caught();
   const passed = decided(combine([...(caught === undefined ? [] : [{ outcome: "interrupted", signal: caught } as const]), ...(ruled === undefined ? [] : [ruled])])).outcome === "pass";
@@ -446,9 +442,10 @@ async function checkAndSettle(
     intent: address,
     specHash,
     artifactSha256: sha256,
-    command: command.run ?? "viper",
+    command: plan.run ?? "viper",
     sandbox: sandbox.kind,
     ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
+    ...(plan.pinned === undefined ? {} : { judgeRun: plan.pinned }),
     ...(sandbox.kind === "none" ? { warnings: [NO_ISOLATION] } : sandbox.kind === "docker" && sandbox.gpu ? { warnings: [GPU_SHARED] } : {}),
     ...(cases !== undefined ? { engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT }, cases } : {}),
     ...(drawn !== undefined ? { drawn } : {}),

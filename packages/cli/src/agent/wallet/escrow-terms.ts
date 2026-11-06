@@ -10,14 +10,24 @@ import { tool } from "../names.js";
 import { flag, InvalidInput, integer, optional, text } from "../schema.js";
 import type { ClaimTerms, SpecRead } from "./escrow-claims.js";
 import { raw } from "./guard.js";
-import { openedSpec, SEALED_UNCHECKED } from "./seal.js";
+import { malformedRun, openedSpec, SEALED_UNCHECKED } from "./seal.js";
+import { runProblem } from "../../judge-run.js";
+
+export { malformedRun, refuseMalformedText } from "./seal.js";
 
 export const SPEC_TOO_LARGE = `spec_url ${tooLarge(MAX_SPEC_BYTES)}, the most ${tool("get_spec")} reads, so workers cannot read the job; shorten the spec`;
 
 export const notSealedTo = (missing: readonly Address[], committee: boolean): string =>
   `spec_url holds a spec not sealed to the ${committee ? "committee members" : "attestor"} ${missing.join(", ")}, so the work cannot be judged; seal it again to ${committee ? "every member" : "the attestor"}`;
 
-type Preflight = { lines: string[]; readers: string[]; wrong?: true };
+type Preflight = { lines: string[]; readers: string[]; wrong?: true; malformed?: string };
+
+export function refuseMalformedRun(checked: Preflight | undefined, path: string, label = ""): void {
+  if (checked?.malformed !== undefined) {
+    throw new InvalidInput([{ path, message: `${label}${malformedRun(checked.malformed)}` }]);
+  }
+}
+
 
 export const WRONG_SPEC_SEND = "a send refuses this spec unless allow_wrong_spec is true";
 
@@ -58,6 +68,11 @@ export async function specPreflight(ctx: AgentContext, found: SpecRead, specHash
     return { lines: [...lines, SEALED_UNCHECKED], readers };
   }
   const sha256 = createHash("sha256").update(opened).digest("hex");
+  const malformed = runProblem(opened);
+  if (malformed !== undefined) {
+    lines.push(malformedRun(malformed));
+    return { lines, readers, malformed };
+  }
   if (sha256 !== specHash.toLowerCase()) {
     lines.push(`spec_url ${opened === found.bytes ? "hashes" : "opens to a spec that hashes"} to ${sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`);
     return { lines, readers, wrong: true };

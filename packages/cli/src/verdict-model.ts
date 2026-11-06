@@ -10,7 +10,7 @@ export const exitOfVerdict = (verdict: unknown): number => (verdict === "pass" ?
 
 export type ContainerState = { started: boolean; exitCode: number; oomKilled: boolean; error: string };
 
-export type ContainerFacts = { interrupted?: InterruptSignal; deadline: boolean; state: ContainerState | null; problem?: string; inspect?: string };
+export type ContainerFacts = { interrupted?: InterruptSignal; deadline: boolean; state: ContainerState | null; problem?: string; inspect?: string; overran?: boolean; ranAtMostMs?: number };
 
 export type ShellFacts = { interrupted?: InterruptSignal; deadline: boolean; exitCode: number | null; signal?: string; problem?: string };
 
@@ -18,7 +18,9 @@ export type Stop = { cause: "deadline" | "fault"; reason: string; unfinished: nu
 
 export type Tally = { total: number; passed: number; faults?: number; stop?: Stop };
 
-export type Limits = { seconds: number; memory: string };
+export type Pins = { seconds: number; memory?: string | undefined };
+
+export type Limits = { seconds: number; memory: string; pinned?: Pins | undefined };
 
 export const ENGINE_FAULT = "engine";
 
@@ -61,9 +63,20 @@ export const nothingJudged = (engine: string): string => `${engine} judged no ca
 
 export const NO_RULING = "no engine or check ran";
 
+export const ranPastPin = (seconds: number): string => `the check was still running at the ${seconds} second timeout the spec's judge-run block pins`;
+
+export const oomPinned = (memory: string): string => `the check's container was killed for using all of the ${memory} memory the spec's judge-run block pins`;
+
+export const RUN_UNTIMED =
+  "the check's container ended, but on the judge's own clock it may have run for the spec's pinned timeout, so whether it kept to it is unknown";
+
 export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling {
   if (facts.interrupted !== undefined) {
     return { outcome: "interrupted", signal: facts.interrupted };
+  }
+  const pinned = limits.pinned;
+  if (pinned !== undefined && facts.overran === true) {
+    return fail(ranPastPin(pinned.seconds));
   }
   if (facts.deadline) {
     return infra(timedOutInfra(limits.seconds));
@@ -82,7 +95,10 @@ export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling 
     return infra(NEVER_STARTED);
   }
   if (state.oomKilled) {
-    return infra(oomInfra(limits.memory));
+    return pinned?.memory === undefined ? infra(oomInfra(limits.memory)) : fail(oomPinned(pinned.memory));
+  }
+  if (pinned !== undefined && !(facts.ranAtMostMs !== undefined && facts.ranAtMostMs < pinned.seconds * 1000)) {
+    return infra(RUN_UNTIMED);
   }
   return state.exitCode === 0 ? PASS : fail(exitedWith(state.exitCode));
 }

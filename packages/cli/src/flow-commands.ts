@@ -12,7 +12,8 @@ import type { Runtime } from "./runtime.js";
 import type { AgentContext } from "./agent/actions.js";
 import { createThenUpload } from "./agent/create.js";
 import { readerLines, specTextProblem, uploadFailed, uploadLine, uploadPlan, uploadsAfterSend, withUploadHint } from "./agent/spec-upload.js";
-import { specPreflight } from "./agent/wallet/escrow-terms.js";
+import { malformedRun, specPreflight } from "./agent/wallet/escrow-terms.js";
+import { runProblem } from "./judge-run.js";
 import { FETCH_CAPS, fetchBytes } from "./delivery-fetch.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { getMandate, loadMandate, prepareAgentCreate, prepareMandate, prepareRevokeMandate } from "./agent/mandate.js";
@@ -74,12 +75,19 @@ async function createWithUpload(runtime: Runtime, url: string, ctx: AgentContext
   if (wrong !== undefined) {
     throw new FlowRefused(`--spec-file ${specFile} ${wrong}`);
   }
+  const unrunnable = specText === undefined ? undefined : runProblem(new TextEncoder().encode(specText));
+  if (unrunnable !== undefined) {
+    throw new FlowRefused(`--spec-file ${specFile}: ${malformedRun(unrunnable)}`);
+  }
   const specUrl = terms["spec_url"] as string | undefined;
   const found = specUrl === undefined ? undefined : await fetchBytes(runtime.specFetch, ctx.transport, specUrl, runtime.lookup, FETCH_CAPS.tools);
   const reach: AgentContext = { ...ctx, url, fetch: runtime.specFetch, lookup: runtime.lookup };
   const plan = await uploadPlan(reach, { specHash, specText, found, publish });
   const attestor = (terms["order"] as { attestor?: Address } | undefined)?.attestor;
   const checked = found === undefined || attestor === undefined ? undefined : await specPreflight(reach, found, specHash, attestor, openers);
+  if (checked?.malformed !== undefined) {
+    throw new FlowRefused(`--spec-url ${specUrl ?? ""}: ${malformedRun(checked.malformed)}`);
+  }
   if (yes && checked?.wrong === true && allowed !== true) {
     throw new FlowRefused(WRONG_SPEC_REFUSED(checked.lines.at(-1) ?? ""));
   }
