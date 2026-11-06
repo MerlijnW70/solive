@@ -28,6 +28,7 @@ export type FaucetRpc = Rpc<SolanaRpcApi>;
 
 export type Clock = {
   readonly now: () => number;
+  readonly elapsed: () => number;
   readonly sleep: (ms: number) => Promise<void>;
   readonly signal: (ms: number) => AbortSignal;
 };
@@ -138,7 +139,7 @@ export type Confirmation = "confirmed" | "failed" | "timeout";
 export async function confirm(rpc: FaucetRpc, signature: Signature, clock: Clock, startedAt: number): Promise<Confirmation> {
   const deadline = startedAt + CONFIRM_TIMEOUT_MS;
   for (;;) {
-    const left = deadline - clock.now();
+    const left = deadline - clock.elapsed();
     if (left <= 0) return "timeout";
     try {
       const { value } = await rpc.getSignatureStatuses([signature]).send({ abortSignal: clock.signal(left) });
@@ -148,9 +149,9 @@ export async function confirm(rpc: FaucetRpc, signature: Signature, clock: Clock
         if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") return "confirmed";
       }
     } catch {
-      if (clock.now() >= deadline) return "timeout";
+      if (clock.elapsed() >= deadline) return "timeout";
     }
-    const wait = Math.min(CONFIRM_POLL_MS, deadline - clock.now());
+    const wait = Math.min(CONFIRM_POLL_MS, deadline - clock.elapsed());
     if (wait <= 0) return "timeout";
     await clock.sleep(wait);
   }

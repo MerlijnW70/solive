@@ -134,9 +134,9 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
   });
 
   it("kills the docker client itself when docker kill does not end it", async () => {
-    const started = Date.now();
+    const started = performance.now();
     expect(await runContainer(["image"], "stuck-1", envFor({ FAKE_RUN: "hang" }), 0.2)).toStrictEqual({ exitCode: null, timedOut: true, deadline: true, state: null });
-    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(performance.now() - started).toBeLessThan(10_000);
     expect(await calls()).toEqual(["run --name stuck-1 image", "kill stuck-1", "rm -f -v stuck-1", "rm -f -v stuck-1", "container inspect stuck-1"]);
   }, 30_000);
 
@@ -160,9 +160,9 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
   });
 
   it("treats an inspect that fails, hangs, answers unreadably or finds the container still running as an infrastructure error", async () => {
-    const started = Date.now();
+    const started = performance.now();
     const hung = await runContainer(["image"], "hang-1", envFor({ FAKE_RUN: "exit", FAKE_INSPECT_HANG: "1" }), 30, 0.3);
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(performance.now() - started).toBeLessThan(5_000);
     expect(hung).toStrictEqual({ exitCode: null, timedOut: false, deadline: false, state: null, inspect: dockerTimedOut(0.3) });
     expect(containerOutcome(hung, limits)).toEqual({ outcome: "infra", reason: inspectFailed(dockerTimedOut(0.3)) });
     for (const state of ["not json", "[1]", '{"Running":true,"ExitCode":0,"OOMKilled":false,"Error":"","StartedAt":"2026-01-01T00:00:00Z"}', '{"Running":false,"OOMKilled":false,"Error":""}']) {
@@ -178,9 +178,9 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     await expect(sandboxReady(box, envFor({ FAKE_VERSION: "fail" }), limitsOf)).rejects.toThrow(new JudgeInfraError(dockerMissing("Cannot connect to the Docker daemon")));
     await expect(sandboxReady(box, envFor({ FAKE_IMAGE: "0" }), limitsOf)).resolves.toBeUndefined();
     await expect(sandboxReady(box, envFor({ FAKE_PULL: "fail" }), limitsOf)).rejects.toBeInstanceOf(JudgeInfraError);
-    const started = Date.now();
+    const started = performance.now();
     await expect(sandboxReady(box, envFor({ FAKE_PULL: "hang" }), limitsOf)).rejects.toThrow(new JudgeInfraError(imageMissing(SANDBOX_IMAGE, dockerTimedOut(0.3))));
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 
   it("reports a container the kernel killed for memory as out of memory", async () => {

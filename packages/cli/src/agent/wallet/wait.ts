@@ -10,6 +10,7 @@ import { WAIT_DEFAULT, WAIT_MAX, type Clock, access, signerOf, nameOf } from "./
 import { type Pair, historyIn } from "./fills.js";
 import { mergedPayouts, payoutItems, payoutView } from "./payout-view.js";
 import { HISTORY_PAGES, releaseLookup, releasedMint, createdMint } from "./releases.js";
+import { elapsedOf } from "../../monotonic.js";
 
 export const WAIT_STATUS = ["open", "filling", "filled", "cancelled", "expired", "closed"] as const;
 
@@ -25,7 +26,7 @@ export const stillWaiting = (status: string) =>
 export const NO_CLOCK = "this server has no clock to wait with; call again without wait";
 
 export async function poll(clock: Clock, within: number, done: () => Promise<boolean>): Promise<number> {
-  const deadline = clock.now() + BigInt(within);
+  const deadline = elapsedOf(clock) + within * 1000;
   const reads = { answered: false, limited: [] as unknown[] };
   const attempt = async (): Promise<boolean> => {
     try {
@@ -41,7 +42,7 @@ export async function poll(clock: Clock, within: number, done: () => Promise<boo
     }
   };
   let waited = 0;
-  while (!(await attempt()) && waited < within && clock.now() < deadline && (await clock.sleep(1))) {
+  while (!(await attempt()) && waited < within && elapsedOf(clock) < deadline && (await clock.sleep(1))) {
     waited += 1;
   }
   const [limited] = reads.limited.slice(-1);

@@ -27,6 +27,7 @@ export type MirrorDeps = {
   readonly store: SpecStore;
   readonly callers: CallerLimit;
   readonly now: () => number;
+  readonly elapsed: () => number;
   readonly deadlineMs: number;
   readonly log: (line: string) => void;
 };
@@ -59,7 +60,7 @@ type Route = { readonly kind: "sha256" | "ipfs"; readonly key: string; readonly 
 function routeOf(url: string): Route | null {
   let parsed: URL;
   try {
-    parsed = new URL(`http://mirror.invalid${url}`);
+    parsed = new URL("http://" + "mirror.invalid" + url);
   } catch {
     return null;
   }
@@ -143,9 +144,9 @@ async function answered(request: MirrorRequest, deps: MirrorDeps): Promise<Mirro
   if (!isRead(request.method) && request.method !== "PUT") return refused(405, REASONS.method, { allow: "GET, HEAD, PUT" });
   if (!HEX.test(route.key)) return refused(400, REASONS.badHash);
   if (isRead(request.method)) return served(route.key, deps);
-  const now = deps.now();
-  deps.callers.forget(now);
-  const retryAfter = deps.callers.retryAfter(request.caller, now);
+  const at = deps.elapsed();
+  deps.callers.forget(at);
+  const retryAfter = deps.callers.retryAfter(request.caller, at);
   if (retryAfter !== null) return refused(429, REASONS.caller, { "retry-after": String(retryAfter) }, { retry_after: retryAfter });
   return stored(route.key, request, deps);
 }

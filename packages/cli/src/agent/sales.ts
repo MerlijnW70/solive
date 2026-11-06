@@ -3,6 +3,7 @@ import { link, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/
 import { basename, dirname, join } from "node:path";
 import type { Address } from "@solana/kit";
 import { AgentRefusal } from "./problems.js";
+import { type Elapsed, monotonic } from "../monotonic.js";
 
 export type Sale = { id: string; mint: Address; at: bigint; amount: bigint };
 
@@ -237,11 +238,11 @@ async function takeOver(lock: string, token: string, linker: Linker): Promise<bo
   }
 }
 
-async function locked<T>(file: string, linker: Linker, waitMs: number, work: () => Promise<T>): Promise<T> {
+async function locked<T>(file: string, linker: Linker, waitMs: number, elapsed: Elapsed, work: () => Promise<T>): Promise<T> {
   const lock = `${file}.lock`;
   const token = randomUUID();
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + waitMs;
+  const deadline = elapsed() + waitMs;
   for (;;) {
     if (await claim(lock, token, linker)) {
       break;
@@ -249,7 +250,7 @@ async function locked<T>(file: string, linker: Linker, waitMs: number, work: () 
     if ((await stale(lock)) && (await takeOver(lock, token, linker))) {
       break;
     }
-    if (Date.now() >= deadline) {
+    if (elapsed() >= deadline) {
       throw new AgentRefusal("WalletBusy", WALLET_BUSY);
     }
     await pause(LOCK_POLL_MS);
@@ -261,13 +262,13 @@ async function locked<T>(file: string, linker: Linker, waitMs: number, work: () 
   }
 }
 
-export function fileSales(locate: (path: string) => string = (path) => path, files: SaleFiles = { rename }, waitMs = LOCK_WAIT_MS): SaleBook {
+export function fileSales(locate: (path: string) => string = (path) => path, files: SaleFiles = { rename }, waitMs = LOCK_WAIT_MS, elapsed: Elapsed = monotonic): SaleBook {
   const linker: Linker = files.link === undefined ? link : files.link.bind(files);
   return {
     read: (path) => readSales(locate(path), path),
     update: (path, change) => {
       const file = locate(path);
-      return locked(file, linker, waitMs, async () => {
+      return locked(file, linker, waitMs, elapsed, async () => {
         const { sales, value } = change(await readSales(file, path));
         await writeSales(file, sales, files);
         return value;

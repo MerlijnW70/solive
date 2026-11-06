@@ -35,6 +35,7 @@ import type { Runtime } from "./runtime.js";
 import { priceOf, withPriority } from "./compute.js";
 import { QUOTE_TTL } from "./args.js";
 import { tally } from "./solve-stats.js";
+import { elapsedOf } from "./monotonic.js";
 
 const SOLVER_ROUTE_ACCOUNTS = 40;
 
@@ -106,15 +107,16 @@ export type WatchTransport = Pick<Transport, "submitWire" | "transactionOf" | "g
 export async function watchSolveWith(
   command: SolveCommand,
   interval: number,
-  runtime: Pick<Runtime, "now" | "intentChanges">,
+  runtime: Pick<Runtime, "now" | "elapsed" | "intentChanges">,
   transport: WatchTransport,
   options: SolverOptions,
   emit: (value: object) => void,
   inFlight: Map<Address, Flight> = new Map(),
 ): Promise<number> {
+  const elapsed = () => elapsedOf(runtime);
   const chain = remembering(options.chain);
-  const held = backoff(interval, () => Number(runtime.now()) * 1_000);
-  const counts = tally(options.pricer, command.quoteTtl ?? QUOTE_TTL, () => Number(runtime.now()) * 1_000);
+  const held = backoff(interval, elapsed);
+  const counts = tally(options.pricer, command.quoteTtl ?? QUOTE_TTL, elapsed);
   const live: SolverOptions = {
     ...options,
     chain,
@@ -135,13 +137,14 @@ export async function watchSolveWith(
   try {
     for (let changed: ProgramAccount[] | null = []; changed !== null; changed = await changes.wait(interval)) {
       const now = runtime.now();
+      const seconds = BigInt(Math.floor(elapsed() / 1_000));
       const began = performance.now();
       let full = false;
       try {
-        full = changed.length === 0 || scannedAt === null || now - scannedAt >= BigInt(interval);
+        full = changed.length === 0 || scannedAt === null || seconds - scannedAt >= BigInt(interval);
         const decoded = full ? await listingOf(chain) : decodedChanges(changed);
         if (full) {
-          scannedAt = now;
+          scannedAt = seconds;
           held.retain(decoded.intents, await chain.now());
         }
         if (decoded.unreadable.length > 0) {
@@ -149,11 +152,11 @@ export async function watchSolveWith(
         }
         const listed = decoded.intents;
         const early = statuses === undefined ? [] : await answered(inFlight, listed, statuses, held);
-        const lost = [...early, ...(await landings(inFlight, now, listed, failedOnChain, held))];
+        const lost = [...early, ...(await landings(inFlight, seconds, listed, failedOnChain, held))];
         releaseHolds(inFlight, listed, full);
         if (full) {
           for (const [intent, flight] of inFlight) {
-            if (flight.until <= now) {
+            if (flight.until <= seconds) {
               inFlight.delete(intent);
             }
           }
@@ -166,7 +169,7 @@ export async function watchSolveWith(
         for (const { intent, signature, holds } of sent) {
           const order = sentFor.get(intent);
           inFlight.set(intent, {
-            until: now + IN_FLIGHT_SECONDS,
+            until: seconds + IN_FLIGHT_SECONDS,
             signature,
             ...(holds === undefined ? {} : { holds }),
             ...(order === undefined ? {} : { intent: order }),
@@ -188,17 +191,17 @@ export async function watchSolveWith(
           emit({ at: now, scan: "full", stats: mark({ orders: listed.length, report, lost: lost.length, ms: Math.round(performance.now() - began) }) });
         }
         for (const [intent, at] of failing) {
-          if (now - at >= REFRESH_AFTER_SECONDS * 10n) {
+          if (seconds - at >= REFRESH_AFTER_SECONDS * 10n) {
             failing.delete(intent);
           }
         }
         const open = await stillOpen(transport, failed.map((f) => f.intent));
         const refresh = open.filter((intent) => {
           const at = failing.get(intent);
-          return at === undefined || now - at >= REFRESH_AFTER_SECONDS;
+          return at === undefined || seconds - at >= REFRESH_AFTER_SECONDS;
         });
         if (refresh.length > 0) {
-          refresh.forEach((intent) => failing.set(intent, now));
+          refresh.forEach((intent) => failing.set(intent, seconds));
           chain.forget();
         }
       } catch (error) {

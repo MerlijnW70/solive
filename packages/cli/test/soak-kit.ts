@@ -131,11 +131,11 @@ export async function soakSetup() {
     report.ops[op][result] += 1;
   };
   const timed = async <T>(work: () => Promise<T>) => {
-    const started = Date.now();
+    const started = performance.now();
     try {
       return await work();
     } finally {
-      report.latencyMs.push(Date.now() - started);
+      report.latencyMs.push(performance.now() - started);
     }
   };
   const send = (signer: KeyPairSigner, ixs: Instruction[]) => timed(() => transport.send(ixs, signer));

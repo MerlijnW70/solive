@@ -242,6 +242,19 @@ describe("setup --faucet", () => {
     expect(ran.json()).toMatchObject({ sol: "0", faucet_request: ISSUE, next: faucetPending(ISSUE) });
   });
 
+  it("stops waiting once the bound passes by elapsed time, whatever the wall clock does meanwhile", async () => {
+    h.rounds = 10_000;
+    for (let i = 0; i < 1_000; i++) {
+      h.onSleep.push(() => {
+        h.clock += BigInt(FAUCET_POLL_SECONDS);
+        h.wall += i % 2 === 0 ? -86_400n : 172_800n;
+      });
+    }
+    const ran = await run(["setup", "--faucet"], [SIGNED_IN, FILED]);
+    expect(ran.code).toBe(EXIT_OK);
+    expect(h.sleeps).toHaveLength((FAUCET_WAIT_MINUTES * 60) / FAUCET_POLL_SECONDS);
+  });
+
   it("without the GitHub CLI prints the link and says the request needs a browser and a GitHub account", async () => {
     const ran = await run(["setup", "--faucet"], [null]);
     const address = ran.json()["address"] as Address;

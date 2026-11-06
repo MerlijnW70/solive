@@ -86,9 +86,9 @@ describe("the notice of a newer Solive", () => {
     const base: UpdateCheck = { files, env: {}, fetch: async () => ({ ok: true, json: async () => ({ version: LATEST }) }), now: () => 1_700_000_000n, timeoutMs: 20 };
     expect(await newerVersion({ ...base, fetch: async () => Promise.reject(new Error("offline")) })).toBeUndefined();
     expect(await newerVersion({ ...base, fetch: async () => ({ ok: true, json: () => new Promise<never>(() => undefined) }) })).toBeUndefined();
-    const began = Date.now();
+    const began = performance.now();
     expect(await newerVersion({ ...base, fetch: () => new Promise<never>(() => undefined) })).toBeUndefined();
-    expect(Date.now() - began).toBeLessThan(1_000);
+    expect(performance.now() - began).toBeLessThan(1_000);
     expect(await newerVersion(base)).toBe(LATEST);
   });
 

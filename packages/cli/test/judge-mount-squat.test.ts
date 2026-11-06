@@ -16,7 +16,7 @@ const SQUATTER = `const fs = require("node:fs");
 const net = require("node:net");
 const seen = new Set();
 const refused = new Set();
-const end = Date.now() + Number(process.argv[1]);
+const end = performance.now() + Number(process.argv[1]);
 const loop = () => {
   for (const line of fs.readFileSync("/proc/net/unix", "utf8").split("\\n")) {
     const name = line.match(/@(\\S*judge-mounts\\S*)/)?.[1];
@@ -42,7 +42,7 @@ const loop = () => {
       }
     }
   }
-  if (Date.now() < end) {
+  if (performance.now() < end) {
     setTimeout(loop, 10);
   } else {
     process.stdout.write(JSON.stringify({ seen: [...seen], refused: [...refused] }));
@@ -90,8 +90,8 @@ describe("judge mount slots against another local user", () => {
         over = true;
       });
       const slots: string[] = [];
-      const deadline = Date.now() + SQUAT_MS * 2;
-      while (!over && Date.now() < deadline) {
+      const deadline = performance.now() + SQUAT_MS * 2;
+      while (!over && performance.now() < deadline) {
         const root = await judgeRoot("judge-artifact-", true);
         slots.push(basename(root));
         await new Promise((wake) => setTimeout(wake, HOLD_MS));

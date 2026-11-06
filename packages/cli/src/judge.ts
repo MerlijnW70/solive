@@ -31,6 +31,7 @@ import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { isResaved, RESAVED, resavedFrom } from "./resaved.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
+import { secondsLeft } from "./monotonic.js";
 
 export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
@@ -379,8 +380,7 @@ async function checkAndSettle(
     const [entry] = read.entries;
     const module = entry?.bytes ?? new Uint8Array();
     const run = runOf(viper.cases);
-    const deadline = Date.now() + plan.timeout * 1000;
-    const left = () => Math.max(0, deadline - Date.now()) / 1000;
+    const left = secondsLeft(plan.timeout);
     if (signals.caught() === undefined && beacon !== undefined) {
       drawn = await judgeDraw(viper.wasm, module, viper.cases, beacon, left, run);
     }

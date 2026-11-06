@@ -121,7 +121,8 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       return h.sleeps.length < h.rounds;
     },
     env: h.env,
-    now: () => NOW + 1_000n + h.clock,
+    now: () => NOW + 1_000n + h.clock + h.wall,
+    elapsed: () => Number(NOW + 1_000n + h.clock) * 1_000,
     fetch: fakeFetch,
     ...(instant.fetch === undefined ? {} : { faucetFetch: instant.fetch }),
     entropy: () => 3,
@@ -182,6 +183,7 @@ export function resetHarness(): void {
   h.scans = 0;
   h.dropSubmits = false;
   h.clock = 0n;
+  h.wall = 0n;
   h.genesisReads = 0;
   h.failScans = 0;
   h.closed = 0;

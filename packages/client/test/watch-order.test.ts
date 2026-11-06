@@ -48,9 +48,9 @@ const note = (address: Address, data: Uint8Array, slot?: bigint) => ({
 });
 
 const until = async (check: () => boolean, ms = 2_500) => {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   while (!check()) {
-    if (Date.now() > deadline) {
+    if (performance.now() > deadline) {
       throw new Error("condition never held");
     }
     await new Promise((resolve) => setTimeout(resolve, 5));

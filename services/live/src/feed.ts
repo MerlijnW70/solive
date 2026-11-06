@@ -21,6 +21,7 @@ export type FeedDeps = {
   readonly probe: Probe;
   readonly limits: Limits;
   readonly now: () => number;
+  readonly elapsed: () => number;
   readonly log: (line: string) => void;
 };
 
@@ -143,15 +144,16 @@ export class LiveFeed {
     const { store, config, limits, log } = this.deps;
     const state = await store.load();
     const started = this.deps.now();
+    const checking = this.deps.elapsed();
     historyOf(state, started);
-    if (this.checkedAt !== null && started - this.checkedAt < limits.maxAgeSecs * 1000) {
+    if (this.checkedAt !== null && checking - this.checkedAt < limits.maxAgeSecs * 1000) {
       return render(state, config.house, started);
     }
     if (state.retry_at !== null && started < state.retry_at) {
       log(JSON.stringify({ cluster: CLUSTER, refresh: "waiting", retry_in_secs: Math.ceil((state.retry_at - started) / 1000) }));
       return render(state, config.house, started);
     }
-    this.checkedAt = started;
+    this.checkedAt = checking;
     const deadline = AbortSignal.timeout(limits.refreshBudgetMs);
     const next = structuredClone(state);
     try {

@@ -4,6 +4,7 @@ import { type Transport } from "@intent-engine/client";
 import { rentExemptFor, type RentSysvar, rentSysvar, unmemoized } from "@intent-engine/client/internal";
 import { checkedRent } from "@intent-engine/solver";
 import { AgentRefusal } from "./problems.js";
+import { type Elapsed, monotonic } from "../monotonic.js";
 
 export { MAX_RENT_PER_BYTE, MIN_RENT_PER_BYTE, UnsupportedRent, unsupportedRent, unsupportedThreshold } from "@intent-engine/solver";
 
@@ -52,10 +53,10 @@ export const RENT_TTL_MS = 60_000;
 
 const rentRates = new WeakMap<Transport, { at: number; pending: Promise<RentSysvar> }>();
 
-export function rentRate(transport: Transport): Promise<RentSysvar> {
+export function rentRate(transport: Transport, elapsed: Elapsed = monotonic): Promise<RentSysvar> {
   const source = unmemoized(transport);
   const known = rentRates.get(source);
-  const now = Date.now();
+  const now = elapsed();
   if (known !== undefined && now - known.at < RENT_TTL_MS) {
     return known.pending;
   }

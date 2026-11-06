@@ -23,6 +23,7 @@ import { sanitized } from "../../untrusted-text.js";
 import { RUN_FENCE } from "../../judge-run.js";
 import { fenceMentions } from "../../spec-blocks.js";
 import { keptReceipt } from "../../judge-receipt.js";
+import { secondsLeft } from "../../monotonic.js";
 
 export const ARTIFACT_PATH_LIMIT = 200;
 
@@ -227,8 +228,7 @@ export const walletJudgeWork = define({
     const module = new TextEncoder().encode(work.untrusted_text);
     const wasm = await pinnedWasm().catch(notJudged);
     const run = runOf(cases);
-    const deadline = Date.now() + JUDGE_SECONDS * 1000;
-    const left = () => Math.max(0, deadline - Date.now()) / 1000;
+    const left = secondsLeft(JUDGE_SECONDS);
     const viper = await judgeViper(wasm, module, cases, left(), run).catch(notJudged);
     const host = await judgeHost(module, cases, left(), run.seed).catch(notJudged);
     const ruled = combine([engineOutcome("the viper judge", viper), engineOutcome(HOST_ENGINE, host)]);

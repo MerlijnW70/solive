@@ -125,12 +125,12 @@ export class MemoryStore implements SpecStore {
   };
 }
 
-export type Harness = { node: FakeNode; store: MemoryStore; deps: MirrorDeps; clock: { at: number } };
+export type Harness = { node: FakeNode; store: MemoryStore; deps: MirrorDeps; clock: { at: number; wall: number } };
 
 export function harness(callers: CallerLimit = new CallerLimit()): Harness {
   const node = new FakeNode();
-  const clock = { at: Date.UTC(2026, 10, 2, 12) };
-  const store = new MemoryStore(() => clock.at);
+  const clock = { at: Date.UTC(2026, 10, 2, 12), wall: 0 };
+  const store = new MemoryStore(() => clock.at + clock.wall);
   return {
     node,
     store,
@@ -139,7 +139,8 @@ export function harness(callers: CallerLimit = new CallerLimit()): Harness {
       rpc: () => createSolanaRpcFromTransport(node.transport),
       store,
       callers,
-      now: () => clock.at,
+      now: () => clock.at + clock.wall,
+      elapsed: () => clock.at,
       deadlineMs: 5_000,
       log: () => undefined,
     },
@@ -153,7 +154,7 @@ export const send = (deps: MirrorDeps, method: string, url: string, body: string
 
 export const errorOf = (response: MirrorResponse): string => (JSON.parse(new TextDecoder().decode(response.body)) as { error: string }).error;
 
-export const sweepDeps = (h: Harness): SweepDeps => ({ rpc: h.deps.rpc, store: h.store, now: h.deps.now });
+export const sweepDeps = (h: Harness): SweepDeps => ({ rpc: h.deps.rpc, store: h.store, now: h.deps.now, elapsed: h.deps.elapsed });
 
 export async function stored(h: Harness, text: string, patch: Partial<Intent> = {}): Promise<string> {
   const hex = sha(text);

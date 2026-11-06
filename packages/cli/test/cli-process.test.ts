@@ -139,11 +139,11 @@ describe("process plumbing", () => {
     const silent = createServer((socket) => sockets.push(socket));
     await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
     const port = (silent.address() as AddressInfo).port;
-    const started = Date.now();
+    const started = performance.now();
     const target = new URL("http://127.0.0.1:1/quote");
     target.port = String(port);
     await expect(nodeRuntime(Date.now, process, 200).fetch(target.href)).rejects.toMatchObject({ name: "TimeoutError" });
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(performance.now() - started).toBeLessThan(5_000);
     for (const socket of sockets) {
       socket.destroy();
     }

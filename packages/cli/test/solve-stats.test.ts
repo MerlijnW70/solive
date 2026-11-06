@@ -208,6 +208,7 @@ async function watched(m: Market, flags: string[], rounds: (ProgramAccount[] | n
     3,
     {
       now: () => NOW,
+      elapsed: () => Number(NOW) * 1_000,
       intentChanges: () => ({ wait: async () => waits.shift() ?? null, close: () => undefined }),
     },
     m.transport,

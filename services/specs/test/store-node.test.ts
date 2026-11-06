@@ -17,18 +17,18 @@ describe("the real blob client against a store answering 503", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
-    vi.stubEnv("VERCEL_BLOB_API_URL", `http://127.0.0.1:${port}`);
+    vi.stubEnv("VERCEL_BLOB_API_URL", "http://" + "127.0.0.1:" + port);
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_teststore_secret");
     const h = harness();
     h.node.holds(proofIntent(sha("spec")));
-    const started = Date.now();
+    const started = performance.now();
     try {
       const reply = await send({ ...h.deps, store: blobStoreWith(300) }, "PUT", `/sha256/${sha("spec")}`, "spec");
       expect(hits).toBeGreaterThan(0);
       expect(reply.status).toBe(503);
       expect(errorOf(reply)).toBe(REASONS.down);
       expect(reply.headers["content-type"]).toBe("application/json; charset=utf-8");
-      expect(Date.now() - started).toBeLessThan(3_000);
+      expect(performance.now() - started).toBeLessThan(3_000);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

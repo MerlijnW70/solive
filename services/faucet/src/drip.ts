@@ -73,7 +73,7 @@ async function ready(deps: DripDeps, recipient: Address): Promise<Ready | DripRe
     const earlier = await earlierDrip(rpc, recipient, signer.address, Math.floor(deps.clock.now() / 1000));
     if (earlier.kind !== "none") {
       const retryAfter = earlier.kind === "recent" ? earlier.retryAfter : DRIP_WINDOW_SECS;
-      deps.callers.remember(recipient, earlier.kind, deps.clock.now() + retryAfter * 1000, deps.clock.now());
+      deps.callers.remember(recipient, earlier.kind, deps.clock.elapsed() + retryAfter * 1000, deps.clock.elapsed());
       return limited(REASONS[earlier.kind], retryAfter);
     }
     const day = await dailyCount(rpc, signer, Math.floor(deps.clock.now() / 1000));
@@ -88,7 +88,7 @@ async function ready(deps: DripDeps, recipient: Address): Promise<Ready | DripRe
 async function fund(deps: DripDeps, recipient: Address): Promise<Outcome> {
   const checked = await ready(deps, recipient);
   if ("status" in checked) return { response: checked, attempted: false };
-  const slot = deps.callers.reserveSend(deps.clock.now());
+  const slot = deps.callers.reserveSend(deps.clock.elapsed());
   if (!slot.ok) return { response: limited(REASONS.instance, slot.retryAfter), attempted: false };
   const outcome = await send(deps, checked, recipient);
   if (!outcome.attempted) slot.release();
@@ -96,7 +96,7 @@ async function fund(deps: DripDeps, recipient: Address): Promise<Outcome> {
 }
 
 async function send(deps: DripDeps, { rpc, signer }: Ready, recipient: Address): Promise<Outcome> {
-  const startedAt = deps.clock.now();
+  const startedAt = deps.clock.elapsed();
   let sent;
   try {
     sent = await sendDrip(rpc, signer, recipient, deps.clock);
@@ -135,12 +135,12 @@ async function answer(request: DripRequest, deps: DripDeps): Promise<DripRespons
   if (request.method !== "POST") return error(405, REASONS.method, { allow: "POST" });
   const parsed = parseBody(request.body);
   if (!parsed.ok) return error(400, parsed.error);
-  const now = deps.clock.now();
-  deps.callers.forget(now);
-  const known = deps.callers.recall(parsed.address, now);
+  const at = deps.clock.elapsed();
+  deps.callers.forget(at);
+  const known = deps.callers.recall(parsed.address, at);
   if (known !== undefined) return limited(REASONS[known.reason], known.retryAfter);
   const caller = callerOf(request.headers, request.remote);
-  const reservation = deps.callers.reserve(caller, now);
+  const reservation = deps.callers.reserve(caller, at);
   if (!reservation.ok) return limited(REASONS.caller, reservation.retryAfter);
   const free = deps.callers.hold(parsed.address);
   if (free === undefined) {
@@ -148,14 +148,14 @@ async function answer(request: DripRequest, deps: DripDeps): Promise<DripRespons
     return limited(REASONS.pending, PENDING_RETRY_SECS);
   }
   try {
-    const spent = deps.callers.spend(caller, now);
+    const spent = deps.callers.spend(caller, at);
     if (!spent.ok) {
       reservation.release();
       return limited(REASONS.checks, spent.retryAfter);
     }
     const outcome = await fund(deps, parsed.address);
     if (!outcome.attempted) reservation.release();
-    if (outcome.response.status === 200) deps.callers.remember(parsed.address, "recent", deps.clock.now() + DRIP_WINDOW_SECS * 1000, deps.clock.now());
+    if (outcome.response.status === 200) deps.callers.remember(parsed.address, "recent", deps.clock.elapsed() + DRIP_WINDOW_SECS * 1000, deps.clock.elapsed());
     return outcome.response;
   } finally {
     free();

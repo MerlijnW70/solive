@@ -258,9 +258,9 @@ describe("judge --sandbox viper --plain-node", () => {
     const j = await job(onlyInNode, specOf(four), "loop.mjs");
     const keys = { "judge.json": j.judge };
     const timeout = 8;
-    const started = Date.now();
+    const started = performance.now();
     const slow = await cli(judging(j, "--plain-node", "--timeout", String(timeout), "--yes"), keys);
-    const took = Date.now() - started;
+    const took = performance.now() - started;
     expect(slow.code).toBe(EXIT_FAILED);
     expect(slow.json()).toMatchObject({ verdict: "fail", signature: null, cases: { passed: 4 }, host: { passed: 4 }, node: { total: 4, passed: 0 } });
     const node = slow.json()["node"] as Engine;
@@ -272,10 +272,10 @@ describe("judge --sandbox viper --plain-node", () => {
     const everywhere = "export default () => { for (;;) {} };\n";
     const k = await job(everywhere, specOf(`{"steps": 1000000000, "cases": [{"args": [], "expected": 1}, {"args": [], "expected": 1}, {"args": [], "expected": 1}]}`), "spin.mjs");
     const short = 3;
-    const begun = Date.now();
+    const begun = performance.now();
     const verdictFile = join(k.dir, "verdict.json");
     const stuck = await cli(judging(k, "--plain-node", "--timeout", String(short), "--verdict", verdictFile, "--yes"), { "judge.json": k.judge });
-    const spent = Date.now() - begun;
+    const spent = performance.now() - begun;
     expect([stuck.code, stuck.out]).toEqual([EXIT_RETRY, ""]);
     expect(stuck.err).toContain("infrastructure error, not a verdict: the viper judge did not finish within");
     expect(existsSync(verdictFile)).toBe(false);

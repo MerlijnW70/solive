@@ -154,6 +154,18 @@ describe("wallet_judge_work", () => {
     expect(status(intent)).not.toBe(IntentStatus.Open);
   }, 120_000);
 
+  it("judges within its budget by elapsed time, whatever the wall clock does meanwhile", async () => {
+    const { intent } = await delivered(SPEC, SOLUTION);
+    const real = Date.now.bind(Date);
+    let calls = 0;
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => real() + (++calls % 2 === 0 ? 3_600_000 : -3_600_000));
+    try {
+      expect(await ok(judge, "wallet_judge_work", { intent })).toMatchObject({ verdict: "pass", cases: { total: 13, passed: 13 }, host: { total: 13, passed: 13 } });
+    } finally {
+      wall.mockRestore();
+    }
+  }, 120_000);
+
   it("fails a wrong solution, names its failed cases in both engines and sends nothing", async () => {
     const { intent, nonce } = await delivered(SPEC, WRONG);
     const before = lamportsOf(judgeWallet);

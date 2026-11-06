@@ -101,6 +101,7 @@ type Setup = {
   inventory?: boolean;
   jito?: boolean;
   steps?: bigint[];
+  walls?: bigint[];
   scans: number;
   answer?: (signature: string, sent: Map<string, Order>) => Landing;
   failedLater?: (signature: string) => boolean;
@@ -195,13 +196,16 @@ async function watch(setup: Setup): Promise<Run> {
   const command = parse([...SOLVE, ...flags], {}) as SolveCommand;
   const lines: Record<string, unknown>[] = [];
   const steps = [...(setup.steps ?? [])];
+  const walls = [...(setup.walls ?? [])];
   let now = NOW;
+  let wall = 0n;
   let waits = setup.scans - 1;
   await watchSolveWith(
     command,
     3,
     {
-      now: () => now,
+      now: () => now + wall,
+      elapsed: () => Number(now) * 1_000,
       intentChanges: () => ({
         wait: async () => {
           if (waits === 0) {
@@ -209,6 +213,7 @@ async function watch(setup: Setup): Promise<Run> {
           }
           waits -= 1;
           now += steps.shift() ?? 0n;
+          wall += walls.shift() ?? 0n;
           return [];
         },
         close: () => undefined,
@@ -281,6 +286,16 @@ describe("solve --watch learns whether a sent fill landed", () => {
     expect(run.submits.map((s) => s.signature)).toEqual([testSignature("sig-0-0"), testSignature("sig-0-1")]);
     expect(run.asked).toEqual([[testSignature("sig-0-0")], [testSignature("sig-0-0")]]);
     expect(failures(run)).toEqual([]);
+  });
+
+  it("ends a flight by elapsed time, whatever the wall clock does meanwhile", async () => {
+    const back = await watch({ count: 1, scans: 3, steps: [1n, IN_FLIGHT_SECONDS - 1n], walls: [-86_400n, 172_800n], answer: () => null });
+    expect(back.submits.map((s) => s.signature)).toEqual([testSignature("sig-0-0"), testSignature("sig-0-1")]);
+    expect(back.asked).toEqual([[testSignature("sig-0-0")], [testSignature("sig-0-0")]]);
+    const ahead = await watch({ count: 1, scans: 2, steps: [1n], walls: [IN_FLIGHT_SECONDS * 100n], failedLater: () => true });
+    expect(failures(ahead)).toEqual([]);
+    const behind = await watch({ count: 1, scans: 2, steps: [IN_FLIGHT_SECONDS], walls: [-IN_FLIGHT_SECONDS * 100n], failedLater: () => true });
+    expect(failures(behind)).toEqual([{ intent: behind.orders[0]?.address, error: `${FAILED_ON_CHAIN}: ${testSignature("sig-0-0")}` }]);
   });
 
   it("does not ask about fills sent through --jito", async () => {

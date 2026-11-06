@@ -175,7 +175,7 @@ describe("waiting through rate limiting", () => {
   });
 
   it("keeps the last answer when a later read is rate limited, and refuses only when no read was ever answered", async () => {
-    const clock = { now: () => 0n, sleep: async () => true };
+    const clock = { now: () => 0n, elapsed: () => 0, sleep: async () => true };
     let reads = 0;
     expect(
       await poll(clock, 3, async () => {

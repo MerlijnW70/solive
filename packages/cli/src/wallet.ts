@@ -10,6 +10,7 @@ import { SAVED_CONFIRM_URL } from "./clusters.js";
 import { SOL_DECIMALS } from "./agent/read.js";
 import { redactUrl } from "./render.js";
 import { DEVNET_URL } from "./tokens.js";
+import { elapsedOf } from "./monotonic.js";
 import { askInstantFaucet, FAUCET_POLL_SECONDS, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetPending, faucetWaiting, type FaucetFetch, fileFaucetRequest, GH_HINT, type InstantFaucet, type Launch } from "./faucet.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
@@ -114,7 +115,7 @@ export type InstantRun = { fetch: FaucetFetch | undefined; env: Env };
 export const instantSent = (sol: string) => `the instant faucet sent ${sol} SOL; `;
 export const INSTANT_REFUSED = "the instant faucet sent no SOL, and faucet.refused says why; ";
 
-export type FaucetRun = { file: boolean; launch: Launch; sleep(seconds: number): Promise<boolean>; now(): bigint; note(text: string): void };
+export type FaucetRun = { file: boolean; launch: Launch; sleep(seconds: number): Promise<boolean>; now(): bigint; elapsed?(): number; note(text: string): void };
 
 export function expandHome(path: string, home: string): string {
   if (path === "~") {
@@ -202,9 +203,9 @@ async function airdropped(transport: Transport, owner: Address): Promise<bigint 
 }
 
 async function arrived(transport: Transport, owner: Address, faucet: FaucetRun): Promise<bigint> {
-  const until = faucet.now() + BigInt(FAUCET_WAIT_MINUTES * 60);
+  const until = elapsedOf(faucet) + FAUCET_WAIT_MINUTES * 60 * 1000;
   let held = await lamportsOf(transport, owner);
-  while (held < ENOUGH_TO_START && faucet.now() < until && (await faucet.sleep(FAUCET_POLL_SECONDS))) {
+  while (held < ENOUGH_TO_START && elapsedOf(faucet) < until && (await faucet.sleep(FAUCET_POLL_SECONDS))) {
     held = await lamportsOf(transport, owner);
   }
   return held;

@@ -39,12 +39,13 @@ export type WalletAccess = {
   env: Env;
   sleep(seconds: number): Promise<boolean>;
   now(): bigint;
+  elapsed?(): number;
   limits: WalletGuard;
   feePayer?: string;
   encryptionKeypairs?: readonly string[];
 };
 
-export type Clock = Pick<WalletAccess, "sleep" | "now">;
+export type Clock = Pick<WalletAccess, "sleep" | "now" | "elapsed">;
 
 export const SALE_WINDOW = 3_600n;
 export const ESTIMATE_SCAN = 12;

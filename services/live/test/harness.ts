@@ -31,7 +31,7 @@ export class MemoryCache implements RuntimeCache {
   }
 }
 
-export type Clock = { at: number };
+export type Clock = { at: number; wall: number };
 
 export type Rig = {
   node: FakeNode;
@@ -46,7 +46,7 @@ export type RigOptions = { env?: Env; limits?: Partial<Limits>; probe?: Probe; t
 export function rig(options: RigOptions = {}, shared?: Rig) {
   const node = shared?.node ?? new FakeNode();
   const cache = shared?.cache ?? new MemoryCache();
-  const clock = shared?.clock ?? { at: NOW };
+  const clock = shared?.clock ?? { at: NOW, wall: 0 };
   const logs = shared?.logs ?? [];
   const state: Rig = { node, cache, clock, logs, probes: 0 };
   const probe: Probe =
@@ -61,7 +61,8 @@ export function rig(options: RigOptions = {}, shared?: Rig) {
     transport: options.transport ?? node.transport,
     probe,
     limits: { ...LIMITS, ...options.limits },
-    now: () => clock.at,
+    now: () => clock.at + clock.wall,
+    elapsed: () => clock.at,
     log: (line) => logs.push(line),
   });
   return { ...state, feed, tick: (secs: number) => (clock.at += secs * 1000) };

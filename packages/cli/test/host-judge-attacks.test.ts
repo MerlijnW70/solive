@@ -31,10 +31,10 @@ describe("a delivery that tries to turn its own fail in the host engine into inf
       ["{ get code() { for (;;) {} }, message: 'x' }", "threw"],
       ["{ get message() { throw new Error('again'); } }", "threw"],
     ] as const) {
-      const started = Date.now();
+      const started = performance.now();
       const { judged, outcome: ruled } = await outcome(`export default () => { throw ${thrown}; };`);
       expect([ruled, judged.stop, judged.failures[0]?.verdict], thrown).toEqual(["fail", undefined, verdict]);
-      expect(Date.now() - started, thrown).toBeLessThan(HOST_CALL_MS * 3 + 5_000);
+      expect(performance.now() - started, thrown).toBeLessThan(HOST_CALL_MS * 3 + 5_000);
     }
     const loading = await outcome("throw new Proxy({}, { get() { for (;;) {} }, getPrototypeOf() { for (;;) {} } }); export default () => 4;");
     expect([loading.outcome, loading.judged.stop, loading.judged.failures[0]?.verdict]).toEqual(["fail", undefined, "stopped"]);

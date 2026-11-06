@@ -22,6 +22,7 @@ export type Runtime = {
   removeFile?(path: string): Promise<void>;
   home: string;
   now(): bigint;
+  elapsed?(): number;
   fetch: Fetch;
   faucetFetch?: FaucetFetch;
   specFetch: SpecFetch;

@@ -16,6 +16,7 @@ export function watchIntents(
   notifications: Notifications | undefined,
   pollMs: number,
   resyncSeconds: number,
+  elapsed: () => number = () => performance.now(),
 ) {
   const watch = async (onChange: WatchCallback, signal: AbortSignal, filter: WatchOptions = {}) => {
     if (signal.aborted) {
@@ -127,14 +128,14 @@ export function watchIntents(
     signal.addEventListener("abort", stop, { once: true });
     try {
       await sync();
-      let synced = Date.now();
+      let synced = elapsed();
       while (!signal.aborted) {
         const { changed, reconnected } = await changes.next(resyncSeconds);
         report(changed.flatMap(heard), []);
         const unordered = changed.some(({ slot }) => slot === undefined);
-        if (!signal.aborted && (reconnected || unordered || Date.now() - synced >= resyncSeconds * 1000)) {
+        if (!signal.aborted && (reconnected || unordered || elapsed() - synced >= resyncSeconds * 1000)) {
           await sync(changes.slot());
-          synced = Date.now();
+          synced = elapsed();
         }
       }
     } finally {

@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
 import { type Intent, IntentStatus } from "@intent-engine/core";
+import { monotonic } from "./monotonic.js";
 
 export const BACKOFF_MAX_INTERVALS = 32;
 
@@ -16,7 +17,7 @@ const fingerprint = (intent: Intent): string =>
 
 const MS_PER_SECOND = 1_000;
 
-export function backoff(interval: number, clock: () => number = Date.now): Backoff {
+export function backoff(interval: number, clock: () => number = monotonic): Backoff {
   const held = new Map<Address, { print: string; failures: number; until: number }>();
   return {
     waiting: (address, intent) => {

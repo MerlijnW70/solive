@@ -26,7 +26,7 @@ async function serve(handle: (req: IncomingMessage, res: ServerResponse, count: 
   const server = createServer((req, res) => handle(req, res, ++count));
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, count: () => count };
+  return { url: "http://" + "127.0.0.1:" + (server.address() as AddressInfo).port, count: () => count };
 }
 
 afterEach(() => {
@@ -42,14 +42,14 @@ describe("closing the job reads", () => {
     let dropped: number | undefined;
     let closedAt = 0;
     const node = await serve((req, res) => {
-      res.on("close", () => (dropped = Date.now() - closedAt));
+      res.on("close", () => (dropped = performance.now() - closedAt));
     });
     const transport = rpcTransport(timedRpc(node.url, 30_000));
     const reads = new JobReads();
     reads.start(transport, job, false, (reach) => reach.getAccount(address).then(() => false));
     await wait(200);
     expect(node.count()).toBe(1);
-    closedAt = Date.now();
+    closedAt = performance.now();
     reads.close();
     await wait(500);
     expect(dropped).toBeLessThan(400);

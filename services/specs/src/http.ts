@@ -50,13 +50,14 @@ export function envDeps(callers: CallerLimit = new CallerLimit()): MirrorDeps {
     store: blobStore,
     callers,
     now: () => Date.now(),
+    elapsed: () => performance.now(),
     deadlineMs: REQUEST_DEADLINE_MS,
     log: (line) => console.log(line),
   };
 }
 
 export function envSweepDeps(): SweepDeps {
-  return { rpc: rpcOf, store: blobStoreWith(SWEEP_STORE_TIMEOUT_MS), now: () => Date.now() };
+  return { rpc: rpcOf, store: blobStoreWith(SWEEP_STORE_TIMEOUT_MS), now: () => Date.now(), elapsed: () => performance.now() };
 }
 
 export function createHandler(deps: MirrorDeps): (request: IncomingMessage, response: ServerResponse) => Promise<void> {

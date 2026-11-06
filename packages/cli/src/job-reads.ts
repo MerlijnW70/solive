@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Address } from "@solana/kit";
 import type { Transport } from "@intent-engine/client";
 import { boundMembers, chainTime, SPEC_READ_MS, specUrlOf, stopsFrom } from "@intent-engine/client/internal";
+import { type Elapsed, monotonic } from "./monotonic.js";
 
 export const REQUEST_MS = 10_000;
 export const HISTORY_READ_MS = 10_000;
@@ -122,6 +123,7 @@ function guarded(transport: Transport, signal: AbortSignal, closing: AbortSignal
 
 export type JobReadsOptions = {
   now?: () => number;
+  elapsed?: Elapsed;
   bound?: () => AbortSignal;
   requestBound?: () => AbortSignal;
   most?: number;
@@ -136,6 +138,7 @@ export class JobReads {
   readonly #flights = new Map<string, Promise<unknown>>();
   readonly #closing = new AbortController();
   readonly #now: () => number;
+  readonly #elapsed: Elapsed;
   readonly #bound: () => AbortSignal;
   readonly #requestBound: () => AbortSignal;
   readonly #most: number;
@@ -143,6 +146,7 @@ export class JobReads {
 
   constructor({
     now = Date.now,
+    elapsed = monotonic,
     bound = () => AbortSignal.timeout(READ_BOUND_MS),
     requestBound = () => AbortSignal.timeout(REQUEST_MS),
     most = READS_AT_ONCE,
@@ -151,6 +155,7 @@ export class JobReads {
     this.#urls = new Kept(kept);
     this.#verdicts = new Kept(kept);
     this.#now = now;
+    this.#elapsed = elapsed;
     this.#bound = bound;
     this.#requestBound = requestBound;
     this.#most = most;
@@ -179,7 +184,7 @@ export class JobReads {
   async #urlRead(key: string, reach: Transport, job: JobToRead, signal: AbortSignal): Promise<void> {
     const url = await specUrlOf(reach, job.intent, job.createdAt, job.owner);
     if (!signal.aborted && url !== null) {
-      this.#urls.put(key, url, this.#now() + KEPT_MS);
+      this.#urls.put(key, url, this.#elapsed() + KEPT_MS);
     }
   }
 
@@ -219,7 +224,7 @@ export class JobReads {
 
   known(job: JobToRead, all: boolean): KnownJob | null {
     const key = keyOf(job);
-    const now = this.#now();
+    const now = this.#elapsed();
     const verdict = this.#verdicts.get(key, now);
     if (verdict === false) {
       return all ? { url: this.#urls.get(key, now) ?? null, checked: false } : null;
@@ -229,7 +234,7 @@ export class JobReads {
 
   start(transport: Transport, job: JobToRead, all: boolean, readable: Readable): void {
     const key = keyOf(job);
-    const now = this.#now();
+    const now = this.#elapsed();
     if (all) {
       if (this.#urls.get(key, now) === undefined && this.#verdicts.get(key, now) === undefined) {
         this.#flight(`url ${key}`, transport, async (reach, signal) => {
@@ -242,14 +247,14 @@ export class JobReads {
       return;
     }
     this.#flight(`spec ${key}`, transport, async (reach, signal) => {
-      if (this.#urls.get(key, this.#now()) === undefined) {
+      if (this.#urls.get(key, this.#elapsed()) === undefined) {
         await this.#urlRead(key, reach, job, signal);
       }
       const verdict = await readable(reach, job.intent, signal);
       if (verdict === false) {
         const chainNow = await chainTime(reach).catch(() => null);
         if (!signal.aborted) {
-          this.#verdicts.put(key, false, this.#now() + (this.#settled(job, chainNow) ? DOUBT_KEPT_MS : YOUNG_DOUBT_MS));
+          this.#verdicts.put(key, false, this.#elapsed() + (this.#settled(job, chainNow) ? DOUBT_KEPT_MS : YOUNG_DOUBT_MS));
         }
         return;
       }
@@ -260,8 +265,8 @@ export class JobReads {
         this.#verdicts.drop(key);
         return;
       }
-      this.#verdicts.put(key, verdict, this.#now() + KEPT_MS);
-      this.#urls.put(key, verdict.plain, this.#now() + KEPT_MS);
+      this.#verdicts.put(key, verdict, this.#elapsed() + KEPT_MS);
+      this.#urls.put(key, verdict.plain, this.#elapsed() + KEPT_MS);
     });
   }
 

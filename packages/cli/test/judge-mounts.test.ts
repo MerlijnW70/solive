@@ -52,7 +52,7 @@ const casesOf = (list: Cases["cases"]): Cases => ({ steps: 1_000_000, heap: 1 <<
 const bytes = (source: string) => new TextEncoder().encode(source);
 
 async function serialized(): Promise<Server> {
-  const deadline = Date.now() + SERIAL_WAIT_MS;
+  const deadline = performance.now() + SERIAL_WAIT_MS;
   for (;;) {
     const server = await new Promise<Server | undefined>((done) => {
       const listening = createServer();
@@ -62,7 +62,7 @@ async function serialized(): Promise<Server> {
     if (server !== undefined) {
       return server;
     }
-    if (Date.now() > deadline) {
+    if (performance.now() > deadline) {
       throw new Error(`another run of this test kept ${GUARD} for ${SERIAL_WAIT_MS} ms`);
     }
     await new Promise((wake) => setTimeout(wake, POLL_MS * 5));

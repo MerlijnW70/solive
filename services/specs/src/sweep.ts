@@ -7,6 +7,7 @@ export type SweepDeps = {
   readonly rpc: () => MirrorRpc;
   readonly store: SpecStore;
   readonly now: () => number;
+  readonly elapsed: () => number;
 };
 
 export type Swept = { kept: number; idled: number; expired: number; orphans: number; left: number };
@@ -55,7 +56,7 @@ async function evict(hex: string, size: number, marks: Marks, rpc: MirrorRpc, st
 const paidFor = async (rpc: MirrorRpc, spec: { readonly hex: string; readonly size: number }): Promise<boolean> => backs(await paidBacking(rpc, spec.hex, COST_MINT), spec.size);
 
 export async function sweep(deps: SweepDeps): Promise<Swept> {
-  const started = deps.now();
+  const started = deps.elapsed();
   const rpc = deps.rpc();
   if (!(await onDevnet(rpc))) throw new Error("the node of this service is not on devnet");
   const locked = await openBacking(rpc, COST_MINT);
@@ -65,7 +66,7 @@ export async function sweep(deps: SweepDeps): Promise<Swept> {
   const dropped: string[] = [];
   const swept: Swept = { kept: 0, idled: 0, expired: 0, orphans: 0, left: 0 };
   let checks = 0;
-  const spent = () => checks >= MAX_CHECKS_PER_SWEEP || deps.now() - started >= SWEEP_BUDGET_MS;
+  const spent = () => checks >= MAX_CHECKS_PER_SWEEP || deps.elapsed() - started >= SWEEP_BUDGET_MS;
   try {
     for (const spec of specs) {
       const idle = marks.idle.get(spec.hex) ?? [];

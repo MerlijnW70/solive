@@ -34,8 +34,9 @@ export function write(response: ServerResponse, answer: DripResponse): void {
 
 export const systemClock: Clock = {
   now: () => Date.now(),
+  elapsed: () => performance.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  signal: (ms) => AbortSignal.timeout(ms),
+  signal: (ms) => AbortSignal.timeout(Math.ceil(ms)),
 };
 
 export function envDeps(callers: CallerLimit = new CallerLimit()): DripDeps {

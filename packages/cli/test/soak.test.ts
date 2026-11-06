@@ -370,8 +370,8 @@ describe.skipIf(url === undefined || keypair === undefined || !(minutes > 0))("d
       return ops[0] as (typeof ops)[number];
     };
 
-    const deadline = Date.now() + minutes * 60_000;
-    while (Date.now() < deadline) {
+    const deadline = performance.now() + minutes * 60_000;
+    while (performance.now() < deadline) {
       step += 1;
       report.steps = step;
       const [name, , run] = choose();

@@ -69,6 +69,7 @@ export {
 } from "./solve-commands.js";
 
 import { newEncryptionKey, readJobSpec, sealing } from "./sealed-commands.js";
+import { elapsedOf } from "./monotonic.js";
 
 export * from "./accounts.js";
 export * from "./crank.js";
@@ -79,6 +80,7 @@ const addToSetup = (runtime: Runtime): Promise<object> =>
     launch: runtime.launch,
     sleep: (seconds) => runtime.sleep(seconds),
     now: runtime.now,
+    elapsed: () => elapsedOf(runtime),
     note: () => undefined,
   }, { fetch: runtime.faucetFetch, env: runtime.env });
 
@@ -143,6 +145,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
                 env: runtime.env,
                 sleep: runtime.sleep,
                 now: runtime.now,
+                elapsed: () => elapsedOf(runtime),
                 limits: walletGuard(command.wallet, runtime.saleBook),
                 ...(command.feePayer === undefined ? {} : { feePayer: command.feePayer }),
                 ...(command.encryptionKeypairs === undefined ? {} : { encryptionKeypairs: command.encryptionKeypairs }),
@@ -159,7 +162,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         agent: agent !== undefined,
       });
       const confirm = command.confirmUrl === undefined ? {} : { confirm: runtime.transport(command.confirmUrl) };
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...(runtime.jobChanges === undefined ? {} : { jobChanges: runtime.jobChanges.bind(runtime) }), ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...update, ...confirm }, served));
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now, elapsed: () => elapsedOf(runtime) }, ...(runtime.jobChanges === undefined ? {} : { jobChanges: runtime.jobChanges.bind(runtime) }), ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...update, ...confirm }, served));
       return null;
     }
     case "setup": {
@@ -169,6 +172,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         launch: runtime.launch,
         sleep: (seconds) => runtime.sleep(seconds),
         now: runtime.now,
+        elapsed: () => elapsedOf(runtime),
         note: (text) => process.stderr.write(`${text}\n`),
       }, { fetch: runtime.faucetFetch, env: runtime.env });
       const registry = await npmRegistry(runtime.launch);

@@ -1,5 +1,6 @@
 import { type IntentChanges, rateLimited } from "@intent-engine/client/internal";
 import type { Clock } from "./wallet/guard.js";
+import { elapsedOf } from "../monotonic.js";
 
 export const WAIT_SLOW = 10;
 
@@ -44,7 +45,7 @@ export async function waitForJobs(clock: Clock, within: number, read: () => Prom
         }
         continue;
       }
-      const began = clock.now();
+      const began = elapsedOf(clock);
       const heard = await listening.wait(step);
       if (heard === null) {
         listening = undefined;
@@ -55,7 +56,7 @@ export async function waitForJobs(clock: Clock, within: number, read: () => Prom
         waited += step;
         continue;
       }
-      const elapsed = Math.max(0, Number(clock.now() - began));
+      const elapsed = Math.max(0, Math.floor((elapsedOf(clock) - began) / 1000));
       waited += elapsed;
       const rest = Math.min(WAIT_GAP - elapsed, within - waited);
       if (rest > 0 && !(await sleep(rest))) {

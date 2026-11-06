@@ -11,6 +11,7 @@ import { claimsOf } from "../src/agent/claims.js";
 import { NO_CLOCK } from "../src/agent/wallet/receipt.js";
 import { NO_JOB_NOW, NO_JOB_YET } from "../src/agent/jobs.js";
 import { WAIT_MAX } from "../src/agent/wallet/guard.js";
+import { elapsedOf } from "../src/monotonic.js";
 import { ata, h, NOW, runtime, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -34,6 +35,7 @@ describe("solive_find_jobs with wait", () => {
     const rt = runtime({});
     const clock = {
       now: rt.now,
+      elapsed: () => elapsedOf(rt),
       sleep: async (seconds: number) => {
         await opening.shift()?.();
         return rt.sleep(seconds);

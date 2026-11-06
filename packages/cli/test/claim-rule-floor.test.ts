@@ -33,12 +33,14 @@ const intentOf = async (owner: Address) => (await findIntentPda({ owner, nonce: 
 describe("the claim stake floor follows the cluster rent", () => {
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
     vi.setSystemTime(clock);
     await world();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("follows a rent change after the lifetime of the rate it read, not before", async () => {

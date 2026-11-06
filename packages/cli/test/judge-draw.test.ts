@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Address, getAddressEncoder, getBase58Encoder, type KeyPairSigner } from "@solana/kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { getIntentDecoder } from "@intent-engine/core/internal";
 import { type FinalizedBlock, type Transport } from "@intent-engine/client";
@@ -153,6 +153,26 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     const draw = cases.draw as Draw;
     const seed = drawSeed(BLOCKHASH, "11111111111111111111111111111111" as Address, sha(CORRECT));
     expect(await drawnArguments(wasm, cases, draw, seed, 30)).toEqual(await drawnArguments(wasm, cases, draw, seed, 30));
+  }, 60_000);
+
+  it("draws and judges within the deadline by elapsed time, whatever the wall clock does meanwhile", async () => {
+    const wasm = await pinnedWasm();
+    const cases = casesOf(new TextEncoder().encode(drawSpec()));
+    const draw = cases.draw as Draw;
+    const seed = drawSeed(BLOCKHASH, "11111111111111111111111111111111" as Address, sha(CORRECT));
+    const steady = await drawnArguments(wasm, cases, draw, seed, 30);
+    const j = await job(CORRECT, drawSpec());
+    const real = Date.now.bind(Date);
+    let calls = 0;
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => real() + (++calls % 2 === 0 ? 3_600_000 : -3_600_000));
+    try {
+      expect(await drawnArguments(wasm, cases, draw, seed, 30)).toEqual(steady);
+      const preview = await cli(judging(j), { "judge.json": j.judge });
+      expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+      expect(preview.json()).toMatchObject({ verdict: "pass", cases: { total: 3, passed: 3 }, drawn: { total: DRAWN, passed: DRAWN } });
+    } finally {
+      wall.mockRestore();
+    }
   }, 60_000);
 
   it("reads a generator's lists whole, however long and whatever characters they hold", async () => {

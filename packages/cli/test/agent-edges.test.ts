@@ -94,20 +94,36 @@ describe("the market floor", () => {
 describe("polling", () => {
   it("waits at most within seconds while the clock stands still", async () => {
     const sleeps: number[] = [];
-    const frozen = { now: () => 0n, sleep: async (seconds: number) => sleeps.push(seconds) > 0 };
+    const frozen = { now: () => 0n, elapsed: () => 0, sleep: async (seconds: number) => sleeps.push(seconds) > 0 };
     expect(await poll(frozen, 3, async () => false)).toBe(3);
     expect(sleeps).toEqual([1, 1, 1]);
   });
 
   it("stops once the clock reaches the deadline", async () => {
-    let at = 0n;
+    let at = 0;
     const fast = {
-      now: () => at,
+      now: () => 0n,
+      elapsed: () => at,
       sleep: async () => {
-        at += 2n;
+        at += 2_000;
         return true;
       },
     };
     expect(await poll(fast, 4, async () => false)).toBe(2);
+  });
+
+  it("ends by elapsed time, whatever the wall clock does meanwhile", async () => {
+    let at = 0;
+    let wall = 0n;
+    const stepping = {
+      now: () => wall,
+      elapsed: () => at,
+      sleep: async () => {
+        at += 2_000;
+        wall += wall >= 0n ? -86_400n : 172_800n;
+        return true;
+      },
+    };
+    expect(await poll(stepping, 4, async () => false)).toBe(2);
   });
 });

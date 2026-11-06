@@ -3,6 +3,7 @@ import { type Address, getAddressEncoder, getBase58Encoder } from "@solana/kit";
 import type { FinalizedBlock, Transport } from "@intent-engine/client";
 import { JudgeRefused } from "./judge-errors.js";
 import { deadlineOf, ENGINE_FAULT, EngineStopped, faultOf, type Stop } from "./verdict-model.js";
+import { secondsLeft } from "./monotonic.js";
 import {
   type Case,
   type CaseResult,
@@ -153,8 +154,7 @@ const told = (result: CaseResult | undefined): string =>
   result === undefined ? "gave no verdict" : `gave the verdict ${result.verdict}${result.detail === undefined ? "" : ` with ${JSON.stringify(result.detail)}`}`;
 
 export async function drawnArguments(wasm: Buffer, budget: Cases, draw: Draw, seed: string, timeoutSeconds: number): Promise<Primitive[][]> {
-  const deadline = Date.now() + timeoutSeconds * 1000;
-  const left = () => Math.max(0, deadline - Date.now()) / 1000;
+  const left = secondsLeft(timeoutSeconds);
   const source = wrapped(draw.generator, "generator", GENERATOR_TAIL);
   const run = engineRun(seed);
   const invalid = `did not return ${draw.count} lists of at most ${MAX_ARGUMENTS} JSON strings, numbers, booleans or nulls, in at most ${OUTPUT_BYTES} bytes of JSON`;

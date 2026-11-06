@@ -56,6 +56,7 @@ export const h = {
   submitted: [] as string[],
   dropSubmits: false,
   clock: 0n,
+  wall: 0n,
   steps: [] as bigint[],
   genesisReads: 0,
   failScans: 0,

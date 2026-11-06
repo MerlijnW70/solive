@@ -128,10 +128,10 @@ describe("the judge sandbox", () => {
     const sandbox = { kind: "docker", image: SANDBOX_IMAGE, memory: "256m", cpus: "1", tmp: "64m", gpu: false } as const;
     try {
       await shareable(copy.root);
-      const started = Date.now();
+      const started = performance.now();
       const check = await runContainer(containerArgs(sandbox, copy, j.sha256, "sleep 600"), name, dockerEnv(process.env), STARTUP_SECONDS);
       expect(check).toEqual({ exitCode: null, timedOut: true, deadline: true, state: null });
-      expect(Date.now() - started).toBeLessThan(60_000);
+      expect(performance.now() - started).toBeLessThan(60_000);
       expect(containerGone(name)).toBe(true);
       const quick = `${name}-quick`;
       expect(await runContainer(containerArgs(sandbox, copy, j.sha256, "exit 3"), quick, dockerEnv(process.env), STARTUP_SECONDS * 10)).toEqual({

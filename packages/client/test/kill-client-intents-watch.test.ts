@@ -22,9 +22,9 @@ const note = (address: Address, data: Uint8Array, slot?: bigint) => ({
 });
 
 const until = async (check: () => boolean, ms = 2_500) => {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   while (!check()) {
-    if (Date.now() > deadline) {
+    if (performance.now() > deadline) {
       throw new Error("condition never held");
     }
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -155,6 +155,44 @@ describe("a watch that ignores what the chain already said", () => {
     expect(ledger.reads).toBe(2);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(ledger.reads).toBe(3);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    await watching;
+  });
+
+  it("rereads the chain by elapsed time by default, whatever the wall clock does meanwhile", async () => {
+    vi.useFakeTimers();
+    const { ledger, transport } = chain(90n);
+    const socketed = stream();
+    const controller = new AbortController();
+    const watching = watchIntents(transport, socketed.notifications, 5, 1)(() => undefined, controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ledger.reads).toBe(1);
+    vi.setSystemTime(Date.now() + 86_400_000);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(ledger.reads).toBe(1);
+    vi.setSystemTime(Date.now() - 172_800_000);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ledger.reads).toBe(2);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    await watching;
+  });
+
+  it("rereads the chain by the clock it is given", async () => {
+    vi.useFakeTimers();
+    const { ledger, transport } = chain(90n);
+    const socketed = stream();
+    const controller = new AbortController();
+    let at = 0;
+    const watching = watchIntents(transport, socketed.notifications, 5, 1, () => at)(() => undefined, controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ledger.reads).toBe(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ledger.reads).toBe(1);
+    at = 1_000;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ledger.reads).toBe(2);
     controller.abort();
     await vi.advanceTimersByTimeAsync(0);
     await watching;

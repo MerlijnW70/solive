@@ -168,13 +168,15 @@ export class FakeNode {
   }
 }
 
-export type FakeClock = Clock & { at: number; slept: number[] };
+export type FakeClock = Clock & { at: number; wall: number; slept: number[] };
 
 export function fakeClock(start: number = START_MS): FakeClock {
   const clock: FakeClock = {
     at: start,
+    wall: 0,
     slept: [],
-    now: () => clock.at,
+    now: () => clock.at + clock.wall,
+    elapsed: () => clock.at,
     sleep: async (ms) => {
       clock.slept.push(ms);
       clock.at += ms;

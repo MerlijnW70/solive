@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import type { Rent } from "./rent.js";
 import type { Chain } from "./solver.js";
+import { monotonic } from "./monotonic.js";
 
 export const CONFIG_TTL_MS = 30_000;
 
@@ -30,7 +31,7 @@ function fresh<T>(ttl: number, clock: () => number, load: () => Promise<T>): { g
   };
 }
 
-export function remembering(chain: Chain, clock: () => number = Date.now): Remembering {
+export function remembering(chain: Chain, clock: () => number = monotonic): Remembering {
   const programs = new Map<Address, Promise<Address>>();
   const mints = new Map<Address, Promise<Uint8Array | null>>();
   const existing = new Set<Address>();

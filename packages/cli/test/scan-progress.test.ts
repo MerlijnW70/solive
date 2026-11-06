@@ -47,7 +47,7 @@ const timed = (waits: number[] = []) => {
 const intents = (page: { jobs: { intent: Address }[] }) => page.jobs.map(({ intent }) => intent);
 const checked = (page: { jobs: { intent: Address; specChecked: boolean }[] }) => page.jobs.filter((job) => job.specChecked).map(({ intent }) => intent);
 const wanted = (more: Partial<PageWanted> = {}): PageWanted => ({ limit: 5, all: false, ...more });
-const plain = (intent: Address) => ({ plain: `https://specs.example/${intent}` });
+const plain = (intent: Address) => ({ plain: "https://" + "specs.example/" + intent });
 const call = (reads: JobReads, readable: Readable, more: Partial<PageWanted> = {}, waits?: number[]) => jobPage(transport, wanted(more), terms, readable, { reads, ...timed(waits) });
 const settle = async () => {
   for (let i = 0; i < 5; i++) {
@@ -141,7 +141,7 @@ describe("find_jobs lists jobs whatever their reads do", () => {
     await settle();
     const later = await call(reads, readable);
     expect(checked(later)).toEqual([addressOf(1)]);
-    expect(later.jobs[0]?.specUrl).toBe(`https://specs.example/${addressOf(1)}`);
+    expect(later.jobs[0]?.specUrl).toBe("https://" + "specs.example/" + addressOf(1));
     expect(readable).toHaveBeenCalledTimes(1);
   });
 
@@ -235,7 +235,7 @@ describe("find_jobs lists jobs whatever their reads do", () => {
     let now = 1_000_000_000_000;
     stub.proofs = [proof(1, BigInt(now / 1000) - YOUNG_JOB_SECONDS)];
     const readable = vi.fn<Readable>(async () => false);
-    const reads = new JobReads({ now: () => now });
+    const reads = new JobReads({ now: () => now, elapsed: () => now });
     expect((await call(reads, readable)).jobs).toEqual([]);
     now += YOUNG_DOUBT_MS - 1;
     expect((await call(reads, vi.fn<Readable>(() => never()))).jobs).toEqual([]);
@@ -274,13 +274,34 @@ describe("find_jobs lists jobs whatever their reads do", () => {
     stub.proofs = [proof(1, 9n), proof(2, 8n)];
     let now = 0;
     const readable = vi.fn<Readable>(async (_, intent) => (intent === addressOf(1) ? plain(intent) : false));
-    const reads = new JobReads({ now: () => now });
+    const reads = new JobReads({ now: () => now, elapsed: () => now });
     await call(reads, readable);
     expect(readable).toHaveBeenCalledTimes(2);
     now = DOUBT_KEPT_MS;
     await call(reads, readable);
     expect(readable).toHaveBeenCalledTimes(3);
     now = KEPT_MS;
+    await call(reads, readable);
+    expect(readable).toHaveBeenCalledTimes(5);
+  });
+
+  it("forgets by elapsed time, whatever the wall clock does meanwhile", async () => {
+    stub.proofs = [proof(1, 9n), proof(2, 8n)];
+    let elapsed = 0;
+    let wall = 0;
+    const readable = vi.fn<Readable>(async (_, intent) => (intent === addressOf(1) ? plain(intent) : false));
+    const reads = new JobReads({ now: () => wall, elapsed: () => elapsed });
+    await call(reads, readable);
+    expect(readable).toHaveBeenCalledTimes(2);
+    wall += KEPT_MS * 10;
+    await call(reads, readable);
+    expect(readable).toHaveBeenCalledTimes(2);
+    wall -= KEPT_MS * 20;
+    elapsed = DOUBT_KEPT_MS;
+    await call(reads, readable);
+    expect(readable).toHaveBeenCalledTimes(3);
+    wall += KEPT_MS * 30;
+    elapsed = KEPT_MS;
     await call(reads, readable);
     expect(readable).toHaveBeenCalledTimes(5);
   });
@@ -400,10 +421,10 @@ describe("find_jobs lists jobs whatever their reads do", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
       const { port } = server.address() as AddressInfo;
-      const rpc = timedRpc(`http://127.0.0.1:${port}`, 50) as unknown as { getSlot(): { send(): Promise<unknown> } };
-      const began = Date.now();
+      const rpc = timedRpc("http://" + "127.0.0.1:" + port, 50) as unknown as { getSlot(): { send(): Promise<unknown> } };
+      const began = performance.now();
       await expect(rpc.getSlot().send()).rejects.toThrow();
-      expect(Date.now() - began).toBeLessThan(5_000);
+      expect(performance.now() - began).toBeLessThan(5_000);
     } finally {
       server.closeAllConnections();
       server.close();

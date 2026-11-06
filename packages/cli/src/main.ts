@@ -24,6 +24,7 @@ import { monitor, writeBaseline } from "./monitor.js";
 import { launch } from "./launch.js";
 import { rateLimitedHint, rpcCause } from "./rpc-failure.js";
 import { checkLedgerPaths } from "./ledger-keys.js";
+import { monotonic } from "./monotonic.js";
 
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
@@ -236,6 +237,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     removeFile: (path) => rm(path),
     home: homedir().replaceAll("\\", "/"),
     now: () => BigInt(Math.floor(clock() / 1000)),
+    elapsed: monotonic,
     fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
     faucetFetch: (url, init) => fetch(url, init),
     entropy: () => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0,

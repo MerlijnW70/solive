@@ -52,10 +52,11 @@ export type Wiring = {
   probe?: Probe;
   limits?: Limits;
   now?: () => number;
+  elapsed?: () => number;
   log?: (line: string) => void;
 };
 
-export function liveFeed({ env, cache, transport, probe = faucetProbe, limits = LIMITS, now = Date.now, log = (line) => console.log(line) }: Wiring): LiveFeed {
+export function liveFeed({ env, cache, transport, probe = faucetProbe, limits = LIMITS, now = Date.now, elapsed = () => performance.now(), log = (line) => console.log(line) }: Wiring): LiveFeed {
   const config: FeedConfig = configFrom(env);
   const node = transport === undefined ? {} : { rpcTransport: transport };
   return new LiveFeed({
@@ -65,6 +66,7 @@ export function liveFeed({ env, cache, transport, probe = faucetProbe, limits = 
     probe,
     limits,
     now,
+    elapsed,
     log,
   });
 }

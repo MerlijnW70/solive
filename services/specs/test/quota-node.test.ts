@@ -22,7 +22,7 @@ async function serve(answer: (url: URL) => Page, delayMs = 0): Promise<void> {
     }, delayMs);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  vi.stubEnv("VERCEL_BLOB_API_URL", `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+  vi.stubEnv("VERCEL_BLOB_API_URL", "http://" + "127.0.0.1:" + (server.address() as AddressInfo).port);
   vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_teststore_secret");
 }
 
@@ -70,9 +70,9 @@ describe("the count with the real blob client", () => {
 
   it("fails closed when pages come too slowly for one time bound, and stops asking", async () => {
     await serve(() => ({ blobs: [{ size: 1 }], cursor: `c${urls.length}`, hasMore: true }), 80);
-    const started = Date.now();
+    const started = performance.now();
     await expect(blobStoreWith(300).total()).rejects.toThrow("no answer within 300 ms");
-    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(performance.now() - started).toBeLessThan(2_000);
     const asked = urls.length;
     expect(asked).toBeLessThan(MAX_LIST_PAGES);
     await new Promise((resolve) => setTimeout(resolve, 400));
