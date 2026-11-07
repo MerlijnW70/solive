@@ -81,10 +81,28 @@ export const killedUnflaggedUnpinned = (memory: string): string =>
 export const launcherKilledPinned = (memory: string): string =>
   `the plain Node launcher was killed with signal 9 under the ${memory} memory the spec pins, and Docker did not flag its container out of memory; no case can signal the launcher or the container's init, so the kill came from outside the judgement, such as a user-space out-of-memory killer, docker kill or an operator, or Docker missed the flag, and this is no verdict on the work`;
 
+export const oomExited = (code: number, memory: string): string =>
+  `Docker flagged the check's container out of the ${memory} memory the judge chose, so the kernel killed a process of it for memory, and the check then exited with code ${code}; this is no verdict on the work; raise --sandbox-memory if the check needs more`;
+
+export const oomExitedUnpinned = (code: number, memory: string): string =>
+  `Docker flagged the check's container out of ${memory} of memory, so the kernel killed a process of it for memory, and the check then exited with code ${code}; this is no verdict on the work; the spec's judge-run block pins no memory, so ${memory} is the judge's default and a different --sandbox-memory is refused: the check gets more only if the spec's author pins memory in that block`;
+
+function chosenMemoryEnd(state: ContainerState, memory: string, inBlock: boolean): string {
+  if (!state.oomKilled) {
+    return (inBlock ? killedUnflaggedUnpinned : killedUnflagged)(memory);
+  }
+  if (state.exitCode === KILLED_EXIT) {
+    return (inBlock ? oomInfraUnpinned : oomInfra)(memory);
+  }
+  return (inBlock ? oomExitedUnpinned : oomExited)(state.exitCode, memory);
+}
+
 export const RUN_UNTIMED =
   "the check's container ended, but on the judge's own clock it may have run for the spec's pinned timeout, so whether it kept to it is unknown";
 
-export type CaseEnd = { signal: string | null; stoppedByJudge: boolean; oomKills: number | null };
+export type MemoryRise = { oom: number; oomKill: number };
+
+export type CaseEnd = { signal: string | null; stoppedByJudge: boolean; rise: MemoryRise | null };
 
 export const caseOomInfra = (memory: string): string =>
   `a plain Node case was killed with signal 9 while the kernel counted an out-of-memory kill in its container, under the ${memory} memory the judge chose; raise --sandbox-memory if the work needs more`;
@@ -93,42 +111,70 @@ export const caseOomPinned = (memory: string): string => `a plain Node case was 
 
 export const OOM_UNREAD = "a plain Node case was killed with signal 9, and the judge could not read its container's out-of-memory count, so whether memory killed it is unknown";
 
-const killedForMemory = (limits: Limits, chosen: (memory: string) => string, pins: (memory: string) => string): Outcome => {
-  const memory = limits.pinned?.memory;
-  return memory === undefined ? infra(chosen(limits.memory)) : fail(pins(memory));
-};
+export const caseFilledChosen = (memory: string): string =>
+  `a plain Node case did not pass after the kernel killed a process of it for memory, under the ${memory} memory the judge chose, so this is no verdict on the work; raise --sandbox-memory if the work needs more`;
+
+export const hostKillPinned = (memory: string): string =>
+  `the kernel killed a process of a plain Node case for memory under the ${memory} memory the spec pins, but the container's own limit was not reached while the case ran, so the kill may have come from the host's out-of-memory killer, and this is no verdict on the work`;
 
 export function caseOutcome(end: CaseEnd, limits: Limits): Outcome | undefined {
   if (end.signal !== "SIGKILL" || end.stoppedByJudge) {
     return undefined;
   }
-  if (end.oomKills === null) {
+  if (end.rise === null) {
     return infra(OOM_UNREAD);
   }
-  return end.oomKills > 0 ? killedForMemory(limits, caseOomInfra, caseOomPinned) : undefined;
+  if (end.rise.oomKill <= 0) {
+    return undefined;
+  }
+  const memory = limits.pinned?.memory;
+  if (memory === undefined) {
+    return infra(caseOomInfra(limits.memory));
+  }
+  return end.rise.oom > 0 ? fail(caseOomPinned(memory)) : infra(hostKillPinned(memory));
 }
 
 export const OOM_UNREAD_PINNED = "the judge could not read the out-of-memory count around a plain Node case under the memory the spec pins, so whether memory killed a process of it is unknown";
 
-export const caseFilledPinned =(memory: string): string => `a plain Node case filled the ${memory} memory the spec pins, and the kernel killed a process of it for memory`;
+export const caseFilledPinned = (memory: string): string => `a plain Node case filled the ${memory} memory the spec pins, and the kernel killed a process of it for memory`;
 
-export function pinnedFill(oomKills: number | null, limits: Limits): Outcome | undefined {
+export function pinnedFill(rise: MemoryRise | null, limits: Limits): Outcome | undefined {
   const memory = limits.pinned?.memory;
   if (memory === undefined) {
     return undefined;
   }
-  if (oomKills === null) {
+  if (rise === null) {
     return infra(OOM_UNREAD_PINNED);
   }
-  return oomKills > 0 ? fail(caseFilledPinned(memory)) : undefined;
+  if (rise.oomKill <= 0) {
+    return undefined;
+  }
+  return rise.oom > 0 ? fail(caseFilledPinned(memory)) : infra(hostKillPinned(memory));
+}
+
+export function chosenFill(rise: MemoryRise | null, limits: Limits): Outcome | undefined {
+  if (limits.pinned?.memory !== undefined || rise === null || rise.oomKill <= 0) {
+    return undefined;
+  }
+  return infra(caseFilledChosen(limits.memory));
+}
+
+export function caseMemory(end: CaseEnd, passed: boolean, limits: Limits): Outcome | undefined {
+  if (!passed && end.signal === "SIGKILL" && !end.stoppedByJudge) {
+    return caseOutcome(end, limits);
+  }
+  return pinnedFill(end.rise, limits) ?? (passed ? undefined : chosenFill(end.rise, limits));
 }
 
 export const caseUnsettled = (memory: string): string =>
   `a plain Node case started before every process of the case before it had ended, so a memory kill while it ran under the ${memory} memory the spec pins may belong to that earlier case, and it is no verdict on the work`;
 
-export function pinnedLauncherEnd(state: ContainerState, memory: string, running: boolean, filledBefore: boolean): Outcome | undefined {
+export const launcherFlaggedPinned = (memory: string): string =>
+  `the plain Node launcher ended under the ${memory} memory the spec pins, and Docker flagged its container out of memory; the flag names no process and rises for the host's out-of-memory killer too, and the kernel picks a case's process before the launcher, so this is no verdict on the work`;
+
+export function pinnedLauncherEnd(state: ContainerState, memory: string): Outcome | undefined {
   if (state.oomKilled) {
-    return running && !filledBefore ? fail(caseOomPinned(memory)) : undefined;
+    return infra(launcherFlaggedPinned(memory));
   }
   return state.exitCode === KILLED_EXIT ? infra(launcherKilledPinned(memory)) : undefined;
 }
@@ -161,11 +207,8 @@ export function containerOutcome(facts: ContainerFacts, limits: Limits): Ruling 
   if (state.oomKilled && memory !== undefined) {
     return fail(oomPinned(memory));
   }
-  if (state.exitCode === KILLED_EXIT && memory === undefined) {
-    if (state.oomKilled) {
-      return infra((pinned === undefined ? oomInfra : oomInfraUnpinned)(limits.memory));
-    }
-    return infra((pinned === undefined ? killedUnflagged : killedUnflaggedUnpinned)(limits.memory));
+  if (memory === undefined && state.exitCode !== 0 && (state.oomKilled || state.exitCode === KILLED_EXIT)) {
+    return infra(chosenMemoryEnd(state, limits.memory, pinned !== undefined));
   }
   if (pinned !== undefined && !(facts.ranAtMostMs !== undefined && facts.ranAtMostMs < pinned.seconds * 1000)) {
     return infra(RUN_UNTIMED);

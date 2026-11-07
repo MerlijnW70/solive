@@ -4,7 +4,8 @@ import { DEVNET_GENESIS_HASH, MAX_SPEC_BYTES } from "@intent-engine/client/inter
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { DeliveryUnfit, DeliveryUnreadable, FETCH_CAPS, fetchBytes, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { FETCH_FAILED } from "../src/agent/spec.js";
-import { lastingSpecRead, SPEC_NOT_PUBLIC, statusOf, temporaryStatus } from "../src/fetch-class.js";
+import { HTTP_LASTING, lastingSpecRead, SPEC_NOT_PUBLIC, statusOf, temporaryStatus } from "../src/fetch-class.js";
+import { HTTP_LASTING as RPC_LASTING } from "../src/rpc-failure.js";
 import { lastingSpecFailure } from "../src/fetch-failure.js";
 import type { Lookup } from "../src/public-address.js";
 import { walletFetchWork } from "../src/agent/wallet/work.js";
@@ -21,13 +22,26 @@ const answering =
     new Response("no", { status });
 
 describe("one rule for retrying a fetch", () => {
-  it("treats 408, 425, 429 and every 5xx as temporary and other statuses as final", () => {
-    for (const status of [408, 425, 429, 500, 502, 503, 599]) {
+  it("treats 408, 425, 429 and every 5xx but 501 and 505 as temporary and other statuses as final", () => {
+    for (const status of [408, 425, 429, 500, 502, 503, 504, 506, 599]) {
       expect(temporaryStatus(status), String(status)).toBe(true);
     }
     for (const status of [400, 401, 403, 404, 410, 451]) {
       expect(temporaryStatus(status), String(status)).toBe(false);
     }
+  });
+
+  it("treats 501 as lasting, as the RPC classifier does", () => {
+    expect([temporaryStatus(501), HTTP_LASTING.has(501), lastingSpecRead({ message: "the spec at u answered 501", url: "u" }, false)]).toEqual([false, true, true]);
+  });
+
+  it("treats 505 as lasting, as the RPC classifier does", () => {
+    expect([temporaryStatus(505), HTTP_LASTING.has(505), lastingSpecRead({ message: "the spec at u answered 505", url: "u" }, false)]).toEqual([false, true, true]);
+  });
+
+  it("keeps one list of lasting server errors, the one the RPC classifier reads", () => {
+    expect(RPC_LASTING).toBe(HTTP_LASTING);
+    expect([...HTTP_LASTING]).toEqual([501, 505]);
   });
 
   it("reads the typed status of a spec failure before its message", () => {
@@ -59,7 +73,7 @@ describe("one rule for retrying a fetch", () => {
       expect(lastingSpecRead({ message: `the spec at u ${reason}` }, false), reason).toBe(true);
       expect(lastingSpecRead({ message: `the spec at u ${reason}`, url: "u" }, false), reason).toBe(true);
     }
-    const privateSpec = `the spec at https://a.example/s ${SPEC_NOT_PUBLIC}`;
+    const privateSpec = "the spec at https://a.example/s " + SPEC_NOT_PUBLIC;
     expect(lastingSpecRead({ message: privateSpec }, true)).toBe(true);
     expect(lastingSpecRead({ message: privateSpec, url: "https://a.example/s" }, true)).toBe(true);
     expect(lastingSpecRead({ message: privateSpec }, false)).toBe(false);

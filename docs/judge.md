@@ -155,7 +155,7 @@ The release pays the announcement the verdict names and records its sha256 and s
 | 0 | pass | every check ran and passed; with `--yes` the release was sent |
 | 1 | fail | the work was shown to fall short of the spec; the verdict is written and nothing is paid |
 | 2 | usage | the command line is wrong, a file it names is missing or unreadable, or `--verdict` cannot be written or names a directory, pipe or device; nothing was judged |
-| 75 | infra | the check could not finish for a cause the work cannot be blamed for, such as Docker down or a timeout, or a failure that passes: the RPC node rate-limited, answered a server error, dropped the connection or did not answer in time, or the spec url cannot be read for now; nothing was signed, so run it again |
+| 75 | infra | the check could not finish for a cause the work cannot be blamed for, such as Docker down or a timeout, or a failure that passes: the RPC node rate-limited, answered a server error other than 501 or 505, dropped the connection or did not answer in time, or the spec url cannot be read for now; nothing was signed, so run it again |
 | 76 | sent | the check passed and the release was handed to the RPC node, but the send was not confirmed, or the verdict could not be written after it landed; read the intent the message names before judging it again |
 | 78 | refused | no verdict was written and no release was sent, because the spec, the escrow, a key, the announcement, an option or a check of the release refused it before the send, or because the check ran but `--verdict` could not be written before anything was sent |
 | 130 or 143 | interrupted | SIGINT or SIGTERM stopped the run; a verdict is written only when the release was already confirmed |
@@ -265,7 +265,7 @@ Without more, each judge picks the check: its own `--run`, `--check`, `--timeout
 
 `--check` is needed when the block has `check_sha256`, refused when it has none, and refused when its files hash otherwise. `check_sha256` is what `intent-engine hash --artifact <directory>` prints for a directory that holds only the check file or directory. Every check file is mounted executable. `--timeout` stays the judge's own deadline: it must be at least `timeout` plus `RUN_OVERHEAD_SECONDS` from `packages/cli/src/judge-run.ts`, and left out it is exactly that.
 
-A pinned limit is part of the bar. A check still running at the pinned `timeout`, timed on the judge's own clock from when it saw the container running, fails, and so does a container killed for using all of the pinned `memory`. Running out of memory the spec did not pin, or reaching `--timeout` before the check ran its pinned time, stays infra.
+A pinned limit is part of the bar. A check still running at the pinned `timeout`, timed on the judge's own clock from when it saw the container running, fails, and so does a container killed for using all of the pinned `memory`. Running out of memory the spec did not pin, also when the check then exits by its own code, or reaching `--timeout` before the check ran its pinned time, stays infra.
 
 A `timeout` counts the container's setup too. The judge cannot see when the check itself began inside Docker, so it counts a run from the last time it saw the container created and not yet started, and a run is inside `timeout` only if it ended sooner than that. Pin `timeout` with headroom over what the check needs: a check that ends near the limit ends as infra, not as a pass.
 
@@ -301,11 +301,13 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --plain-node --verdict verdict.json
 ```
 
-Plain Node cases run under `--sandbox-memory`, and a case killed for using all of it is infra, since that memory is the judge's choice. A hirer who wants such a case to fail adds `"node_memory": "512m"` to the `judge-cases` block, in the format of `--sandbox-memory` and at least `128m`, `NODE_MIN_MEGABYTES` in `packages/cli/src/viper.ts`, below which plain Node itself may not start.
+Plain Node cases run under `--sandbox-memory`, and a case that does not pass after the kernel killed a process of it for memory is infra, since that memory is the judge's choice. A hirer who wants such a case to fail adds `"node_memory": "512m"` to the `judge-cases` block, in the format of `--sandbox-memory` and at least `128m`, `NODE_MIN_MEGABYTES` in `packages/cli/src/viper.ts`, below which plain Node itself may not start.
 
 `judge --plain-node` then runs the cases under exactly that memory, fails a case killed for it, and refuses a `--sandbox-memory` that differs. Without `--plain-node` the field changes nothing. `solive_get_spec` and `intent-engine spec` show it as `node_memory`, and refuse a bad value as `judge_run_refused`, as the hirer's checks do before anything is sent.
 
-A pin needs a host whose containers show the kernel's out-of-memory count, as cgroup v2 gives them. Elsewhere `judge --plain-node` refuses with exit 78 before any case runs, and `sandbox doctor` prints `memory_pin` as `false`.
+A pin needs a host whose containers show the kernel's out-of-memory counts, as cgroup v2 gives them, and whose Docker runs as root, so a case cannot lower the out-of-memory score that makes the kernel kill it before the launcher. Elsewhere `judge --plain-node` refuses with exit 78 before any case runs; `sandbox doctor` prints `memory_pin` as `false` where the counts are missing.
+
+A memory kill under the pin fails the case only when the container reached the pinned limit; a kill by the host's own out-of-memory killer is infra.
 
 A worker delivers the module as UTF-8 text. `judge` refuses a module that is not, with exit 78, and judges nothing: Node reads such bytes loosely, so a module saved as Windows-1252 may run in plain Node but not in the judge's engines, and failing it would punish an editor's setting. The worker delivers it again saved as UTF-8. `solive_wallet_judge_work` refuses it the same way.
 

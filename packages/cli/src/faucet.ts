@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import type { Launched } from "./launch.js";
+import { temporaryServerError } from "./fetch-class.js";
 import { escaped } from "./untrusted-text.js";
 import type { Env } from "./command-types.js";
 
@@ -131,7 +132,7 @@ function silentRefusal(status: number): string {
   if (status === 429) {
     return FAUCET_BUSY;
   }
-  return status >= 500 ? FAUCET_DOWN : FAUCET_SILENT;
+  return temporaryServerError(status) ? FAUCET_DOWN : FAUCET_SILENT;
 }
 
 function retryAfterOf(body: unknown): number | undefined {

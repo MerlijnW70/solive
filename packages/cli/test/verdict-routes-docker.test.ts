@@ -10,7 +10,7 @@ import { EXIT_RETRY, INFRA_NEXT, oomInfra, timedOutInfra } from "../src/judge-er
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { judgeNode, NODE_ENGINE, OUT_OF_TURN, PROTOCOL_BROKEN } from "../src/node-judge.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
-import { engineOutcome, killedUnflagged } from "../src/verdict-model.js";
+import { engineOutcome, killedUnflagged, oomExited } from "../src/verdict-model.js";
 import { announced, keyed } from "./announce.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
@@ -92,16 +92,15 @@ describe("judge --sandbox docker lets the container's own exit decide", () => {
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
-  it("judges by its own exit a check that forks a memory hog the kernel kills, as plain Node judges such a case, so the hog cannot turn its fail into infra", DOCKER_TEST, async () => {
+  it("makes a check that forks a memory hog the kernel kills and exits 1 infra under the judge's memory, as plain Node judges such a case, and passes it when it exits 0", DOCKER_TEST, async () => {
     const forked = (code: number) =>
       `node -e 'require("node:child_process").spawnSync(process.execPath, ["-e", "const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1))"]); process.exit(${code})'`;
     const j = await job();
     const keys = { "judge.json": j.judge };
     const verdict = join(j.dir, "hog.json");
-    const failed = await cli(boxed(j, forked(1), "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), keys);
-    expect([failed.code, failed.err]).toEqual([EXIT_FAILED, ""]);
-    expect(failed.json()).toMatchObject({ verdict: "fail", sandbox: "docker", exitCode: 1, signature: null });
-    expect(existsSync(verdict)).toBe(true);
+    const stalled = await cli(boxed(j, forked(1), "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), keys);
+    expect([stalled.code, stalled.out, stalled.err]).toEqual([EXIT_RETRY, "", infra(oomExited(1, "256m"))]);
+    expect(existsSync(verdict)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
     expect((await cli(boxed(j, forked(0), "--sandbox-memory", "256m"), keys)).json()).toMatchObject({ verdict: "pass", exitCode: 0 });
   });

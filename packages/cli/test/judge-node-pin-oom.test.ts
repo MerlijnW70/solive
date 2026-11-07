@@ -1,14 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { oomInfra } from "../src/judge-errors.js";
-import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
-import { NODE_READY } from "../src/node-runner.js";
+import { JudgeRefused, oomInfra } from "../src/judge-errors.js";
+import { judgeNode, memoryUnlocked, NODE_ENGINE } from "../src/node-judge.js";
+import { NODE_READY, NODE_UNLOCKED, UNPREPARED } from "../src/node-runner.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_TMP } from "../src/sandbox.js";
-import { caseFilledPinned, caseOomPinned, caseUnsettled, engineOutcome, failedCases, killedUnflagged, launcherKilledPinned, OOM_UNREAD_PINNED } from "../src/verdict-model.js";
+import { caseFilledChosen, caseFilledPinned, caseOomPinned, caseUnsettled, engineOutcome, failedCases, hostKillPinned, killedUnflagged, launcherFlaggedPinned, launcherKilledPinned, type MemoryRise, OOM_UNREAD_PINNED } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 
-type Reply = { code: number | null; signal: string | null; before: number | null; after: number | null; value?: number; settled?: boolean };
+type Reply = { code: number | null; signal: string | null; before: MemoryRise | null; after: MemoryRise | null; value?: number; settled?: boolean; verdict?: string };
 
-const fake = vi.hoisted(() => ({ oomKilled: true, exitCode: 137, readyFirst: true, filledFirst: false, runs: [] as string[][], replies: undefined as Reply[] | undefined }));
+const fake = vi.hoisted(() => ({ oomKilled: true, exitCode: 137, readyFirst: true, filledFirst: false, runs: [] as string[][], replies: undefined as Reply[] | undefined, greeting: "" }));
+
+const at = (oom: number, oomKill: number = oom): MemoryRise => ({ oom, oomKill });
 
 const replying = (replies: Reply[]) =>
   [
@@ -23,10 +25,11 @@ const replying = (replies: Reply[]) =>
     "    rest = rest.slice(at + 1);",
     "    at = rest.indexOf('\\n');",
     "    seen += 1;",
-    `    if (seen === 1) { process.stdout.write(${JSON.stringify(NODE_READY)} + '\\n'); continue; }`,
+    `    if (seen === 1) { process.stdout.write(${JSON.stringify(fake.greeting === "" ? NODE_READY : fake.greeting)} + '\\n'); continue; }`,
     "    const { token } = JSON.parse(line);",
     "    const reply = replies[seen - 2];",
-    "    const out = reply.value === undefined ? '' : Buffer.from('\\n' + token + JSON.stringify(['answer', 'number', String(reply.value)]) + token + '\\n').toString('base64');",
+    "    const framed = reply.verdict === undefined ? ['answer', 'number', String(reply.value)] : [reply.verdict, 'string', 'no capability'];",
+    "    const out = reply.value === undefined && reply.verdict === undefined ? '' : Buffer.from('\\n' + token + JSON.stringify(framed) + token + '\\n').toString('base64');",
     "    process.stdout.write(JSON.stringify({ token, out, code: reply.code, signal: reply.signal, timedOut: false, over: false, oomBefore: reply.before, oomAfter: reply.after, settled: reply.settled !== false }) + '\\n');",
     "  }",
     "});",
@@ -45,7 +48,7 @@ const launcher = (filledFirst: boolean) =>
     "    at = rest.indexOf('\\n');",
     "    seen += 1;",
     `    if (seen === 1) { process.stdout.write(${JSON.stringify(NODE_READY)} + '\\n'); continue; }`,
-    `    if (seen === 2 && ${String(filledFirst)}) { const { token } = JSON.parse(line); process.stdout.write(JSON.stringify({ token, out: '', code: 1, signal: null, timedOut: false, over: false, oomBefore: 0, oomAfter: 1 }) + '\\n'); continue; }`,
+    `    if (seen === 2 && ${String(filledFirst)}) { const { token } = JSON.parse(line); process.stdout.write(JSON.stringify({ token, out: '', code: 1, signal: null, timedOut: false, over: false, oomBefore: { oom: 0, oomKill: 0 }, oomAfter: { oom: 1, oomKill: 1 } }) + '\\n'); continue; }`,
     "    process.exit(137);",
     "  }",
     "});",
@@ -79,6 +82,7 @@ afterEach(() => {
   fake.filledFirst = false;
   fake.runs = [];
   fake.replies = undefined;
+  fake.greeting = "";
 });
 
 const MEMORY = "384m";
@@ -89,7 +93,7 @@ const MODULE = new TextEncoder().encode('export default (text) => text.split(" "
 const option = (args: string[], name: string) => args.flatMap((arg, at) => (arg === name ? [args[at + 1]] : []));
 
 describe("a plain Node container that ends while a case runs", () => {
-  it("fails that case under the pinned memory when Docker flags it out of memory, and runs under exactly the pin", async () => {
+  it("is infra under the pinned memory when Docker flags it out of memory, since the flag names no process and counts host kills, and runs under exactly the pin", async () => {
     for (const [oomKilled, exitCode] of [
       [true, 137],
       [true, 1],
@@ -98,12 +102,9 @@ describe("a plain Node container that ends while a case runs", () => {
       fake.exitCode = exitCode;
       fake.runs = [];
       const pinned = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
-      expect([pinned.judged.passed, pinned.judged.failures, pinned.judged.stop], `${oomKilled} ${exitCode}`).toEqual([
-        0,
-        [{ case: 0, verdict: "crashed", detail: caseOomPinned(MEMORY) }],
-        { cause: "fault", reason: caseOomPinned(MEMORY), unfinished: 1 },
-      ]);
-      expect(engineOutcome(NODE_ENGINE, pinned.judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 1, 2) });
+      expect([pinned.judged.passed, pinned.judged.failures, pinned.judged.stop], `${oomKilled} ${exitCode}`).toEqual([0, [], { cause: "fault", reason: launcherFlaggedPinned(MEMORY), unfinished: 2 }]);
+      expect(engineOutcome(NODE_ENGINE, pinned.judged)).toEqual({ outcome: "infra", reason: launcherFlaggedPinned(MEMORY) });
+      expect(caseOomPinned(MEMORY)).not.toBe(launcherFlaggedPinned(MEMORY));
       expect([option(fake.runs[0] ?? [], "--memory"), option(fake.runs[0] ?? [], "--memory-swap")]).toEqual([[MEMORY], [MEMORY]]);
     }
   });
@@ -128,7 +129,9 @@ describe("a plain Node container that ends while a case runs", () => {
     fake.exitCode = 137;
     fake.readyFirst = false;
     const early = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
-    expect([early.judged.failures, engineOutcome(NODE_ENGINE, early.judged)]).toEqual([[], { outcome: "infra", reason: oomInfra(MEMORY) }]);
+    expect([early.judged.failures, engineOutcome(NODE_ENGINE, early.judged)]).toEqual([[], { outcome: "infra", reason: launcherFlaggedPinned(MEMORY) }]);
+    const chosenEarly = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
+    expect([chosenEarly.judged.failures, engineOutcome(NODE_ENGINE, chosenEarly.judged)]).toEqual([[], { outcome: "infra", reason: oomInfra(MEMORY) }]);
   });
 
   it("charges a flag set by an earlier case's memory kill to that case only, not to the case running when the container ends", async () => {
@@ -137,7 +140,7 @@ describe("a plain Node container that ends while a case runs", () => {
     expect([judged.passed, judged.failures, judged.stop]).toEqual([
       0,
       [{ case: 0, verdict: "crashed", detail: caseFilledPinned(MEMORY) }],
-      { cause: "fault", reason: oomInfra(MEMORY), unfinished: 1 },
+      { cause: "fault", reason: launcherFlaggedPinned(MEMORY), unfinished: 1 },
     ]);
     expect(engineOutcome(NODE_ENGINE, judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 1, 2) });
   });
@@ -148,15 +151,15 @@ describe("the out-of-memory count a plain Node case is judged by", () => {
     fake.exitCode = 0;
     fake.oomKilled = false;
     fake.replies = [
-      { code: 1, signal: null, before: 0, after: 1 },
-      { code: null, signal: "SIGKILL", before: 1, after: 1 },
+      { code: 0, signal: null, before: at(0), after: at(1), value: 2 },
+      { code: null, signal: "SIGKILL", before: at(1), after: at(1) },
     ];
     const chosen = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
-    expect([chosen.judged.passed, chosen.judged.stop, chosen.judged.failures.map((failure) => failure.verdict)]).toEqual([0, undefined, ["crashed", "crashed"]]);
-    expect(engineOutcome(NODE_ENGINE, chosen.judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 2, 2) });
+    expect([chosen.judged.passed, chosen.judged.stop, chosen.judged.failures.map((failure) => failure.verdict)]).toEqual([1, undefined, ["crashed"]]);
+    expect(engineOutcome(NODE_ENGINE, chosen.judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 1, 2) });
     fake.replies = [
-      { code: 0, signal: null, before: 0, after: 1, value: 2 },
-      { code: 0, signal: null, before: 2, after: 2, value: 1 },
+      { code: 0, signal: null, before: at(0), after: at(1), value: 2 },
+      { code: 0, signal: null, before: at(2), after: at(2), value: 1 },
     ];
     const pinned = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
     expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures]).toEqual([1, undefined, [{ case: 0, verdict: "crashed", detail: caseFilledPinned(MEMORY) }]]);
@@ -174,13 +177,78 @@ describe("the out-of-memory count a plain Node case is judged by", () => {
   it("is not charged as a fail to a case that started before every process of the case before it had ended", async () => {
     fake.exitCode = 0;
     fake.oomKilled = false;
-    const rising = { code: 0, signal: null, before: 0, after: 1, value: 1 };
-    fake.replies = [{ code: 0, signal: null, before: 0, after: 0, value: 2, settled: false }, rising];
+    const rising = { code: 0, signal: null, before: at(0), after: at(1), value: 1 };
+    fake.replies = [{ code: 0, signal: null, before: at(0), after: at(0), value: 2, settled: false }, rising];
     const blurred = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
     expect([blurred.judged.passed, blurred.judged.failures, blurred.judged.stop]).toEqual([1, [], { cause: "fault", reason: caseUnsettled(MEMORY), unfinished: 1 }]);
     expect(engineOutcome(NODE_ENGINE, blurred.judged)).toEqual({ outcome: "infra", reason: caseUnsettled(MEMORY) });
-    fake.replies = [{ code: 0, signal: null, before: 0, after: 0, value: 2 }, rising];
+    fake.replies = [{ code: 0, signal: null, before: at(0), after: at(0), value: 2 }, rising];
     const settled = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
     expect([settled.judged.passed, settled.judged.failures]).toEqual([1, [{ case: 1, verdict: "crashed", detail: caseFilledPinned(MEMORY) }]]);
+  });
+});
+
+describe("the two out-of-memory counts a plain Node case is judged by", () => {
+  it("makes a case infra under the pin when oom_kill rose and oom did not, since the host's killer may have killed it", async () => {
+    fake.exitCode = 0;
+    fake.oomKilled = false;
+    for (const reply of [{ code: null, signal: "SIGKILL" }, { code: 1, signal: null }, { code: 0, signal: null, value: 2 }]) {
+      fake.replies = [{ ...reply, before: at(3, 3), after: at(3, 4) }];
+      const { judged } = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
+      expect([judged.passed, judged.failures, judged.stop], JSON.stringify(reply)).toEqual([0, [], { cause: "fault", reason: hostKillPinned(MEMORY), unfinished: 2 }]);
+      expect(engineOutcome(NODE_ENGINE, judged), JSON.stringify(reply)).toEqual({ outcome: "infra", reason: hostKillPinned(MEMORY) });
+    }
+  });
+
+  it("fails a case under the pin when both oom and oom_kill rose while it ran", async () => {
+    fake.exitCode = 0;
+    fake.oomKilled = false;
+    fake.replies = [
+      { code: null, signal: "SIGKILL", before: at(3, 3), after: at(4, 4) },
+      { code: 0, signal: null, before: at(4, 4), after: at(5, 6), value: 1 },
+    ];
+    const { judged } = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
+    expect([judged.passed, judged.stop, judged.failures]).toEqual([
+      0,
+      undefined,
+      [
+        { case: 0, verdict: "crashed", detail: caseOomPinned(MEMORY) },
+        { case: 1, verdict: "crashed", detail: caseFilledPinned(MEMORY) },
+      ],
+    ]);
+    expect(engineOutcome(NODE_ENGINE, judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 2, 2) });
+  });
+
+  it("makes a case that exits non-zero after a memory kill infra under the memory the judge chose, and passes one that answers rightly", async () => {
+    fake.exitCode = 0;
+    fake.oomKilled = false;
+    fake.replies = [{ code: 1, signal: null, before: at(0), after: at(0, 1) }];
+    const failed = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
+    expect([failed.judged.passed, failed.judged.failures, failed.judged.stop]).toEqual([0, [], { cause: "fault", reason: caseFilledChosen(MEMORY), unfinished: 2 }]);
+    expect(engineOutcome(NODE_ENGINE, failed.judged)).toEqual({ outcome: "infra", reason: caseFilledChosen(MEMORY) });
+    fake.replies = [
+      { code: 0, signal: null, before: at(0), after: at(1), value: 2 },
+      { code: 0, signal: null, before: at(1), after: at(2), value: 1 },
+    ];
+    const passed = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
+    expect([passed.judged.passed, passed.judged.failures, passed.judged.stop]).toEqual([2, [], undefined]);
+  });
+
+  it("makes a case that could not drop to its user and score an engine fault, which is infra, never a fail", async () => {
+    fake.exitCode = 0;
+    fake.oomKilled = false;
+    fake.replies = [
+      { code: 0, signal: null, before: at(0), after: at(0), verdict: UNPREPARED },
+      { code: 0, signal: null, before: at(0), after: at(0), value: 1 },
+    ];
+    const { judged } = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
+    expect([judged.passed, judged.failures, judged.faults]).toEqual([1, [], 1]);
+    expect(engineOutcome(NODE_ENGINE, judged).outcome).toBe("infra");
+  });
+
+  it("refuses a pin when the launcher's probe case could lower its out-of-memory score", async () => {
+    fake.greeting = NODE_UNLOCKED;
+    fake.replies = [];
+    await expect(judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60)).rejects.toThrow(new JudgeRefused(memoryUnlocked(MEMORY)));
   });
 });

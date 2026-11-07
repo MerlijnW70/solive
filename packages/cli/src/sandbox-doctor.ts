@@ -199,7 +199,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined, measu
       }
     }
     if (signals.caught() === undefined) {
-      const counted = await contained(box, root, `grep -q "^oom_kill [0-9]" ${MEMORY_EVENTS}`, limits.probeSeconds);
+      const counted = await contained(box, root, `grep -q "^oom [0-9]" ${MEMORY_EVENTS} && grep -q "^oom_kill [0-9]" ${MEMORY_EVENTS}`, limits.probeSeconds);
       memoryPin = counted.ruled.outcome === "pass";
     }
     if (signals.caught() === undefined) {

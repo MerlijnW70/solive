@@ -6,9 +6,9 @@ import { judgeRoot, removeCopy } from "./artifact.js";
 import { endedState, MEMORY_EVENTS, MEMORY_PROCS, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
-import { NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED } from "./node-runner.js";
+import { CASE_OOM_SCORE, NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED, NODE_UNLOCKED, UNPREPARED } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { caseOutcome, caseUnsettled, containerOutcome, deadlineOf, faultOf, type Limits, pinnedFill, pinnedLauncherEnd, type Stop } from "./verdict-model.js";
+import { caseMemory, caseUnsettled, containerOutcome, deadlineOf, ENGINE_FAULT, faultOf, type Limits, type MemoryRise, pinnedLauncherEnd, type Stop } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
@@ -18,7 +18,7 @@ export const NODE_CASE_MS = 5_000;
 export const NODE_SETTLE_MS = 2_000;
 export const NODE_HEAP_FACTOR = 1;
 export const NODE_LAUNCHER_USER = "0:0";
-export const NODE_CAPABILITIES = ["SETUID", "SETGID", "KILL"] as const;
+export const NODE_CAPABILITIES = ["SETUID", "SETGID", "KILL", "SYS_RESOURCE"] as const;
 export const NODE_SYSCTLS = ["kernel.shmmni=0", "kernel.msgmni=0", "kernel.sem=0 0 0 0", "fs.mqueue.queues_max=0"] as const;
 
 export type NodeJudged = { engine: typeof NODE_ENGINE; image: string; path: string } & Tallied;
@@ -85,6 +85,20 @@ type Answer = { token: string; out: string; code: number | null; signal?: string
 
 const countOf = (value: unknown): number | null => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
 
+const eventsOf = (value: unknown): MemoryRise | null => {
+  if (value === null || typeof value !== "object") return null;
+  const { oom, oomKill } = value as Record<string, unknown>;
+  const counted = { oom: countOf(oom), oomKill: countOf(oomKill) };
+  return counted.oom === null || counted.oomKill === null ? null : { oom: counted.oom, oomKill: counted.oomKill };
+};
+
+export function riseOf(before: unknown, after: unknown): MemoryRise | null {
+  const first = eventsOf(before);
+  const last = eventsOf(after);
+  if (first === null || last === null || last.oom < first.oom || last.oomKill < first.oomKill) return null;
+  return { oom: last.oom - first.oom, oomKill: last.oomKill - first.oomKill };
+}
+
 const ENGINE = "the plain Node engine";
 
 export const OUT_OF_TURN = "the case wrote into the plain Node engine's own channel, out of turn";
@@ -100,6 +114,9 @@ export const sigusr1Unsupported = (diagnostic: string): string =>
 
 export const memoryUncounted = (memory: string): string =>
   `the spec's judge-cases block pins node_memory ${memory}, and the plain Node launcher cannot read the out-of-memory count in ${MEMORY_EVENTS} that a cgroup v2 host gives each container, so a case killed for memory could not fail as the pin says; judge it on a host where sandbox doctor reports memory_pin true; no plain Node case was run and nothing was paid`;
+
+export const memoryUnlocked = (memory: string): string =>
+  `the spec's judge-cases block pins node_memory ${memory}, and in this host's containers a plain Node case could lower its out-of-memory score below ${CASE_OOM_SCORE}, so the kernel could kill the launcher instead of the case and a case killed for memory could not fail as the pin says; judge it on a host whose Docker runs as root; no plain Node case was run and nothing was paid`;
 
 export const NODE_DEADLINE = "the judgement's --timeout ran out before the plain Node engine finished every case";
 
@@ -129,6 +146,7 @@ export function caseVerdict(answer: Answer, token: string, expected: Primitive):
   if (!Array.isArray(body) || body.length !== 3) return { verdict: "crashed", detail: "the case wrote a framed answer of the wrong shape" };
   const [verdict, kind, value] = body as [unknown, unknown, unknown];
   if (verdict === "not-primitive") return { verdict: "not-primitive" };
+  if (verdict === UNPREPARED) return { verdict: ENGINE_FAULT, detail: `${ENGINE} could not prepare a case: ${String(value).slice(0, 256)}` };
   if (verdict === "threw" || verdict === "no-module") return { verdict, detail: String(value).slice(0, 256) };
   const got = verdict === "answer" ? valueOf(kind, value) : { ok: false as const };
   if (!got.ok) return { verdict: "crashed", detail: "the case wrote a framed answer the judge does not know" };
@@ -157,7 +175,7 @@ async function stage(source: Uint8Array, name: string): Promise<Staged> {
   return { root, mount, directory: posix.join(NODE_ROOT, random), path: posix.join(NODE_ROOT, random, file) };
 }
 
-type Conversed = { results: CaseResult[]; stop?: Stop; uncounted?: true };
+type Conversed = { results: CaseResult[]; stop?: Stop; refused?: string };
 
 function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, limits: Limits): Promise<Conversed> {
   return new Promise((done) => {
@@ -169,10 +187,9 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     let token = "";
     let ended: Stop | undefined;
     let killing: Promise<void> = Promise.resolve();
-    let memoryKilled = false;
     let unsettled = false;
     let ready = false;
-    let uncounted = false;
+    let refused: string | undefined;
     const left = () => cases.cases.length - results.length;
     const kill = (why: Stop) => {
       ended ??= why;
@@ -209,9 +226,9 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         if (line === NODE_READY) {
           ready = true;
           next();
-        } else if (line === NODE_UNCOUNTED && limits.pinned?.memory !== undefined) {
-          uncounted = true;
-          kill(faultOf(memoryUncounted(limits.pinned.memory), left()));
+        } else if ((line === NODE_UNCOUNTED || line === NODE_UNLOCKED) && limits.pinned?.memory !== undefined) {
+          refused = (line === NODE_UNCOUNTED ? memoryUncounted : memoryUnlocked)(limits.pinned.memory);
+          kill(faultOf(refused, left()));
         } else {
           kill(faultOf(`${ENGINE} wrote ${JSON.stringify(line.slice(0, 64))} before it was ready`, left()));
         }
@@ -237,15 +254,10 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     };
     const settle = (answer: Answer, sent: string) => {
       const verdict = caseVerdict(answer, sent, cases.cases[results.length]?.expected ?? null);
-      const end = { signal: answer.signal ?? null, stoppedByJudge: answer.timedOut || answer.over };
-      const counted = verdict.verdict !== "pass" && end.signal === "SIGKILL" && !end.stoppedByJudge;
-      const before = countOf(answer.oomBefore);
-      const after = countOf(answer.oomAfter);
-      const filled = before === null || after === null ? null : after - before;
-      if (filled !== null && filled > 0) memoryKilled = true;
+      const end = { signal: answer.signal ?? null, stoppedByJudge: answer.timedOut || answer.over, rise: riseOf(answer.oomBefore, answer.oomAfter) };
       const blurred = unsettled;
       unsettled = answer.settled === false;
-      const charged = counted ? caseOutcome({ ...end, oomKills: filled }, limits) : pinnedFill(filled, limits);
+      const charged = caseMemory(end, verdict.verdict === "pass", limits);
       const pinned = limits.pinned?.memory;
       const memory = blurred && pinned !== undefined && charged?.outcome === "fail" ? { outcome: "infra" as const, reason: caseUnsettled(pinned) } : charged;
       if (memory?.outcome === "infra") {
@@ -260,10 +272,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       const inspected = await endedState(name, env);
       const pinned = limits.pinned?.memory;
       const state = inspected.state;
-      const launcher = pinned === undefined || state === null ? undefined : pinnedLauncherEnd(state, pinned, token !== "" && !unsettled, memoryKilled);
-      if (launcher?.outcome === "fail") {
-        results.push({ verdict: "crashed", detail: launcher.reason });
-      }
+      const launcher = pinned === undefined || state === null ? undefined : pinnedLauncherEnd(state, pinned);
       if (launcher !== undefined && launcher.outcome !== "pass") {
         return faultOf(launcher.reason, left());
       }
@@ -292,7 +301,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       void killing.finally(async () => {
         for (const [signal, handler] of handlers) process.removeListener(signal, handler);
         const stop = left() === 0 ? undefined : (ended ?? (await ranOut(exitCode)));
-        const counted = uncounted ? { uncounted: true as const } : {};
+        const counted = refused === undefined ? {} : { refused };
         done(stop === undefined ? { results, ...counted } : { results, stop: { ...stop, unfinished: left() }, ...counted });
       });
     };
@@ -327,8 +336,8 @@ export async function judgeNode(given: Box, source: Uint8Array, name: string, ca
     await removeContainer(container, dockerEnv(process.env));
     cleanup = await removeCopy(staged.root);
   }
-  if (conversed.uncounted === true && cases.nodeMemory !== undefined) {
-    throw new JudgeRefused(cleanup === undefined ? memoryUncounted(cases.nodeMemory) : `${memoryUncounted(cases.nodeMemory)}; ${cleanup}`);
+  if (conversed.refused !== undefined && cases.nodeMemory !== undefined) {
+    throw new JudgeRefused(cleanup === undefined ? conversed.refused : `${conversed.refused}; ${cleanup}`);
   }
   return { judged: { engine: NODE_ENGINE, image: box.image, path: staged.path, ...tallied(conversed.results, total, conversed.stop) }, cleanup };
 }

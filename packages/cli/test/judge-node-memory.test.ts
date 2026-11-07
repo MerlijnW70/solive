@@ -11,7 +11,7 @@ import { judgeNode, memoryUncounted, NODE_ENGINE, sigusr1Unsupported } from "../
 import { MEMORY_PIN_UNHELD, sandboxDoctor } from "../src/sandbox-doctor.js";
 import { MEMORY_EVENTS } from "../src/container-check.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
-import { caseFilledPinned, caseOomInfra, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
+import { caseFilledChosen, caseFilledPinned, caseOomInfra, caseOomPinned, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 import { announced, keyed } from "./announce.js";
 import { DOCKER_TEST } from "./docker-switch.js";
@@ -123,12 +123,23 @@ describe("a plain Node case killed for memory under the memory the judge chose",
     }
   });
 
-  it("stays a fail when the case kills itself, aborts, exits non-zero, or exits after a process it forked was killed for memory", DOCKER_TEST, async () => {
-    for (const module of [inNode('process.kill(process.pid, "SIGKILL");'), inNode("process.abort();"), inNode("process.exit(3);"), FORKED_HOG]) {
+  it("stays a fail when the case kills itself, aborts or exits non-zero", DOCKER_TEST, async () => {
+    for (const module of [inNode('process.kill(process.pid, "SIGKILL");'), inNode("process.abort();"), inNode("process.exit(3);")]) {
       const { judged } = await judgeNode(BOX, bytes(module), "count.mjs", CASES, 7, 60);
       expect([judged.passed, judged.stop, judged.failures.map((failure) => failure.verdict)], module).toEqual([0, undefined, ["crashed", "crashed"]]);
       expect(engineOutcome(NODE_ENGINE, judged).outcome, module).toBe("fail");
     }
+  });
+
+  it("is infra when the case exits 1 after a process it forked was killed for memory, passes when it answers rightly, and fails under a pin", DOCKER_TEST, async () => {
+    const chosen = await judgeNode(BOX, bytes(FORKED_HOG), "count.mjs", CASES, 7, 60);
+    expect([chosen.judged.passed, chosen.judged.failures, chosen.judged.stop]).toEqual([0, [], { cause: "fault", reason: caseFilledChosen(MEMORY), unfinished: 2 }]);
+    expect(engineOutcome(NODE_ENGINE, chosen.judged)).toEqual({ outcome: "infra", reason: caseFilledChosen(MEMORY) });
+    const answered = await judgeNode(BOX, bytes(FORKED_HOG_THEN_ANSWER), "count.mjs", CASES, 7, 60);
+    expect([answered.judged.passed, answered.judged.failures, answered.judged.stop]).toEqual([2, [], undefined]);
+    const pinned = await judgeNode(BOX, bytes(FORKED_HOG), "count.mjs", { ...CASES, nodeMemory: MEMORY }, 7, 60);
+    expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures]).toEqual([0, undefined, CASES.cases.map((_, at) => ({ case: at, verdict: "crashed", detail: caseFilledPinned(MEMORY) }))]);
+    expect(engineOutcome(NODE_ENGINE, pinned.judged).outcome).toBe("fail");
   });
 
   it("has the launcher read the count around each case itself, with no docker exec into a container the work may have filled", DOCKER_TEST, async () => {
@@ -144,8 +155,15 @@ describe("a plain Node case killed for memory under the memory the judge chose",
 
   it("does not charge a memory kill in one case to a later case that kills itself, and leaves both to their own fail", DOCKER_TEST, async () => {
     const cases: Cases = { ...CASES, cases: [{ args: ["hog"], expected: 1 }, { args: ["kill"], expected: 1 }] };
-    const { judged } = await judgeNode(BOX, bytes(HOG_THEN_SELF_KILL), "count.mjs", cases, 7, 60);
-    expect([judged.passed, judged.stop, judged.failures.map((failure) => failure.verdict)]).toEqual([0, undefined, ["crashed", "crashed"]]);
+    const { judged } = await judgeNode(BOX, bytes(HOG_THEN_SELF_KILL), "count.mjs", { ...cases, nodeMemory: MEMORY }, 7, 60);
+    expect([judged.passed, judged.stop, judged.failures]).toEqual([
+      0,
+      undefined,
+      [
+        { case: 0, verdict: "crashed", detail: caseFilledPinned(MEMORY) },
+        { case: 1, verdict: "crashed", detail: "the case wrote no answer framed by its token" },
+      ],
+    ]);
     expect(engineOutcome(NODE_ENGINE, judged).outcome).toBe("fail");
   });
 
@@ -154,6 +172,44 @@ describe("a plain Node case killed for memory under the memory the judge chose",
     const { judged } = await judgeNode(BOX, bytes(inNode('process.kill(process.pid, "SIGKILL");')), "count.mjs", CASES, 7, 60);
     expect([judged.passed, judged.failures, judged.stop]).toEqual([0, [], { cause: "fault", reason: OOM_UNREAD, unfinished: 2 }]);
     expect(engineOutcome(NODE_ENGINE, judged)).toEqual({ outcome: "infra", reason: OOM_UNREAD });
+  });
+});
+
+const SCORE = lines(
+  "import { spawnSync } from 'node:child_process';",
+  "import { readFileSync, writeFileSync } from 'node:fs';",
+  "const read = (path) => readFileSync(path, 'utf8').trim();",
+  "const tried = (() => { try { writeFileSync('/proc/self/oom_score_adj', '0'); return 'lowered'; } catch (error) { return error.code; } })();",
+  "const child = String(spawnSync('/bin/sh', ['-c', 'echo 0 > /proc/self/oom_score_adj; cat /proc/self/oom_score_adj']).stdout).trim();",
+  "const report = JSON.stringify({ adj: read('/proc/self/oom_score_adj'), self: tried, child, above: Number(read('/proc/self/oom_score')) > Number(read('/proc/' + process.ppid + '/oom_score')) });",
+  "export default () => report;",
+);
+const SCORED = JSON.stringify({ adj: "1000", self: "EACCES", child: "1000", above: true });
+const SMALL_HOGS = lines(
+  "import { spawnSync } from 'node:child_process';",
+  "export default (mode) => {",
+  "  if (mode !== 'hogs') return 1;",
+  `  spawnSync('/bin/sh', ['-c', ${JSON.stringify(`i=0; while [ $i -lt 12 ]; do perl -e '$x = "a" x (24 << 20); sleep 3' & i=$((i+1)); done; wait`)}]);`,
+  "  return 0;",
+  "};",
+);
+const HOG_PIN = "256m";
+
+describe("a plain Node case and the kernel's choice of what to kill for memory", () => {
+  it("runs at the highest out-of-memory score, which neither it nor a process it starts can lower, so the kernel picks it before the launcher", DOCKER_TEST, async () => {
+    const cases: Cases = { ...CASES, cases: [{ args: [], expected: SCORED }] };
+    for (const nodeMemory of [undefined, MEMORY]) {
+      const { judged } = await judgeNode(BOX, bytes(SCORE), "score.mjs", nodeMemory === undefined ? cases : { ...cases, nodeMemory }, 7, 60);
+      expect([judged.passed, judged.failures, judged.stop], String(nodeMemory)).toEqual([1, [], undefined]);
+    }
+  });
+
+  it("fails a case that starts many small memory hogs under the pin, and the launcher lives on to judge the next case", DOCKER_TEST, async () => {
+    const cases: Cases = { ...CASES, cases: [{ args: ["hogs"], expected: 1 }, { args: ["a"], expected: 1 }], nodeMemory: HOG_PIN };
+    const { judged } = await judgeNode({ ...BOX, memory: HOG_PIN }, bytes(SMALL_HOGS), "hogs.mjs", cases, 7, 60);
+    expect([judged.passed, judged.stop, judged.failures.map((failure) => failure.case)]).toEqual([1, undefined, [0]]);
+    expect([caseOomPinned(HOG_PIN), caseFilledPinned(HOG_PIN)]).toContain(judged.failures[0]?.detail);
+    expect(engineOutcome(NODE_ENGINE, judged).outcome).toBe("fail");
   });
 });
 

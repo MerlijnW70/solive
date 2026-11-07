@@ -1,6 +1,9 @@
 import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
 import { isSdkError } from "@intent-engine/client";
+import { temporaryServerError } from "./fetch-class.js";
 import { DEVNET_URL } from "./tokens.js";
+
+export { HTTP_LASTING, HTTP_SERVER_ERROR } from "./fetch-class.js";
 
 export type RpcCause = { kind: "http"; status: number } | { kind: "json-rpc" } | { kind: "unreached" } | { kind: "dropped" };
 
@@ -44,11 +47,7 @@ export const rpcFailed = (error: unknown): boolean => rpcCause(error) !== null;
 
 export const HTTP_RATE_LIMITED = 429;
 
-export const HTTP_SERVER_ERROR = 500;
-
-export const HTTP_LASTING: ReadonlySet<number> = new Set([501, 505]);
-
-const temporaryHttp = (status: number): boolean => status === HTTP_RATE_LIMITED || (status >= HTTP_SERVER_ERROR && !HTTP_LASTING.has(status));
+const temporaryHttp = (status: number): boolean => status === HTTP_RATE_LIMITED || temporaryServerError(status);
 
 export function rpcTemporary(error: unknown): boolean {
   if (isSdkError(error, "timed-out") || isSdkError(error, "rate-limited")) {

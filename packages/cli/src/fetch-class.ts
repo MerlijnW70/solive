@@ -6,7 +6,13 @@ export const SPEC_NOT_PUBLIC = "points to a private, loopback or local network a
 
 const TEMPORARY_STATUS: ReadonlySet<number> = new Set([408, 425, 429]);
 
-export const temporaryStatus = (status: number): boolean => status >= 500 || TEMPORARY_STATUS.has(status);
+export const HTTP_SERVER_ERROR = 500;
+
+export const HTTP_LASTING: ReadonlySet<number> = new Set([501, 505]);
+
+export const temporaryServerError = (status: number): boolean => status >= HTTP_SERVER_ERROR && !HTTP_LASTING.has(status);
+
+export const temporaryStatus = (status: number): boolean => temporaryServerError(status) || TEMPORARY_STATUS.has(status);
 
 const LASTING_REASONS: readonly string[] = ["is not a url", "is not an http or https url", PLAIN_HTTP_ON_PUBLIC, SPEC_REDIRECTS, SPEC_NOT_PUBLIC];
 

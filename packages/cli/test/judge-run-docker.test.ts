@@ -90,6 +90,16 @@ describe("judge under a judge-run block, in a real Docker container", () => {
     expect(status(chosen.j.intent)).toBe(IntentStatus.Open);
   });
 
+  it("fails a pinned check that forks a memory hog the kernel kills and then exits 1, as plain Node fails such a case under its pin", LIVE, async () => {
+    const run = `node -e 'require("node:child_process").spawnSync(process.execPath, ["-e", "const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1))"]); process.exit(1)'`;
+    const { j, check, verdict } = await pinnedJob({ image: SANDBOX_IMAGE, run, timeout: 60, memory: "256m" });
+    const failed = await cli(boxed(j, run, "--check", check, "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), { "judge.json": j.judge });
+    expect([failed.code, failed.err]).toEqual([EXIT_FAILED, ""]);
+    expect(failed.json()).toMatchObject({ verdict: "fail", exitCode: 1, signature: null });
+    expect(existsSync(verdict)).toBe(true);
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+  });
+
   it("refuses a --run that differs and a --check whose hash differs, before anything runs", LIVE, async () => {
     const { j, check, verdict } = await pinnedJob({ image: SANDBOX_IMAGE, run: RUN, timeout: 60 });
     const run = await cli(boxed(j, "true", "--check", check, "--verdict", verdict, "--yes"), { "judge.json": j.judge });

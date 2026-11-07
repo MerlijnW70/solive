@@ -171,6 +171,14 @@ describe("the instant faucet in setup", () => {
     }
   });
 
+  it("does not call the faucet down when it answers 501 with no error", async () => {
+    expect(await askInstantFaucet(answering(501, null, []), {}, "address")).toEqual({ refused: FAUCET_SILENT });
+  });
+
+  it("does not call the faucet down when it answers 505 with no error", async () => {
+    expect(await askInstantFaucet(answering(505, null, []), {}, "address")).toEqual({ refused: FAUCET_SILENT });
+  });
+
   it("keeps the no-SOL next within two sentences, with the other routes in other_ways", async () => {
     h.airdropRefused = true;
     for (const [status, body] of [[403, null], [429, "slow"], [503, null], [429, { error: "Slow down." }]] as const) {
