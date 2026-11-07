@@ -12,7 +12,7 @@ import { buildRaisePause, PAUSE_FILL } from "@intent-engine/core/internal";
 import { beforeAll, describe, expect, it } from "vitest";
 import { readKeypair } from "../src/keys.js";
 import { describeInstructions } from "../src/review.js";
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE, main } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { LOADER, programDataOf, upgradeInstruction } from "../src/squads.js";
 import { randomAddress } from "./svm.js";
 import {
@@ -133,7 +133,7 @@ describe("multisig", () => {
       const message = (error as Error).message;
       expect(message).toBe(`the keypair file ${path} is not a keypair: it holds no JSON array of 64 bytes that form a key pair`);
       const result = await main(["approve", "--multisig", await randomAddress(), "--index", "1", "--keypair", path], { ...s.deps, keypair: readKeypair });
-      expect(result.code).toBe(EXIT_REFUSED);
+      expect(result.code).toBe(EXIT_FAILED);
       expect(JSON.parse(result.err)["error"]).toBe(message);
       for (const leaked of ["201", "202", "777", "hunter2", "secret"]) {
         expect(message.replaceAll(path, "")).not.toContain(leaked);

@@ -154,10 +154,10 @@ The release pays the announcement the verdict names and records its sha256 and s
 | --- | --- | --- |
 | 0 | pass | every check ran and passed; with `--yes` the release was sent |
 | 1 | fail | the work was shown to fall short of the spec; the verdict is written and nothing is paid |
-| 2 | usage | the command line is wrong, or a file it names is missing or unreadable; nothing was judged |
+| 2 | usage | the command line is wrong, a file it names is missing or unreadable, or `--verdict` cannot be written or names a directory, pipe or device; nothing was judged |
 | 75 | infra | the check could not finish for a cause the work cannot be blamed for, such as Docker down or a timeout, or a failure that passes: the RPC node rate-limited, answered a server error, dropped the connection or did not answer in time, or the spec url cannot be read for now; nothing was signed, so run it again |
 | 76 | sent | the check passed and the release was handed to the RPC node, but the send was not confirmed, or the verdict could not be written after it landed; read the intent the message names before judging it again |
-| 78 | refused | no verdict was written and no release was sent, because the spec, the escrow, a key, the announcement, an option or a check of the release refused it before the send |
+| 78 | refused | no verdict was written and no release was sent, because the spec, the escrow, a key, the announcement, an option or a check of the release refused it before the send, or because the check ran but `--verdict` could not be written before anything was sent |
 | 130 or 143 | interrupted | SIGINT or SIGTERM stopped the run; a verdict is written only when the release was already confirmed |
 
 78 is `EX_CONFIG` and 76 `EX_PROTOCOL` from the same `sysexits.h` list as 75, `EX_TEMPFAIL`, and lie outside the codes other commands use. `judge` checks that it can write `--verdict` before it runs anything. A refusal names its reason on stderr. Some refusals can change, such as another wallet's claim on the escrow, so run `judge` again once the reason is gone.

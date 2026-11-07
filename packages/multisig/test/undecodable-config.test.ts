@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { transactionPda } from "../src/layout.js";
-import { EXIT_REFUSED } from "../src/main.js";
+import { EXIT_FAILED } from "../src/main.js";
 import { SQUADS_PROGRAM } from "../src/squads-addresses.js";
 import { craftConfig, multisig, openSvm, proposalOf, s } from "./multisig-world.js";
 
@@ -25,7 +25,7 @@ describe("a config transaction that does not decode", () => {
     expect(JSON.stringify(shown)).not.toMatch(/batch/i);
     for (const allow of [[], ["--allow-config"]]) {
       const refused = await s.cli("approve", "--multisig", m.address, "--index", index.toString(), "--keypair", m.file("b"), ...allow, "--yes");
-      expect([refused.code, String(refused.json()["error"]).startsWith(`refusing to sign proposal ${index}: its config transaction does not decode; `)]).toEqual([EXIT_REFUSED, true]);
+      expect([refused.code, String(refused.json()["error"]).startsWith(`refusing to sign proposal ${index}: its config transaction does not decode; `)]).toEqual([EXIT_FAILED, true]);
     }
     expect((await proposalOf(m, index))["approved"]).toEqual([]);
   });

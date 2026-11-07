@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { open, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
 import { type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
@@ -12,9 +12,9 @@ import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
-import { failedSend, type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, ReleaseUncertain, sendFailure, SIGNAL_EXIT, verdictUnwritten } from "./judge-errors.js";
+import { failedSend, type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, mayHaveLanded, notSent, ReleaseUncertain, sendFailure, SIGNAL_EXIT, verdictUnwritable, verdictUnwritten } from "./judge-errors.js";
 import { combine, decided, engineOutcome, type Ruling } from "./verdict-model.js";
-import { type Artifact, type CheckFiles, readArtifact } from "./artifact.js";
+import { type Artifact, type CheckFiles, readArtifact, writableVerdict } from "./artifact.js";
 import { type Check, type HeldSignals, holdSignals } from "./check-process.js";
 import { dockerEnv, GPU_SHARED, NO_ISOLATION, sandboxReady } from "./sandbox.js";
 import { type PinnedRun, RUN_FENCE, runProblem } from "./judge-run.js";
@@ -33,7 +33,7 @@ import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, nodeMemory
 import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
 import { secondsLeft } from "./monotonic.js";
 
-export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, mayHaveLanded, notSent, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
 export {
   type Check,
@@ -192,9 +192,7 @@ async function resavedWork(transport: Transport, intent: Address, read: Artifact
 
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport, stop?: AbortSignal, pinChecked = false): Promise<Verdict> {
   if (command.verdict !== undefined) {
-    await rm(command.verdict, { force: true });
-    await (await open(command.verdict, "w")).close();
-    await rm(command.verdict);
+    await writableVerdict(command.verdict);
   }
   if (!(await mentionsRun(command.spec))) {
     await sandboxReady(command.sandbox, dockerEnv(process.env));
@@ -288,12 +286,6 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
 }
 
-export const notSent = (signal: InterruptSignal): string =>
-  `the check passed, but ${signal} arrived before the release was sent; nothing was paid and no verdict was written`;
-
-export const mayHaveLanded = (signal: InterruptSignal, address: Address, signature: Signature | undefined): string =>
-  `the check passed and the release was sent${signature === undefined ? "" : ` in ${signature}`}; a second ${signal} stopped the judge before the send was confirmed, so the release may have landed. Read intent ${address} before judging it again; no verdict was written`;
-
 type Release = { address: Address; announcement: Address; result: bigint; sha256: string; salt: string; feePayer: TransactionPartialSigner | undefined };
 
 function sendRelease(command: JudgeCommand, transport: Transport, signer: MessageSigner, signals: HeldSignals, release: Release): Promise<Signature> {
@@ -303,10 +295,14 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
     let signed = false;
     let signature: Signature | undefined;
     let after = 0;
+    let releasing = false;
     const signTransactions: TransactionPartialSigner["signTransactions"] = async (transactions, config) => {
       const caught = signals.caught();
       if (caught !== undefined) {
         throw new JudgeInterrupted(caught, notSent(caught));
+      }
+      if (!releasing) {
+        return payer.signTransactions(transactions, config);
       }
       sent = true;
       const ready = await payer.signTransactions(transactions, config);
@@ -326,15 +322,18 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
         setTimeout(() => process.exit(SIGNAL_EXIT[signal]), FORCED_EXIT_MS).unref();
       }
     });
-    createClient({ url: command.url, transport })
-      .settleProof({
-        intent: { owner: command.owner, nonce: command.nonce },
-        announcement: release.announcement,
-        opening: { sha256: release.sha256, salt: release.salt },
-        result: release.result,
-        ...(release.feePayer === undefined
-          ? { judge: Object.freeze({ ...signer, signTransactions }) }
-          : { judge: signer, payer: Object.freeze({ ...release.feePayer, signTransactions }) }),
+    const client = createClient({ url: command.url, transport });
+    const judge = release.feePayer === undefined ? Object.freeze({ ...signer, signTransactions }) : signer;
+    const sender = release.feePayer === undefined ? judge : Object.freeze({ ...release.feePayer, signTransactions });
+    const target = { intent: { owner: command.owner, nonce: command.nonce }, announcement: release.announcement, opening: { sha256: release.sha256, salt: release.salt }, result: release.result };
+    client.plan
+      .settleProof({ ...target, judge, ...(release.feePayer === undefined ? {} : { payer: sender }) })
+      .then(async (plan) => {
+        if (plan.setup.length > 0) {
+          await client.send(plan.setup, sender);
+        }
+        releasing = true;
+        return client.send(plan.instructions, sender);
       })
       .then((confirmed) => {
         signals.listen(() => undefined);
@@ -484,8 +483,8 @@ async function checkAndSettle(
   };
   const written = command.verdict;
   if (written !== undefined) {
-    await writeFile(written, `${JSON.stringify(verdict, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value), 2)}\n`).catch((error: unknown) => {
-      throw signature === null ? error : new ReleaseUncertain(verdictUnwritten(address, signature, written, reasonOf(error)));
+    await writeFile(written, `${JSON.stringify(verdict, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value), 2)}\n`, { flag: "wx" }).catch((error: unknown) => {
+      throw signature === null ? new JudgeRefused(verdictUnwritable(written, reasonOf(error))) : new ReleaseUncertain(verdictUnwritten(address, signature, written, reasonOf(error)));
     });
   }
   const during = signals.caught();

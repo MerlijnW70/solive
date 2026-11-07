@@ -2,7 +2,7 @@ import { type Address, address, generateKeyPairSigner } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Chain } from "../src/chain.js";
 import { programConfigPda } from "../src/layout.js";
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE, main } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { vaultOf } from "../src/squads.js";
 import { Svm } from "./svm.js";
 
@@ -77,7 +77,7 @@ describe("vault", () => {
     const config = await programConfigPda();
     for (const at of [m.vault, funded.address, config]) {
       const refused = await counted("vault", "--multisig", at);
-      expect([refused.code, refused.out, refused.json()]).toEqual([EXIT_REFUSED, "", { error: `${at} is not a Squads v4 multisig`, refused: true }]);
+      expect([refused.code, refused.out, refused.json()]).toEqual([EXIT_FAILED, "", { error: `${at} is not a Squads v4 multisig`, refused: true }]);
       expect(refused.reads).toEqual([at]);
     }
   });

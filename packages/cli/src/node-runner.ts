@@ -16,6 +16,23 @@ const sweep = () => {
     process.kill(-1, "SIGKILL");
   } catch {}
 };
+const others = () => {
+  try {
+    return readFileSync(config.procs, "utf8").split("\\n").filter((pid) => pid !== "" && pid !== "1" && pid !== String(process.pid)).length;
+  } catch {
+    return null;
+  }
+};
+const settle = async () => {
+  const until = performance.now() + config.settleMs;
+  for (;;) {
+    sweep();
+    const left = others();
+    if (left === 0) return true;
+    if (left === null || performance.now() >= until) return false;
+    await new Promise((done) => setTimeout(done, 5));
+  }
+};
 const oomCount = () => {
   try {
     const found = /^oom_kill (\\d{1,15})$/m.exec(readFileSync(config.events, "utf8"));
@@ -80,8 +97,8 @@ for await (const line of lines) {
   }
   const oomBefore = oomCount();
   const result = await runCase(message.token, message.json, message.zeros);
-  sweep();
-  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter: oomCount() }) + "\\n");
+  const settled = await settle();
+  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter: oomCount(), settled }) + "\\n");
 }
 `;
 

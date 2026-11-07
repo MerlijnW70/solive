@@ -15,7 +15,7 @@ import {
 } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
 import { compileVaultMessage, proposalApprove, proposalCreate, proposalPda, transactionPda, vaultTransactionCreate } from "../../src/layout.js";
-import { EXIT_REFUSED } from "../../src/main.js";
+import { EXIT_FAILED } from "../../src/main.js";
 import { ENGINE_PROGRAM, readMultisig, vaultOf } from "../../src/squads.js";
 import { Svm } from "../svm.js";
 
@@ -87,6 +87,6 @@ describe("multisig review", () => {
 
     const honest = await s.cli("approve", "--multisig", m.address, "--index", index.toString(), "--keypair", m.file("b"), "--yes");
 
-    expect(honest.code).toBe(EXIT_REFUSED);
+    expect(honest.code).toBe(EXIT_FAILED);
   });
 });

@@ -1,7 +1,7 @@
 import { deflateSync } from "node:zlib";
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
-import { EXIT_OK, EXIT_REFUSED } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { PROGRAM_METADATA } from "../src/program-metadata-layout.js";
 import { rewrittenText } from "../src/proposal-effects.js";
 import { ENGINE_PROGRAM, programDataOf, SYSVAR_RENT } from "../src/squads.js";
@@ -66,7 +66,7 @@ async function refusedThenSimulated(x: Setup, writer: Instruction, before: Instr
   const problem = rewrittenText(writerAt + 1, x.buffer, [writerAt], "idl");
   expect((await proposalOf(x.m, index))["problems"]).toEqual([problem]);
   const [refused] = await approvals(x.m, index);
-  expect([refused?.code, refused?.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`refusing to sign proposal ${index}: ${problem}`)]);
+  expect([refused?.code, refused?.json()["error"]]).toEqual([EXIT_FAILED, expect.stringContaining(`refusing to sign proposal ${index}: ${problem}`)]);
   expect((await proposalOf(x.m, index))["approved"]).toEqual([]);
   const approved = await approvals(x.m, index, ["--allow-rewritten-buffer"]);
   const post = approved[0]?.json()["post_state"];
@@ -84,7 +84,7 @@ describe("an instruction that writes the buffer before SetData reads it", () => 
     expect(post).toEqual({ simulation: "ok", sets: [{ account: x.metadata, sets: "idl", hash: digest(FORGED) }] });
     const refused = await s.cli("execute", ...on(x.m, index), "--expect-buffer-hash", digest(HONEST), "--allow-rewritten-buffer", "--keypair", x.m.file("c"), "--yes");
     expect([refused.code, refused.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `simulated, the execute transaction sets the IDL account ${x.metadata} to IDL bytes with sha256 ${digest(FORGED)}, not the approved ${digest(HONEST)}; do not execute it`,
     ]);
     expect(onChainIdl(x.metadata)).toEqual(OLD);
@@ -163,7 +163,7 @@ describe("execute compares --expect-buffer-hash with what the simulated transact
     const error = `simulated, the execute transaction sets the IDL account ${x.metadata} to IDL bytes with sha256 ${digest(FORGED)}, not the approved ${digest(HONEST)}; do not execute it`;
     for (const yes of [[], ["--yes"]]) {
       const refused = await s.cli(...run, ...yes);
-      expect([refused.code, refused.json()["error"], refused.json()["post_state"]]).toEqual([EXIT_REFUSED, error, forged]);
+      expect([refused.code, refused.json()["error"], refused.json()["post_state"]]).toEqual([EXIT_FAILED, error, forged]);
     }
     expect(onChainIdl(x.metadata)).toEqual(OLD);
     expect((await proposalOf(x.m, index))["status"]).toBe("approved");

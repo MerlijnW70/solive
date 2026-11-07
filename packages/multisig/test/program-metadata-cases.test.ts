@@ -1,7 +1,7 @@
 import { deflateSync } from "node:zlib";
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
-import { EXIT_OK, EXIT_REFUSED } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { metadataRelayedText } from "../src/program-metadata.js";
 import { canonicalMetadata, PROGRAM_METADATA, PROGRAM_METADATA_CLIENT } from "../src/program-metadata-layout.js";
 import { relayedText } from "../src/review.js";
@@ -52,7 +52,7 @@ async function approveBoth(m: Made, index: bigint, problem: string | null): Prom
   const on = ["--multisig", m.address, "--index", index.toString(), "--yes"];
   if (problem !== null) {
     const refused = await s.cli("approve", ...on, "--keypair", m.file("a"));
-    expect([refused.code, refused.json()["error"], refused.json()["proposal"]["problems"]]).toEqual([EXIT_REFUSED, needsFlag(index, problem), [problem]]);
+    expect([refused.code, refused.json()["error"], refused.json()["proposal"]["problems"]]).toEqual([EXIT_FAILED, needsFlag(index, problem), [problem]]);
     const allowed = await s.cli("approve", ...on, "--allow-undecoded-vault-signer", "--keypair", m.file("a"));
     expect([allowed.code, allowed.err, allowed.json()["summary"][0]]).toEqual([EXIT_OK, "", `Warning: ${problem}`]);
     return;
@@ -130,7 +130,7 @@ describe("program-metadata instructions that do more than update the intent engi
     ];
     for (const flags of [[], ["--allow-undecoded-vault-signer"]]) {
       const refused = await s.cli("approve", "--multisig", m.address, "--index", index.toString(), ...flags, "--keypair", m.file("a"), "--yes");
-      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, `refusing to sign proposal ${index}: ${problems.join("; ")}; ${INSPECT}`]);
+      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_FAILED, `refusing to sign proposal ${index}: ${problems.join("; ")}; ${INSPECT}`]);
     }
   });
 

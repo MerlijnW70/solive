@@ -27,7 +27,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readSigner } from "../src/keys.js";
 import { proposalApprove, proposalPda } from "../src/layout.js";
 import { LEDGER_ERRORS, LEDGER_FORMS, type LedgerTransport, type OpenTransport, parseLedgerPath } from "../src/ledger.js";
-import { type Deps, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, main } from "../src/main.js";
+import { type Deps, EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { Svm } from "./svm.js";
 
 type Store = { passed: number; ensureQueueEmpty(): void };
@@ -205,7 +205,7 @@ describe("multisig", () => {
     expect(await approvedBy(multisig)).toEqual([key.address]);
     const again = device([[CONFIG, BLIND_ON], addressApdu([44, 501, 1, 0], key.address)]);
     const preview = await main(["approve", "--multisig", multisig, "--index", "1", "--keypair", "usb://ledger?key=1/0"], again.deps);
-    expect([preview.code, JSON.parse(preview.err)["error"]]).toEqual([EXIT_REFUSED, `${key.address} already approved proposal 1`]);
+    expect([preview.code, JSON.parse(preview.err)["error"]]).toEqual([EXIT_FAILED, `${key.address} already approved proposal 1`]);
     again.store.ensureQueueEmpty();
   });
 
@@ -230,7 +230,7 @@ describe("multisig", () => {
     for (const yes of [[], ["--yes"]]) {
       const ledger = device([[CONFIG, BLIND_ON], addressApdu([44, 501, 0], stranger.address)]);
       const result = await main([...approve, "--keypair", "usb://ledger?key=0", ...yes], ledger.deps);
-      expect([result.code, JSON.parse(result.err)["error"]]).toEqual([EXIT_REFUSED, `${stranger.address} is not a member of multisig ${multisig}, so it cannot approve`]);
+      expect([result.code, JSON.parse(result.err)["error"]]).toEqual([EXIT_FAILED, `${stranger.address} is not a member of multisig ${multisig}, so it cannot approve`]);
       ledger.store.ensureQueueEmpty();
       expect([ledger.store.passed, ledger.opened, ledger.notes]).toEqual([2, 1, []]);
     }
@@ -239,7 +239,7 @@ describe("multisig", () => {
 
   it("a rejection on the ledger sends nothing", async () => {
     const { multisig, ledger, result, signs } = await approval("ledger-reject", "6985");
-    expect([result.code, JSON.parse(result.err)["error"]]).toEqual([EXIT_REFUSED, LEDGER_ERRORS.rejected]);
+    expect([result.code, JSON.parse(result.err)["error"]]).toEqual([EXIT_FAILED, LEDGER_ERRORS.rejected]);
     ledger.store.ensureQueueEmpty();
     expect(ledger.store.passed).toBe(3 + signs);
     expect(ledger.notes).toHaveLength(1);
@@ -253,7 +253,7 @@ describe("multisig", () => {
     for (const status of ["6e01", "6e00", "6d00", "6511"]) {
       const ledger = device([[CONFIG, status]]);
       const result = await main([...approve, "--keypair", "usb://ledger", "--yes"], ledger.deps);
-      expect([result.code, JSON.parse(result.err)["error"]]).toEqual([EXIT_REFUSED, LEDGER_ERRORS.noApp]);
+      expect([result.code, JSON.parse(result.err)["error"]]).toEqual([EXIT_FAILED, LEDGER_ERRORS.noApp]);
       ledger.store.ensureQueueEmpty();
     }
     expect(LEDGER_ERRORS.noApp).toBe("the Solana app is not open on the Ledger: open it and run the command again; nothing was sent");
@@ -283,7 +283,7 @@ describe("multisig", () => {
     ];
     for (const [error, ledger] of cases) {
       const result = await main([...approve, "--keypair", "usb://ledger?key=0", "--yes"], ledger.deps);
-      expect([result.code, JSON.parse(result.err)["error"], result.out]).toEqual([EXIT_REFUSED, error, ""]);
+      expect([result.code, JSON.parse(result.err)["error"], result.out]).toEqual([EXIT_FAILED, error, ""]);
       ledger.store.ensureQueueEmpty();
     }
     expect(new Set(Object.values(LEDGER_ERRORS)).size).toBe(Object.keys(LEDGER_ERRORS).length);
@@ -304,7 +304,7 @@ describe("multisig", () => {
       },
     };
     const result = await main([...approve, "--keypair", "usb://ledger", "--yes"], deps);
-    expect([result.code, JSON.parse(result.err), result.out]).toEqual([EXIT_REFUSED, { error: LEDGER_ERRORS.notFound, refused: true }, ""]);
+    expect([result.code, JSON.parse(result.err), result.out]).toEqual([EXIT_FAILED, { error: LEDGER_ERRORS.notFound, refused: true }, ""]);
     expect(await approvedBy(multisig)).toEqual([]);
   });
 

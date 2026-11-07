@@ -117,9 +117,11 @@ const pathsOf = (argv: readonly string[]): string[] =>
     return arg.includes("=") ? [arg.slice(arg.indexOf("=") + 1)] : [argv[at + 1] ?? ""];
   });
 
+export const UNUSABLE_FILE: ReadonlySet<unknown> = new Set(["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EROFS", "EISDIR"]);
+
 const missingNamed = (error: unknown, argv: readonly string[]): boolean => {
   const { code, path } = (error ?? {}) as { code?: unknown; path?: unknown };
-  return code === "ENOENT" && typeof path === "string" && pathsOf(argv).some((arg) => arg !== "" && resolve(arg) === resolve(path));
+  return UNUSABLE_FILE.has(code) && typeof path === "string" && pathsOf(argv).some((arg) => arg !== "" && resolve(arg) === resolve(path));
 };
 
 export function exitOfError(error: unknown, judging: boolean, argv: readonly string[] = []): number {

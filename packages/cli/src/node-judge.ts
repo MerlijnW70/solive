@@ -3,18 +3,19 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { judgeRoot, removeCopy } from "./artifact.js";
-import { endedState, MEMORY_EVENTS, removeContainer } from "./check-process.js";
+import { endedState, MEMORY_EVENTS, MEMORY_PROCS, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { caseOomPinned, caseOutcome, containerOutcome, deadlineOf, faultOf, KILLED_EXIT, type Limits, pinnedFill, type Stop } from "./verdict-model.js";
+import { caseOutcome, caseUnsettled, containerOutcome, deadlineOf, faultOf, type Limits, pinnedFill, pinnedLauncherEnd, type Stop } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
 export const NODE_ROOT = "/judge";
 export const NODE_RUNNER = "runner";
 export const NODE_CASE_MS = 5_000;
+export const NODE_SETTLE_MS = 2_000;
 export const NODE_HEAP_FACTOR = 1;
 export const NODE_LAUNCHER_USER = "0:0";
 export const NODE_CAPABILITIES = ["SETUID", "SETGID", "KILL"] as const;
@@ -33,6 +34,7 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
   return [
     "run",
     "-i",
+    "--init",
     "--name",
     name,
     "--network",
@@ -79,7 +81,7 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
   ];
 }
 
-type Answer = { token: string; out: string; code: number | null; signal?: string | null; timedOut: boolean; over: boolean; failed?: string; oomBefore?: unknown; oomAfter?: unknown };
+type Answer = { token: string; out: string; code: number | null; signal?: string | null; timedOut: boolean; over: boolean; failed?: string; oomBefore?: unknown; oomAfter?: unknown; settled?: unknown };
 
 const countOf = (value: unknown): number | null => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
 
@@ -167,9 +169,8 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     let token = "";
     let ended: Stop | undefined;
     let killing: Promise<void> = Promise.resolve();
-    let known: number | null | undefined;
-    let last: number | null | undefined;
     let memoryKilled = false;
+    let unsettled = false;
     let ready = false;
     let uncounted = false;
     const left = () => cases.cases.length - results.length;
@@ -240,13 +241,13 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       const counted = verdict.verdict !== "pass" && end.signal === "SIGKILL" && !end.stoppedByJudge;
       const before = countOf(answer.oomBefore);
       const after = countOf(answer.oomAfter);
-      const since = (base: number | null) => (base === null || after === null ? null : after - base);
-      const killed = since(known === undefined ? before : known);
-      const filled = since(last === undefined ? before : last);
-      last = after;
-      known = counted ? after : known === undefined ? before : known;
+      const filled = before === null || after === null ? null : after - before;
       if (filled !== null && filled > 0) memoryKilled = true;
-      const memory = counted ? caseOutcome({ ...end, oomKills: killed }, limits) : pinnedFill(filled, limits);
+      const blurred = unsettled;
+      unsettled = answer.settled === false;
+      const charged = counted ? caseOutcome({ ...end, oomKills: filled }, limits) : pinnedFill(filled, limits);
+      const pinned = limits.pinned?.memory;
+      const memory = blurred && pinned !== undefined && charged?.outcome === "fail" ? { outcome: "infra" as const, reason: caseUnsettled(pinned) } : charged;
       if (memory?.outcome === "infra") {
         kill(faultOf(memory.reason, left()));
         return;
@@ -259,9 +260,12 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       const inspected = await endedState(name, env);
       const pinned = limits.pinned?.memory;
       const state = inspected.state;
-      if (pinned !== undefined && token !== "" && !memoryKilled && state !== null && (state.oomKilled || state.exitCode === KILLED_EXIT)) {
-        results.push({ verdict: "crashed", detail: caseOomPinned(pinned) });
-        return faultOf(caseOomPinned(pinned), left());
+      const launcher = pinned === undefined || state === null ? undefined : pinnedLauncherEnd(state, pinned, token !== "" && !unsettled, memoryKilled);
+      if (launcher?.outcome === "fail") {
+        results.push({ verdict: "crashed", detail: launcher.reason });
+      }
+      if (launcher !== undefined && launcher.outcome !== "pass") {
+        return faultOf(launcher.reason, left());
       }
       const ruled = inspected.state === null ? undefined : containerOutcome({ deadline: false, state: inspected.state }, { seconds: limits.seconds, memory: limits.memory });
       return faultOf(ruled?.outcome === "infra" ? ruled.reason : `${ENGINE} ended with exit code ${exitCode} before it answered every case: ${diagnostic.trim().slice(0, 256)}`, left());
@@ -297,7 +301,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: NODE_CASE_MS, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, pinned: limits.pinned?.memory !== undefined });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: NODE_CASE_MS, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 

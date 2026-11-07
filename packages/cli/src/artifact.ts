@@ -40,6 +40,23 @@ export class ArtifactTooLarge extends UsageError {
   }
 }
 
+export const verdictNotFile = (path: string): string => `--verdict ${path} is neither a regular file nor a link, so no verdict is written there; nothing was judged`;
+
+export async function writableVerdict(path: string): Promise<void> {
+  const found = await lstat(path).catch((error: unknown) => {
+    if ((error as { code?: unknown }).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  });
+  if (found !== undefined && !found.isFile() && !found.isSymbolicLink()) {
+    throw new UsageError(verdictNotFile(path));
+  }
+  await rm(path, { force: true });
+  await (await open(path, "wx")).close();
+  await rm(path);
+}
+
 type Found = { path: string; full: string };
 
 type Walk = { root: string; files: Found[]; bytes: number };

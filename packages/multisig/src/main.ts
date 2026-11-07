@@ -45,7 +45,7 @@ type Notify = (text: string) => void;
 export type Result = { code: number; out: string; err: string };
 
 export const EXIT_OK = 0;
-export const EXIT_REFUSED = 1;
+export const EXIT_FAILED = 1;
 export const EXIT_USAGE = 2;
 export const DEVNET = "https://api.devnet.solana.com";
 export const NOT_SENT = "nothing was sent; check the summary and pass --yes to sign and send";
@@ -416,6 +416,6 @@ export async function main(argv: string[], deps: Deps): Promise<Result> {
       return { code: EXIT_USAGE, out: "", err: `${notes.join("")}${jsonText({ error: message, usage: USAGE })}\n` };
     }
     const shown = error instanceof Refusal && error.shown !== undefined ? error.shown : {};
-    return { code: EXIT_REFUSED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal || isSdkError(error, "ledger-error"), ...shown })}\n` };
+    return { code: EXIT_FAILED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal || isSdkError(error, "ledger-error"), ...shown })}\n` };
   }
 }

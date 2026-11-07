@@ -23,7 +23,7 @@ import {
   transactionPda,
   vaultTransactionCodec,
 } from "../src/layout.js";
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE, main } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import {
   executeInstruction,
   LOADER,
@@ -53,6 +53,10 @@ import {
 beforeAll(openSvm);
 
 describe("multisig", () => {
+  it("exits 1 for a refusal and 2 for a wrong command line, apart from the 78 a judge refusal exits with", () => {
+    expect([EXIT_OK, EXIT_FAILED, EXIT_USAGE]).toEqual([0, 1, 2]);
+  });
+
   it("execute refuses before the threshold is reached", async () => {
     const m = await multisig("threshold", 2);
     const raise = await buildRaisePause({ authority: createNoopSigner(m.vault), flags: PAUSE_FILL });
@@ -62,7 +66,7 @@ describe("multisig", () => {
     expect((await s.cli("approve", ...on, "--keypair", m.file("a"), "--index", "1")).code).toBe(EXIT_OK);
 
     const early = await s.cli("execute", ...on, "--keypair", m.file("b"), "--index", "1");
-    expect([early.code, early.json()]).toEqual([EXIT_REFUSED, { error: "proposal 1 has 1 of 2 approvals; it needs 1 more before it can execute", refused: true }]);
+    expect([early.code, early.json()]).toEqual([EXIT_FAILED, { error: "proposal 1 has 1 of 2 approvals; it needs 1 more before it can execute", refused: true }]);
     const outsider = await s.member("threshold-outsider.json");
     const stranger = await s.cli("execute", ...on, "--keypair", "threshold-outsider.json", "--index", "1");
     expect(stranger.json()["error"]).toBe(`${outsider.address} is not a member of multisig ${m.address}, so it cannot execute`);
@@ -92,7 +96,7 @@ describe("multisig", () => {
     expect((await s.cli("propose-admin", ...lockedOn, "--", "intent-engine", "raise-pause")).code).toBe(EXIT_OK);
     expect((await s.cli("approve", ...lockedOn, "--index", "1")).code).toBe(EXIT_OK);
     const waiting = await s.cli("execute", ...lockedOn, "--index", "1");
-    expect([waiting.code, waiting.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringMatching(/^proposal 1 is time locked for 3600 more seconds, until /)]);
+    expect([waiting.code, waiting.json()["error"]]).toEqual([EXIT_FAILED, expect.stringMatching(/^proposal 1 is time locked for 3600 more seconds, until /)]);
   });
 
   it("approve refuses an upgrade whose buffer the vault does not control", async () => {
@@ -112,7 +116,7 @@ describe("multisig", () => {
 
     for (const name of ["b", "c"]) {
       const refused = await s.cli("approve", "--multisig", m.address, "--index", index.toString(), "--keypair", m.file(name), "--yes");
-      expect([refused.code, refused.json()["refused"]]).toEqual([EXIT_REFUSED, true]);
+      expect([refused.code, refused.json()["refused"]]).toEqual([EXIT_FAILED, true]);
       expect(refused.json()["error"]).toBe(`refusing to sign proposal ${index}: ${problem}; inspect it in the Squads app at ${SQUADS_SITE} and do not approve it blindly`);
       expect(refused.json()["proposal"]["summary"]).toEqual(shown["summary"]);
       expect(refused.json()["proposal"]["instructions"][0]["accounts"][6]).toEqual({ address: m.vault, signer: true, writable: true });
@@ -157,7 +161,7 @@ describe("multisig", () => {
     s.set(buffer, LOADER, bufferBytes(m.vault, swappedCode));
     const swapped = await s.cli(...run, "--expect-buffer-hash", sha256(approvedCode), "--yes");
     expect([swapped.code, swapped.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `buffer ${buffer} hashes to ${sha256(swappedCode)}, not the approved ${sha256(approvedCode)}; its code changed since approval, so do not execute it`,
     ]);
 
@@ -175,7 +179,7 @@ describe("multisig", () => {
       },
     };
     const raced = await main([...run, "--expect-buffer-hash", sha256(approvedCode), "--yes"], { ...s.deps, chain: () => racing });
-    expect(raced.code).toBe(EXIT_REFUSED);
+    expect(raced.code).toBe(EXIT_FAILED);
     expect(JSON.parse(raced.err)["error"]).toContain(`hashes to ${sha256(swappedCode)}, not the approved ${sha256(approvedCode)}`);
     expect(sends).toEqual([]);
     expect((await proposalOf(m, 1n))["status"]).toBe("approved");
@@ -205,7 +209,7 @@ describe("multisig", () => {
     const on = ["--multisig", m.address, "--index", index.toString()];
     const refused = await s.cli("approve", ...on, "--keypair", m.file("b"), "--yes");
     expect([refused.code, refused.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `proposal ${index} is a config transaction that changes the multisig itself; read the changes in the summary, inspect it in the Squads app at ${SQUADS_SITE} and do not approve it blindly, and pass --allow-config only if every change is expected`,
     ]);
     expect(refused.json()["proposal"]).toMatchObject({ kind: "config", summary });
@@ -257,7 +261,7 @@ describe("multisig", () => {
     const before = balance();
     const refused = await s.cli("execute", ...on, "--keypair", m.file("c"));
     expect([refused.code, refused.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `refusing to sign proposal ${index}: ${problem}; inspect it in the Squads app at ${SQUADS_SITE} and do not approve it blindly`,
     ]);
     await expect(executeInstruction(s.chain, { multisig: m.address, index, member: executor.address })).rejects.toThrow(
@@ -302,7 +306,7 @@ describe("multisig", () => {
     const on = ["--multisig", m.address, "--index", "1", "--yes"];
     const refused = await s.cli("approve", ...on, "--keypair", m.file("b"));
     expect([refused.code, refused.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `refusing to sign proposal 1: ${problem}; inspect it in the Squads app at ${SQUADS_SITE} and do not approve it blindly`,
     ]);
     await approveDirectly(m, 1n, ["a", "b"]);

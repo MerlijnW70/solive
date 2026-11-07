@@ -218,11 +218,12 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     }
   });
 
-  it("counts docker's out-of-memory flag even when the container's shell survives and exits otherwise", async () => {
+  it("judges by its own exit code a check that survives a memory kill of another process under the judge's memory, and fails it under pinned memory", async () => {
     const killed = '{"Running":false,"ExitCode":3,"OOMKilled":true,"Error":"","StartedAt":"2026-01-01T00:00:00Z"}';
     const ran = await runContainer(["image"], "oom-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: killed }), 30);
     expect(ran).toStrictEqual({ exitCode: 3, timedOut: false, deadline: false, state: ended(3, { oomKilled: true }) });
-    expect(containerOutcome(ran, limits)).toEqual({ outcome: "infra", reason: oomInfra("1g") });
+    expect(containerOutcome(ran, limits)).toEqual({ outcome: "fail", reason: exitedWith(3) });
+    expect(containerOutcome({ ...ran, ranAtMostMs: 10 }, { ...limits, pinned: { seconds: 60, memory: "64m" } })).toEqual({ outcome: "fail", reason: oomPinned("64m") });
   });
 
   it("under a pinned timeout, stops and fails a container its own clock saw still running at the timeout", async () => {
@@ -265,6 +266,9 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     const killed = await runContainer(["image"], "back-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: backwards(137, true) }), 30, 30, 60);
     expect(containerOutcome(killed, pins(60))).toEqual({ outcome: "fail", reason: oomPinned("64m") });
     expect(containerOutcome(killed, { ...limits, pinned: { seconds: 60 } })).toEqual({ outcome: "infra", reason: oomInfraUnpinned("1g") });
+    const survived = await runContainer(["image"], "back-6", envFor({ FAKE_RUN: "exit", FAKE_STATE: backwards(3, true) }), 30, 30, 60);
+    expect(containerOutcome(survived, pins(60))).toEqual({ outcome: "fail", reason: oomPinned("64m") });
+    expect(containerOutcome(survived, { ...limits, pinned: { seconds: 60 } })).toEqual({ outcome: "fail", reason: exitedWith(3) });
     for (const fake of [{ FAKE_RUN: "slow", FAKE_STATE: backwards(0) }, { FAKE_RUN: "slow", FAKE_STATUS: "dead" }]) {
       const long = await runContainer(["image"], "back-4", envFor(fake), 30, 30, 0.2);
       expect(long.ranAtMostMs ?? 0, JSON.stringify(fake)).toBeGreaterThanOrEqual(200);

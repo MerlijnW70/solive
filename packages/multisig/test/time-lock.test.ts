@@ -13,7 +13,7 @@ import {
   signTransaction,
 } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE, MAX_TIME_LOCK } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, MAX_TIME_LOCK } from "../src/main.js";
 import { executeInstruction, LOADER, programDataOf, readMultisig, readProposal, vaultOf } from "../src/squads.js";
 import { engineProgram, randomAddress, squadsProgram, Svm } from "./svm.js";
 
@@ -97,7 +97,7 @@ describe("propose-time-lock", () => {
     expect([missing.code, missing.json()["error"]]).toEqual([EXIT_USAGE, "this command needs --seconds"]);
     const outsider = await s.member("lock-refuse-outsider.json");
     const stranger = await s.cli(...propose, "--seconds", String(LOCK), "--keypair", "lock-refuse-outsider.json");
-    expect([stranger.code, stranger.json()]).toEqual([EXIT_REFUSED, { error: `${outsider.address} is not a member of multisig ${m.address}, so it cannot propose`, refused: true }]);
+    expect([stranger.code, stranger.json()]).toEqual([EXIT_FAILED, { error: `${outsider.address} is not a member of multisig ${m.address}, so it cannot propose`, refused: true }]);
     expect((await readMultisig(s.chain, m.address)).transactionIndex).toBe(0n);
     expect(await readProposal(s.chain, m.address, 1n)).toBeNull();
   });
@@ -142,7 +142,7 @@ describe("propose-time-lock", () => {
     expect(hashes).toEqual([sha256(code), sha256(code)]);
     const run = ["execute", "--multisig", m.address, "--index", "2", "--keypair", m.file("c"), "--expect-buffer-hash", sha256(code), "--yes"];
     const early = await s.cli(...run);
-    expect([early.code, early.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringMatching(new RegExp(`^proposal 2 is time locked for ${LOCK} more seconds, until `))]);
+    expect([early.code, early.json()["error"]]).toEqual([EXIT_FAILED, expect.stringMatching(new RegExp(`^proposal 2 is time locked for ${LOCK} more seconds, until `))]);
 
     const executor = m.members[2]!;
     const direct = await executeInstruction(s.chain, { multisig: m.address, member: executor.address, index: 2n });
@@ -174,7 +174,7 @@ describe("propose-time-lock", () => {
     expect(undo.json()["summary"][0]).toContain(`the current time lock of ${LOCK} seconds passes`);
     await passConfig(m, 3n);
     const held = await s.cli("execute", "--multisig", m.address, "--index", "3", "--allow-config", "--keypair", m.file("c"), "--yes");
-    expect([held.code, held.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringMatching(new RegExp(`^proposal 3 is time locked for ${LOCK} more seconds, until `))]);
+    expect([held.code, held.json()["error"]]).toEqual([EXIT_FAILED, expect.stringMatching(new RegExp(`^proposal 3 is time locked for ${LOCK} more seconds, until `))]);
     expect((await readMultisig(s.chain, m.address)).timeLock).toBe(LOCK);
   });
 });

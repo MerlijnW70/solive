@@ -58,6 +58,33 @@ const HEAP_FILLER = inNode("const kept = []; for (;;) kept.push(new Array(1 << 2
 const BUFFER_FILLER = inNode(HOG);
 const FORKED_HOG = lines('import { spawnSync } from "node:child_process";', inNode(`spawnSync(process.execPath, ["-e", ${JSON.stringify(HOG)}]); process.exit(1);`));
 const FORKED_HOG_THEN_ANSWER = lines('import { spawnSync } from "node:child_process";', inNode(`spawnSync(process.execPath, ["-e", ${JSON.stringify(HOG)}]);`));
+const HOG_THEN_SELF_KILL = lines(
+  'import { spawnSync } from "node:child_process";',
+  "export default (mode) => {",
+  `  if (mode === "hog") { spawnSync(process.execPath, ["-e", ${JSON.stringify(HOG)}]); process.exit(1); }`,
+  '  process.kill(process.pid, "SIGKILL");',
+  "};",
+);
+const ZOMBIES = lines(
+  'import { spawn } from "node:child_process";',
+  'import { readdirSync, readFileSync } from "node:fs";',
+  "const state = (pid) => { try { return readFileSync('/proc/' + pid + '/stat', 'utf8').replace(/^.*\\) /, '')[0]; } catch { return ''; } };",
+  "const zombies = () => readdirSync('/proc').filter((name) => /^[0-9]+$/.test(name)).filter((pid) => state(pid) === 'Z').length;",
+  "export default (mode) => {",
+  "  if (mode === 'fork') {",
+  "    spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }).unref();",
+  "    return 'forked';",
+  "  }",
+  "  if (mode === 'exit') {",
+  "    spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }).unref();",
+  "    process.exit(3);",
+  "  }",
+  "  const until = performance.now() + 2000;",
+  "  let left = zombies();",
+  "  while (left > 0 && performance.now() < until) left = zombies();",
+  "  return left;",
+  "};",
+);
 const CHURN = lines(
   "export default (text) => {",
   "  const live = [];",
@@ -115,6 +142,13 @@ describe("a plain Node case killed for memory under the memory the judge chose",
     expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures, reads.count]).toEqual([0, undefined, CASES.cases.map((_, at) => ({ case: at, verdict: "crashed", detail: caseFilledPinned(MEMORY) })), 0]);
   });
 
+  it("does not charge a memory kill in one case to a later case that kills itself, and leaves both to their own fail", DOCKER_TEST, async () => {
+    const cases: Cases = { ...CASES, cases: [{ args: ["hog"], expected: 1 }, { args: ["kill"], expected: 1 }] };
+    const { judged } = await judgeNode(BOX, bytes(HOG_THEN_SELF_KILL), "count.mjs", cases, 7, 60);
+    expect([judged.passed, judged.stop, judged.failures.map((failure) => failure.verdict)]).toEqual([0, undefined, ["crashed", "crashed"]]);
+    expect(engineOutcome(NODE_ENGINE, judged).outcome).toBe("fail");
+  });
+
   it("is infra when a case killed with signal 9 leaves a count the judge cannot read", DOCKER_TEST, async () => {
     reads.broken = true;
     const { judged } = await judgeNode(BOX, bytes(inNode('process.kill(process.pid, "SIGKILL");')), "count.mjs", CASES, 7, 60);
@@ -128,6 +162,14 @@ describe("plain Node cases that hold memory without running out of it", () => {
     const box = { ...BOX, memory: SANDBOX_MEMORY };
     const { judged } = await judgeNode(box, bytes(CHURN), "churn.mjs", CASES, 7, 60);
     expect([judged.passed, judged.failures, judged.stop]).toEqual([2, [], undefined]);
+  });
+});
+
+describe("plain Node cases that leave processes behind", () => {
+  it("leave no zombie for the cases after them, and a case that forks and exits still fails by its own exit", DOCKER_TEST, async () => {
+    const cases: Cases = { ...CASES, cases: [{ args: ["fork"], expected: "forked" }, { args: ["exit"], expected: "forked" }, { args: ["count"], expected: 0 }] };
+    const { judged } = await judgeNode(BOX, bytes(ZOMBIES), "zombies.mjs", cases, 7, 60);
+    expect([judged.passed, judged.stop, judged.failures]).toEqual([2, undefined, [{ case: 1, verdict: "crashed", detail: "the case wrote no answer framed by its token" }]]);
   });
 });
 

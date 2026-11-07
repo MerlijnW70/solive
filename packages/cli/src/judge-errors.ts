@@ -54,7 +54,16 @@ const reasonOf = (error: unknown): string => (error instanceof Error ? error.mes
 export const sendFailure = (handed: boolean, intent: string, signature: string | undefined, error: unknown): unknown =>
   handed && !isSolanaError(error, SOLANA_ERROR__TRANSACTION__SIGNATURES_MISSING) ? new ReleaseUncertain(sendUnconfirmed(intent, signature, reasonOf(error)), error) : error;
 
-export const failedSend = (error: unknown): string => reasonOf(error instanceof ReleaseUncertain ? error.cause : error);
+export const notSent = (signal: InterruptSignal): string =>
+  `the check passed, but ${signal} arrived before the release was sent; nothing was paid and no verdict was written`;
+
+export const mayHaveLanded = (signal: InterruptSignal, address: string, signature: string | undefined): string =>
+  `the check passed and the release was sent${signature === undefined ? "" : ` in ${signature}`}; a second ${signal} stopped the judge before the send was confirmed, so the release may have landed. Read intent ${address} before judging it again; no verdict was written`;
+
+export const verdictUnwritable = (path: string, reason: string): string =>
+  `the check ran, but the verdict could not be written to ${path} (${reason}); nothing was sent or paid, so judge it again with a --verdict that can be written`;
+
+export const failedSend =(error: unknown): string => reasonOf(error instanceof ReleaseUncertain ? error.cause : error);
 
 export const INFRA_NEXT = "nothing was signed or paid and no verdict was written; this is not a verdict on the work, so fix the cause if needed and run the judge again";
 

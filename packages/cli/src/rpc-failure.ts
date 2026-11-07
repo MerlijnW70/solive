@@ -46,10 +46,14 @@ export const HTTP_RATE_LIMITED = 429;
 
 export const HTTP_SERVER_ERROR = 500;
 
+export const HTTP_LASTING: ReadonlySet<number> = new Set([501, 505]);
+
+const temporaryHttp = (status: number): boolean => status === HTTP_RATE_LIMITED || (status >= HTTP_SERVER_ERROR && !HTTP_LASTING.has(status));
+
 export function rpcTemporary(error: unknown): boolean {
   if (isSdkError(error, "timed-out") || isSdkError(error, "rate-limited")) {
     return true;
   }
   const cause = rpcCause(error);
-  return cause !== null && (cause.kind === "unreached" || cause.kind === "dropped" || (cause.kind === "http" && (cause.status === HTTP_RATE_LIMITED || cause.status >= HTTP_SERVER_ERROR)));
+  return cause !== null && (cause.kind === "unreached" || cause.kind === "dropped" || (cause.kind === "http" && temporaryHttp(cause.status)));
 }

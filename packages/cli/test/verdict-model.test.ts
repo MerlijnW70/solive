@@ -22,14 +22,17 @@ import {
   inspectFailed,
   KILLED_EXIT,
   killedUnflagged,
+  launcherKilledPinned,
   killedUnflaggedUnpinned,
   NEVER_STARTED,
   NO_RULING,
   nothingJudged,
   notStarted,
   OOM_UNREAD,
+  OOM_UNREAD_PINNED,
   oomPinned,
   pinnedFill,
+  pinnedLauncherEnd,
   ranPastPin,
   RUN_UNTIMED,
   type Ruling,
@@ -70,12 +73,23 @@ describe("the verdict model, row by row", () => {
     expect(containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 10 }, pinnedMemory)).toEqual(fail(exitedWith(137)));
   });
 
-  it("makes Docker's out-of-memory flag infra whatever the exit code under the memory the judge chose, and fail under pinned memory", () => {
+  it("makes Docker's out-of-memory flag infra under the memory the judge chose only when the check itself ended with 137, and fail under pinned memory whatever the exit code", () => {
     const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
+    expect(docker(ran(0, { oomKilled: true }))).toEqual(PASS);
+    for (const code of [1, 3, 125]) {
+      expect(docker(ran(code, { oomKilled: true })), String(code)).toEqual(fail(exitedWith(code)));
+    }
+    expect(docker(ran(137, { oomKilled: true }))).toEqual(infra(oomInfra("512m")));
     for (const code of [0, 1, 125, 137]) {
-      expect(docker(ran(code, { oomKilled: true })), String(code)).toEqual(infra(oomInfra("512m")));
       expect(containerOutcome({ deadline: false, state: ran(code, { oomKilled: true }), ranAtMostMs: 10 }, pinnedMemory), String(code)).toEqual(fail(oomPinned("512m")));
     }
+  });
+
+  it("gives a check that forks a memory hog and exits 1 the same fail as the plain Node case that does, so the hog cannot turn the fail into infra", () => {
+    const hogged = docker(ran(1, { oomKilled: true }));
+    const caseEnd = caseOutcome({ signal: null, stoppedByJudge: false, oomKills: 1 }, LIMITS) ?? engineOutcome(ENGINE, { total: 1, passed: 0 });
+    expect([hogged.outcome, caseEnd.outcome]).toEqual(["fail", "fail"]);
+    expect(caseOutcome({ signal: "SIGKILL", stoppedByJudge: false, oomKills: 1 }, LIMITS)?.outcome).toBe(docker(ran(137, { oomKilled: true })).outcome);
   });
 
   it("makes an exit 137 without Docker's flag infra under the memory the judge chose, a self-kill included, since Docker can miss the flag", () => {
@@ -132,7 +146,8 @@ describe("the verdict model, row by row", () => {
     for (const ranAtMostMs of [100, 60_000, undefined]) {
       const more = ranAtMostMs === undefined ? {} : { ranAtMostMs };
       expect(pinned(ran(1, { oomKilled: true }), more), String(ranAtMostMs)).toEqual(fail(oomPinned("512m")));
-      expect(pinned(ran(1, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(infra(oomInfraUnpinned("1g")));
+      expect(pinned(ran(137, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(infra(oomInfraUnpinned("1g")));
+      expect(pinned(ran(1, { oomKilled: true }), more, LEFT), String(ranAtMostMs)).toEqual(ranAtMostMs === 100 ? fail(exitedWith(1)) : infra(RUN_UNTIMED));
     }
     expect(pinned(null, { deadline: true, ranAtMostMs: 90_000 })).toEqual(infra(stoppedBeforePin(90, 60)));
     expect(pinned(ran(0), { deadline: true, ranAtMostMs: 10 })).toEqual(infra(stoppedBeforePin(90, 60)));
@@ -142,16 +157,16 @@ describe("the verdict model, row by row", () => {
     expect(pinned(null, { problem: "spawn docker ENOENT" })).toEqual(infra(notStarted("docker", "spawn docker ENOENT")));
     expect(pinned(ran(0), { overran: true, interrupted: "SIGINT" })).toEqual({ outcome: "interrupted", signal: "SIGINT" });
     expect(containerOutcome({ deadline: false, state: ran(0), overran: true, ranAtMostMs: 999_999 }, LIMITS)).toEqual(PASS);
-    expect(docker(ran(1, { oomKilled: true }))).toEqual(infra(oomInfra("512m")));
+    expect(docker(ran(1, { oomKilled: true }))).toEqual(fail(exitedWith(1)));
   });
 
   it("advises --sandbox-memory only where it is accepted: never under a judge-run block, whether or not it pins memory", () => {
     const loose = { seconds: 90, memory: "1g", pinned: { seconds: 60 } };
     const tight = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
     const reasons = [
-      docker(ran(1, { oomKilled: true })),
+      docker(ran(137, { oomKilled: true })),
       docker(ran(137)),
-      containerOutcome({ deadline: false, state: ran(1, { oomKilled: true }), ranAtMostMs: 10 }, loose),
+      containerOutcome({ deadline: false, state: ran(137, { oomKilled: true }), ranAtMostMs: 10 }, loose),
       containerOutcome({ deadline: false, state: ran(137), ranAtMostMs: 10 }, loose),
       containerOutcome({ deadline: false, state: ran(1, { oomKilled: true }), ranAtMostMs: 10 }, tight),
     ].map((ruling) => (ruling as { reason: string }).reason);
@@ -172,8 +187,19 @@ describe("the verdict model, row by row", () => {
   it("fails a plain Node case under pinned memory whenever the count rose while it ran, and only then", () => {
     const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "256m" } };
     expect([pinnedFill(1, pinnedMemory), pinnedFill(4, pinnedMemory)]).toEqual([fail(caseFilledPinned("256m")), fail(caseFilledPinned("256m"))]);
-    expect([pinnedFill(0, pinnedMemory), pinnedFill(null, pinnedMemory), pinnedFill(1, LIMITS), pinnedFill(1, { seconds: 90, memory: "1g", pinned: { seconds: 60 } })]).toEqual([undefined, undefined, undefined, undefined]);
+    expect([pinnedFill(0, pinnedMemory), pinnedFill(null, LIMITS), pinnedFill(1, LIMITS), pinnedFill(1, { seconds: 90, memory: "1g", pinned: { seconds: 60 } })]).toEqual([undefined, undefined, undefined, undefined]);
   });
+
+  it("makes a plain Node case under pinned memory infra when its out-of-memory count cannot be read, whatever it answered", () => {
+    expect(pinnedFill(null, { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "256m" } })).toEqual(infra(OOM_UNREAD_PINNED));
+  });
+
+  it("fails a plain Node launcher's end under pinned memory only for Docker's flag while a case runs, and makes signal 9 without the flag infra", () => {
+    const launcher = (exitCode: number, oomKilled: boolean) => ({ started: true, exitCode, oomKilled, error: "" });
+    expect(pinnedLauncherEnd(launcher(137, true), "256m", true, false)).toEqual(fail(caseOomPinned("256m")));
+    expect(pinnedLauncherEnd(launcher(137, true), "256m", true, true)).toBeUndefined();
+    expect(pinnedLauncherEnd(launcher(137, false), "256m", true, false)).toEqual(infra(launcherKilledPinned("256m")));
+    expect(pinnedLauncherEnd(launcher(1, false), "256m", true, false)).toBeUndefined();  });
 
   it("leaves a plain Node case that kills itself, aborts, exits, or is stopped by the judge to its own verdict, whatever the out-of-memory count", () => {
     expect(caseOutcome(ended({ oomKills: 0 }), LIMITS)).toBeUndefined();
@@ -256,6 +282,11 @@ describe("the verdict model, row by row", () => {
     expect(exitOfError(missing, true, ["judge", "--spec", "/tmp/judge-spec.md"])).toBe(EXIT_USAGE);
     expect(exitOfError(missing, true, ["judge", "--spec=/tmp/judge-spec.md"])).toBe(EXIT_USAGE);
     expect(exitOfError(missing, true, ["judge", "--spec", "/tmp/other.md"])).toBe(EXIT_REFUSED);
+    for (const code of ["EACCES", "EPERM", "EROFS", "EISDIR", "ENOTDIR"]) {
+      const unwritable = Object.assign(new Error(`${code}: open`), { code, path: "/tmp/judge-verdict.json" });
+      expect(exitOfError(unwritable, true, ["judge", "--verdict", "/tmp/judge-verdict.json"]), code).toBe(EXIT_USAGE);
+      expect(exitOfError(unwritable, true, ["judge", "--verdict", "/tmp/other.json"]), code).toBe(EXIT_REFUSED);
+    }
     expect(exitOfError(new JudgeInfraError("late"), true)).toBe(EXIT_RETRY);
     expect(exitOfError(new JudgeInterrupted("SIGTERM"), true)).toBe(SIGNAL_EXIT.SIGTERM);
     expect(exitOfError(new UsageError("bad"), true)).toBe(EXIT_USAGE);
@@ -274,10 +305,10 @@ const refusedBy = (error: unknown): Refusal => {
 };
 
 const OUTCOME_ROWS: Record<string, Ruling | Refusal> = {
-  "`--sandbox docker`: the container started and exited 0": docker(ran(0)),
-  "`--sandbox docker`: the container started and exited with any other code, 125 included": docker(ran(125)),
+  "`--sandbox docker`: the container started and exited 0, also when Docker flags it out of memory the judge chose": docker(ran(0, { oomKilled: true })),
+  "`--sandbox docker`: the container started and exited with any code but 0 and 137, 125 included, also when Docker flags it out of memory the judge chose": docker(ran(125, { oomKilled: true })),
   "`--sandbox docker`: the container exited 137, a kill with signal 9, under the memory the judge chose, and Docker did not flag it out of memory": docker(ran(137)),
-  "`--sandbox docker`: Docker flags the container out of memory the judge chose, whatever its exit code": docker(ran(1, { oomKilled: true })),
+  "`--sandbox docker`: the container exited 137 and Docker flags it out of memory the judge chose": docker(ran(137, { oomKilled: true })),
   "`--sandbox docker` under a `judge-run` block: Docker flags the container out of the pinned `memory`, whatever its exit code or how long it ran": containerOutcome(
     { deadline: false, state: ran(0, { oomKilled: true }) },
     { ...LIMITS, pinned: { seconds: 5, memory: "512m" } },
@@ -306,11 +337,18 @@ const OUTCOME_ROWS: Record<string, Ruling | Refusal> = {
   "the check runs past `--timeout`, so the judge stops it, and the judge never saw it run a pinned `timeout`": containerOutcome({ deadline: true, state: null, ranAtMostMs: 4_000 }, { ...LIMITS, pinned: { seconds: 5 } }),
   "`--plain-node`: a case is killed with signal 9 while the kernel's out-of-memory count for its container rises, under the memory the judge chose": caseOutcome(ended({ oomKills: 1 }), LIMITS) as Ruling,
   "`--plain-node`: a case is killed with signal 9, and the judge cannot read its container's out-of-memory count": caseOutcome(ended({ oomKills: null }), LIMITS) as Ruling,
-  "`--plain-node` under a `judge-cases` block that pins `node_memory`: the out-of-memory count rises while a case runs, or the container ends while a case runs and Docker flags it out of memory or its launcher was killed with signal 9": pinnedFill(1, {
+  "`--plain-node` under a `judge-cases` block that pins `node_memory`: the out-of-memory count rises while a case runs, or the container ends while a case runs and Docker flags it out of memory": pinnedFill(1, {
     ...LIMITS,
     pinned: { seconds: 5, memory: "512m" },
   }) as Ruling,
-  "`--plain-node`: a case kills itself, aborts or exits, or is killed with signal 9 while the out-of-memory count stays the same": caseOutcome(ended({ oomKills: 0 }), LIMITS) ?? engineOutcome(ENGINE, { total: 1, passed: 0 }),
+  "`--plain-node` under a `judge-cases` block that pins `node_memory`: the launcher is killed with signal 9 and Docker does not flag its container out of memory, or the count cannot be read around a case, or a case starts before every process of the case before it ended and the count rises": pinnedLauncherEnd(
+    ran(137),
+    "512m",
+    true,
+    false,
+  ) as Ruling,
+  "`--plain-node`: a case kills itself, aborts or exits, also after a process it started was killed for memory the judge chose, or is killed with signal 9 while the out-of-memory count stays the same during that case":
+    caseOutcome(ended({ signal: null, oomKills: 1 }), LIMITS) ?? caseOutcome(ended({ oomKills: 0 }), LIMITS) ?? engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "an engine runs past `--timeout`, or past the MCP tool's own time budget": engineOutcome(ENGINE, { total: 1, passed: 0, stop: stopAt("deadline", 1) }),
   "a case reaches a limit of its own: the host engine's per-call limit, the plain Node per-case limit, or the spec's `steps` or `heap`": engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "a case answers wrongly, throws, answers no primitive, or the module does not load": engineOutcome(ENGINE, { total: 2, passed: 1 }),

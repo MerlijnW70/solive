@@ -1,7 +1,7 @@
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Chain } from "../src/chain.js";
-import { EXIT_OK, EXIT_REFUSED, main } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
 import { rewrittenText } from "../src/proposal-effects.js";
 import { ENGINE_PROGRAM, LOADER, programDataOf, upgradeInstruction } from "../src/squads.js";
 import { approveDirectly, bytesOf, craftVault, header, multisig, openSvm, proposalOf, s, sha256, type Made } from "./multisig-world.js";
@@ -86,7 +86,7 @@ describe("the loader upgrade path's simulated program hash", () => {
     };
     const raced = await main(["execute", "--multisig", m.address, "--index", "1", "--expect-buffer-hash", sha256(NEXT), "--keypair", m.file("c"), "--yes"], { ...s.deps, chain: () => racing });
     expect([raced.code, JSON.parse(raced.err)["error"], sends]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `simulated, the execute transaction sets the program data ${programData} to code with sha256 ${sha256(swapped)}, not the approved ${sha256(NEXT)}; do not execute it`,
       [],
     ]);
@@ -113,11 +113,11 @@ describe("the loader upgrade path's simulated program hash", () => {
     expect([shown["problems"], shown["buffers"]]).toEqual([[writeProblem, problem], [{ buffer, authority: m.vault, hash: null, writtenBy: [1] }]]);
     for (const allow of [[], ["--allow-rewritten-buffer"]]) {
       const refused = await s.cli("approve", ...on, ...allow, "--keypair", m.file("a"), "--yes");
-      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`refusing to sign proposal ${index}: ${writeProblem}; ${problem}`)]);
+      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_FAILED, expect.stringContaining(`refusing to sign proposal ${index}: ${writeProblem}; ${problem}`)]);
     }
     await approveDirectly(m, index, ["a", "b"]);
     const failed = await s.cli("execute", ...on, "--expect-buffer-hash", sha256(patched), "--allow-rewritten-buffer", "--keypair", m.file("c"), "--yes");
-    expect([failed.code, failed.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`refusing to sign proposal ${index}: ${writeProblem}; ${problem}`)]);
+    expect([failed.code, failed.json()["error"]]).toEqual([EXIT_FAILED, expect.stringContaining(`refusing to sign proposal ${index}: ${writeProblem}; ${problem}`)]);
     expect((await proposalOf(m, index))["status"]).toBe("approved");
     expect(codeAt(programData)).toBe(sha256(engineProgram()));
   });

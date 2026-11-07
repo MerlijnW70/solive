@@ -6,8 +6,8 @@ import { buildRaisePause, PAUSE_FILL } from "@intent-engine/core/internal";
 import { beforeAll, describe, expect, it } from "vitest";
 import { keypairExposed, readKeypair } from "../src/keys.js";
 import { proposalApprove, proposalCreate, proposalPda, proposalReject, transactionPda, vaultTransactionCreate, compileVaultMessage } from "../src/layout.js";
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE, main, PLAIN_HTTP } from "../src/main.js";
-import { describeInstructions } from "../src/review.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, PLAIN_HTTP } from "../src/main.js";
+import { describeInstructions, SQUADS_APP } from "../src/review.js";
 import { ENGINE_PROGRAM, LOADER, programDataOf, PROPOSE_PROBLEMS, readMultisig } from "../src/squads.js";
 import { approveDirectly, craftConfig, craftVault, type Made, multisig, openSvm, printed, proposalOf, s, sendAs, signerOf, upgradeable } from "./multisig-world.js";
 
@@ -61,10 +61,10 @@ describe("the multisig tool refuses what it cannot show", () => {
       const on = ["--multisig", m.address, "--index", index.toString()];
       expect((await proposalOf(m, index))["problems"]).toEqual([text]);
       const approved = await s.cli("approve", ...on, "--keypair", m.file("b"), "--yes");
-      expect([approved.code, approved.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(text)]);
+      expect([approved.code, approved.json()["error"]]).toEqual([EXIT_FAILED, expect.stringContaining(text)]);
       await approveDirectly(m, index, ["a", "b"]);
       const executed = await s.cli("execute", ...on, "--keypair", m.file("c"), "--yes");
-      expect([executed.code, executed.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(text)]);
+      expect([executed.code, executed.json()["error"]]).toEqual([EXIT_FAILED, expect.stringContaining(text)]);
       expect((await proposalOf(m, index))["status"]).toBe("approved");
     }
   });
@@ -103,7 +103,7 @@ describe("the multisig tool refuses what it cannot show", () => {
       await expect(readKeypair("~/member.json", "linux", home)).rejects.toThrow(keypairExposed(path));
       expect((await readKeypair(path, "win32", home)).address).toBe(signer.address);
       const refused = await main(["approve", "--multisig", signer.address, "--index", "1", "--keypair", path], { ...s.deps, keypair: (given) => readKeypair(given, "linux", home) });
-      expect([refused.code, JSON.parse(refused.err)["error"]]).toEqual([EXIT_REFUSED, keypairExposed(path)]);
+      expect([refused.code, JSON.parse(refused.err)["error"]]).toEqual([EXIT_FAILED, keypairExposed(path)]);
     }
     chmodSync(path, 0o600);
     expect((await readKeypair(path, "linux", home)).address).toBe(signer.address);
@@ -124,13 +124,13 @@ describe("the multisig tool refuses what it cannot show", () => {
     const command = ["--", "intent-engine", "raise-pause", "--authority", m.vault];
     for (const yes of [[], ["--yes"]]) {
       const refused = await s.cli(...args, ...yes, ...command);
-      expect([refused.code, refused.json()["error"], refused.json()["proposal"]["problems"]]).toEqual([EXIT_REFUSED, `refusing to propose: ${problem}; ${PROPOSE_PROBLEMS}`, [problem]]);
+      expect([refused.code, refused.json()["error"], refused.json()["proposal"]["problems"]]).toEqual([EXIT_FAILED, `refusing to propose: ${problem}; ${PROPOSE_PROBLEMS}`, [problem]]);
     }
     expect(await indexOf(m)).toBe(0n);
     const proposed = await s.cli(...args, "--allow-review-problems", "--yes", ...command);
     expect([proposed.code, proposed.json()["sent"], proposed.json()["problems"], proposed.json()["summary"][0]]).toEqual([EXIT_OK, true, [problem], `Warning: ${problem}`]);
     expect((await proposalOf(m, 1n))["problems"]).toEqual([problem]);
-    expect((await s.cli("approve", "--multisig", m.address, "--index", "1", "--keypair", m.file("b"))).code).toBe(EXIT_REFUSED);
+    expect((await s.cli("approve", "--multisig", m.address, "--index", "1", "--keypair", m.file("b"))).code).toBe(EXIT_FAILED);
     s.printed = printed(m.vault, [await raise(m)], []);
     const clean = await s.cli(...args, "--allow-review-problems", "--yes", ...command);
     expect([clean.code, clean.json()["summary"][0], clean.json()["problems"]]).toEqual([EXIT_OK, `Proposes vault transaction 2 on multisig ${m.address}; it runs once 2 members approve`, undefined]);
@@ -162,7 +162,7 @@ describe("the multisig tool refuses what it cannot show", () => {
     await approveDirectly(m, index, ["a", "b"]);
     const on = ["--multisig", m.address, "--index", index.toString(), "--allow-config", "--keypair", m.file("c")];
     const hashed = await s.cli("execute", ...on, "--expect-buffer-hash", "a".repeat(64), "--yes");
-    expect([hashed.code, hashed.json()["error"]]).toEqual([EXIT_REFUSED, `proposal ${index} is a config transaction, which upgrades nothing, so --expect-buffer-hash does not apply`]);
+    expect([hashed.code, hashed.json()["error"]]).toEqual([EXIT_FAILED, `proposal ${index} is a config transaction, which upgrades nothing, so --expect-buffer-hash does not apply`]);
     expect((await proposalOf(m, index))["status"]).toBe("approved");
     expect((await s.cli("execute", ...on, "--yes")).code).toBe(EXIT_OK);
   });
@@ -185,10 +185,10 @@ describe("the multisig tool refuses what it cannot show", () => {
     const on = (index: bigint) => ["--multisig", m.address, "--index", index.toString(), "--keypair", m.file("c")];
     for (const action of ["approve", "reject", "execute"]) {
       const refused = await s.cli(action, ...on(pending));
-      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, stale(pending, action)]);
+      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_FAILED, stale(pending, action)]);
     }
     const staleConfig = await s.cli("execute", ...on(oldConfig), "--allow-config");
-    expect([staleConfig.code, staleConfig.json()["error"]]).toEqual([EXIT_REFUSED, stale(oldConfig, "execute")]);
+    expect([staleConfig.code, staleConfig.json()["error"]]).toEqual([EXIT_FAILED, stale(oldConfig, "execute")]);
     const proposal = await proposalPda(m.address, pending);
     const voter = signerOf(m, "c");
     await expect(sendAs(voter, [proposalApprove({ multisig: m.address, proposal, member: voter.address })])).rejects.toThrow();
@@ -211,8 +211,8 @@ describe("the multisig tool refuses what it cannot show", () => {
     for (const action of ["approve", "reject", "execute"]) {
       const refused = await s.cli(action, ...on(draft));
       expect([refused.code, refused.json()["error"]]).toEqual([
-        EXIT_REFUSED,
-        `proposal ${draft} is a draft that its creator never activated, so it cannot ${action} until it is activated; inspect it in the Squads app at https://app.squads.so and do not approve it blindly before activating it`,
+        EXIT_FAILED,
+        `proposal ${draft} is a draft that its creator never activated, so it cannot ${action} until it is activated; inspect it in the Squads app at ${SQUADS_APP} and do not approve it blindly before activating it`,
       ]);
     }
   });
@@ -235,7 +235,7 @@ describe("the multisig tool refuses what it cannot show", () => {
         EXIT_USAGE,
         `the command names --authority ${other}, but the proposal signs as the vault ${m.vault}; give it --authority ${m.vault}`,
       ],
-      [[...args, "--keypair", "admin-first-stranger.json", "--", "intent-engine", "raise-pause", "--authority", m.vault], EXIT_REFUSED, `${other} is not a member of multisig ${m.address}, so it cannot propose`],
+      [[...args, "--keypair", "admin-first-stranger.json", "--", "intent-engine", "raise-pause", "--authority", m.vault], EXIT_FAILED, `${other} is not a member of multisig ${m.address}, so it cannot propose`],
     ];
     for (const [argv, code, error] of cases) {
       const refused = await s.cli(...argv);
@@ -244,7 +244,7 @@ describe("the multisig tool refuses what it cannot show", () => {
     expect(s.runs.length).toBe(runs);
     s.printed = JSON.stringify({ sent: false, summary: ["preview"] });
     const preview = await s.cli(...args, "--keypair", m.file("a"), "--", "intent-engine", "raise-pause");
-    expect([preview.code, preview.json()["error"]]).toEqual([EXIT_REFUSED, "the command printed no unsigned transaction; run an intent engine admin command with --authority <vault>"]);
+    expect([preview.code, preview.json()["error"]]).toEqual([EXIT_FAILED, "the command printed no unsigned transaction; run an intent engine admin command with --authority <vault>"]);
     expect(await indexOf(m)).toBe(0n);
   });
 

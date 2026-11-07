@@ -48,6 +48,17 @@ describe("judge under a judge-run block, in a real Docker container", () => {
     expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
   });
 
+  it("fails and does not sign a pinned check that kills itself with signal 9, which work run by the check can always do", LIVE, async () => {
+    for (const run of ["node -e 'process.kill(process.pid, \"SIGKILL\")'", "exit 137"]) {
+      const { j, check, verdict } = await pinnedJob({ image: SANDBOX_IMAGE, run, timeout: 60, memory: "256m" });
+      const killed = await cli(boxed(j, run, "--check", check, "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), { "judge.json": j.judge });
+      expect([killed.code, killed.err], run).toEqual([EXIT_FAILED, ""]);
+      expect(killed.json(), run).toMatchObject({ verdict: "fail", exitCode: 137, signature: null });
+      expect(existsSync(verdict), run).toBe(true);
+      expect(status(j.intent), run).toBe(IntentStatus.Open);
+    }
+  });
+
   it("fails and does not sign a check that runs past its pinned timeout, whether it ends by itself or is still running and stopped", LIVE, async () => {
     for (const [run, more] of [
       ["sleep 3; node check/check.mjs", []],

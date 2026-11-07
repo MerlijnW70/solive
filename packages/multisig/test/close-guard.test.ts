@@ -2,7 +2,7 @@ import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import { DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH, TESTNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { describeInstructions } from "../src/review.js";
-import { EXIT_OK, EXIT_REFUSED, EXIT_USAGE } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { CLOSE_TAG, ENGINE_CLOSE, ENGINE_PROGRAM, LOADER, programDataOf } from "../src/squads.js";
 import { randomAddress } from "./svm.js";
 import {
@@ -104,7 +104,7 @@ describe("loader close", () => {
     const { m, index, on } = await engineCloseProposal("mainnet");
     s.genesis = MAINNET_GENESIS_HASH;
     const refused = await s.cli("approve", ...on, "--keypair", m.file("a"), "--yes");
-    expect([refused.code, refused.json()["error"], refused.json()["refused"]]).toEqual([EXIT_REFUSED, refusal(index), true]);
+    expect([refused.code, refused.json()["error"], refused.json()["refused"]]).toEqual([EXIT_FAILED, refusal(index), true]);
     expect(refused.json()["proposal"]["warning"]).toBe(ENGINE_CLOSE);
     expect((await proposalOf(m, index))["approved"]).toEqual([]);
 
@@ -120,7 +120,7 @@ describe("loader close", () => {
     await approveDirectly(m, index, ["a", "b"]);
     s.genesis = MAINNET_GENESIS_HASH;
     const refused = await s.cli("execute", ...on, "--keypair", m.file("a"));
-    expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, refusal(index)]);
+    expect([refused.code, refused.json()["error"]]).toEqual([EXIT_FAILED, refusal(index)]);
     const allowed = await s.cli("execute", ...on, "--allow-engine-close", "--keypair", m.file("a"));
     expect([allowed.code, allowed.json()["sent"], allowed.json()["summary"][0]]).toEqual([EXIT_OK, false, `Warning: ${ENGINE_CLOSE}`]);
   });

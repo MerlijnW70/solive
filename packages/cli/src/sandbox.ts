@@ -155,6 +155,7 @@ export const insideOf = (root: string, host: string): string => posix.join(SANDB
 export function containerArgs(sandbox: Extract<Sandbox, { kind: "docker" }>, copy: Mounted, sha256: string, run: string): string[] {
   const shared = ["work", "spec", ...(copy.check === undefined ? [] : ["check"])];
   return [
+    "--init",
     "--network",
     "none",
     "--read-only",

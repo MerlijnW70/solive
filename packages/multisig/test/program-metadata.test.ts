@@ -1,7 +1,7 @@
 import { deflateSync, inflateSync } from "node:zlib";
 import type { Address } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
-import { EXIT_OK, EXIT_REFUSED } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { canonicalMetadata } from "../src/program-metadata-layout.js";
 import { ENGINE_PROGRAM, programDataOf } from "../src/squads.js";
 import { solText } from "../src/system-transfer.js";
@@ -81,7 +81,7 @@ describe("the IDL update scripts/idl.sh --multisig proposes", () => {
     }
     const unhashed = await s.cli("execute", ...on, "--keypair", m.file("c"), "--yes");
     expect([unhashed.code, unhashed.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       "proposal 1 sets the IDL from a buffer; pass --expect-buffer-hash with the buffer hash approve printed, which equals the sha256 idl.sh printed for the local IDL file, so the IDL that is set is the IDL that was approved",
     ]);
 
@@ -106,7 +106,7 @@ describe("the IDL update scripts/idl.sh --multisig proposes", () => {
     }
     const refused = await s.cli("execute", ...on, "--expect-buffer-hash", LOCAL_HASH, "--keypair", m.file("c"), "--yes");
     expect([refused.code, refused.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `buffer ${buffer} hashes to ${digest(changed)}, not the approved ${LOCAL_HASH}; the IDL it sets changed since approval, so do not execute it`,
     ]);
     expect(onChainIdl(metadata)).toEqual(OLD_IDL);

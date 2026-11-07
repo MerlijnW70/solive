@@ -1,7 +1,7 @@
 import { address, createNoopSigner } from "@solana/kit";
 import { buildProposeAdmin, buildRaisePause, buildSetCapsRequired, buildSetMintCap, findMintCapAddress, PAUSE_FILL } from "@intent-engine/core/internal";
 import { beforeAll, describe, expect, it } from "vitest";
-import { EXIT_OK, EXIT_REFUSED } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import {
   ENGINE_PROGRAM,
   type InstructionView,
@@ -52,7 +52,7 @@ describe("multisig", () => {
     const propose = ["propose-upgrade", "--multisig", m.address, "--spill", spill, "--keypair", m.file("a")];
     const refused = await s.cli(...propose, "--buffer", strangerBuffer, "--yes");
     expect([refused.code, refused.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       expect.stringContaining(`not the vault ${m.vault}; run solana program set-buffer-authority`),
     ]);
     const proposed = await s.cli(...propose, "--buffer", buffer, "--yes");
@@ -120,7 +120,7 @@ describe("multisig", () => {
     const another = await randomAddress();
     s.set(another, LOADER, header(1, [new Uint8Array([1]), bytesOf(m.vault), next]));
     const gone = await s.cli(...propose, "--buffer", another, "--yes");
-    expect([gone.code, gone.json()["error"]]).toEqual([EXIT_REFUSED, expect.stringContaining(`is upgraded by ${successor}, not the vault`)]);
+    expect([gone.code, gone.json()["error"]]).toEqual([EXIT_FAILED, expect.stringContaining(`is upgraded by ${successor}, not the vault`)]);
   });
 
   it("an admin proposal wraps exactly the instructions the cli printed", async () => {
@@ -150,7 +150,7 @@ describe("multisig", () => {
     s.printed = printed(other, [foreign], []);
     const wrong = await s.cli("propose-admin", "--multisig", m.address, "--keypair", m.file("b"), "--yes", "--", "intent-engine", "raise-pause");
     expect([wrong.code, wrong.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `instruction 0 needs a signature from ${other}, but only the vault ${m.vault} signs; pass --authority ${m.vault} to the command`,
     ]);
     s.printed = JSON.stringify({ sent: false, summary: ["held"] });
@@ -197,7 +197,7 @@ describe("multisig", () => {
     const all = (await s.cli("show", "--multisig", m.address)).json();
     expect(all["proposals"].map((p: { index: string }) => p.index)).toEqual(["1"]);
     const beyond = await s.cli("show", "--multisig", m.address, "--index", "2");
-    expect([beyond.code, beyond.json()["error"]]).toEqual([EXIT_REFUSED, `multisig ${m.address} has proposals 1 to 1, not 2`]);
+    expect([beyond.code, beyond.json()["error"]]).toEqual([EXIT_FAILED, `multisig ${m.address} has proposals 1 to 1, not 2`]);
     const notMultisig = await s.cli("show", "--multisig", m.vault);
     expect(notMultisig.json()["error"]).toBe(`${m.vault} is not a Squads v4 multisig`);
   });

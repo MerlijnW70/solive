@@ -3,7 +3,7 @@ import { AccountRole, type Address, getU64Encoder, type Instruction } from "@sol
 import { DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { SYSTEM_PROGRAM } from "../src/layout.js";
-import { EXIT_OK, EXIT_REFUSED } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { describeInstructions, relayedText } from "../src/review.js";
 import { ENGINE_PROGRAM, programDataOf, setAuthorityInstruction } from "../src/squads.js";
 import { solText } from "../src/system-transfer.js";
@@ -72,7 +72,7 @@ describe("a program the review does not decode that receives the vault's signatu
     for (const genesis of [DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH]) {
       s.genesis = genesis;
       const refused = await s.cli("approve", ...on, "--keypair", m.file("a"), "--yes");
-      expect([refused.code, refused.json()["error"], refused.json()["refused"], refused.json()["proposal"]["problems"]]).toEqual([EXIT_REFUSED, refusal(index, problem), true, [problem]]);
+      expect([refused.code, refused.json()["error"], refused.json()["refused"], refused.json()["proposal"]["problems"]]).toEqual([EXIT_FAILED, refusal(index, problem), true, [problem]]);
     }
     expect((await proposalOf(m, index))["approved"]).toEqual([]);
 
@@ -80,7 +80,7 @@ describe("a program the review does not decode that receives the vault's signatu
     for (const genesis of [DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH]) {
       s.genesis = genesis;
       const refused = await s.cli("execute", ...on, "--keypair", m.file("c"), "--yes");
-      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_REFUSED, refusal(index, problem)]);
+      expect([refused.code, refused.json()["error"]]).toEqual([EXIT_FAILED, refusal(index, problem)]);
     }
     expect(lamportsOf(thief)).toBe(0n);
     expect((await proposalOf(m, index))["status"]).toBe("approved");

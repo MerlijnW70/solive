@@ -2,7 +2,7 @@ import { deflateSync } from "node:zlib";
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
 import { SYSTEM_PROGRAM } from "../../src/layout.js";
-import { EXIT_OK, EXIT_REFUSED } from "../../src/main.js";
+import { EXIT_FAILED, EXIT_OK } from "../../src/main.js";
 import { canonicalMetadata, PROGRAM_METADATA } from "../../src/program-metadata-layout.js";
 import { ENGINE_PROGRAM, programDataOf } from "../../src/squads.js";
 import { craftVault, multisig, openSvm, proposalOf, s, type Made } from "../multisig-world.js";
@@ -59,7 +59,7 @@ async function refusedCopy(tag: string, existing: boolean): Promise<void> {
   expect((await proposalOf(x.m, x.index))["problems"]).toEqual([problem]);
   for (const name of ["b", "c"]) {
     const refused = await s.cli("approve", ...on(x.m, x.index), "--keypair", x.m.file(name), "--yes", "--allow-rewritten-buffer", "--allow-undecoded-vault-signer");
-    expect([refused.code, String(refused.json()["error"]).startsWith(`refusing to sign proposal ${x.index}: ${problem};`)]).toEqual([EXIT_REFUSED, true]);
+    expect([refused.code, String(refused.json()["error"]).startsWith(`refusing to sign proposal ${x.index}: ${problem};`)]).toEqual([EXIT_FAILED, true]);
   }
   expect((await proposalOf(x.m, x.index))["approved"]).toEqual([]);
 }
@@ -86,11 +86,11 @@ describe("an IDL account allocated, filled by a Write from a source buffer and i
     }
     const bare = await s.cli("execute", ...on(x.m, x.index), "--keypair", x.m.file("c"), "--yes");
     expect([bare.code, bare.json()["error"]]).toEqual([
-      EXIT_REFUSED,
+      EXIT_FAILED,
       `proposal ${x.index} writes the IDL without a buffer; pass --expect-buffer-hash with the buffer hash approve printed, the sha256 of the IDL its simulation sets, so the IDL that is set is the IDL that was approved`,
     ]);
     const wrong = await s.cli("execute", ...on(x.m, x.index), "--expect-buffer-hash", digest(FORGED), "--keypair", x.m.file("c"), "--yes");
-    expect([wrong.code, s.account(x.canonical).exists]).toEqual([EXIT_REFUSED, false]);
+    expect([wrong.code, s.account(x.canonical).exists]).toEqual([EXIT_FAILED, false]);
     const executed = await s.cli("execute", ...on(x.m, x.index), "--expect-buffer-hash", digest(HONEST), "--keypair", x.m.file("c"), "--yes");
     expect([executed.code, digest(onChainIdl(x.canonical))]).toEqual([EXIT_OK, digest(HONEST)]);
   });

@@ -1,13 +1,14 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { existsSync, lstatSync, readFileSync, symlinkSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type Instruction, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { getIntentDecoder } from "@intent-engine/core/internal";
-import { RateLimited, TimedOut } from "@intent-engine/client";
+import { RateLimited, type SettleProofInput, TimedOut } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { EXIT_REFUSED, EXIT_RETRY, EXIT_SENT, INFRA_NEXT, infraSkipped } from "../src/judge-errors.js";
 import { FAIL_RECEIPT_KIND, readReceipt } from "../src/judge-receipt.js";
@@ -16,6 +17,8 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { budgeted, JUDGE_SECONDS, overBudget } from "../src/agent/wallet/judge-work.js";
 import { containerOutcome, deadlineOf, EXIT_OF, faultOf, stoppedBeforePin } from "../src/verdict-model.js";
 import { NOT_TEXT, RUNNER } from "../src/viper.js";
+import { verdictNotFile } from "../src/artifact.js";
+import { rpcTemporary } from "../src/rpc-failure.js";
 import { announced, keyed } from "./announce.js";
 import { cli, funded, h, HOME, NOW, transport, world } from "./harness.js";
 import { CORRECT, job, once, run, sha, SPEC_URL, viperWatch } from "./watch-kit.js";
@@ -32,8 +35,29 @@ vi.mock("node:child_process", async (original) => {
   return { ...actual, spawn: vi.fn(spawn) };
 });
 
+const staged = vi.hoisted(() => ({ setup: undefined as Instruction | undefined }));
+
+vi.mock("@intent-engine/client/node", async (original) => {
+  const actual = await original<typeof import("@intent-engine/client/node")>();
+  const createClient = (...given: Parameters<typeof actual.createClient>) => {
+    const client = actual.createClient(...given);
+    const setup = staged.setup;
+    if (setup === undefined) return client;
+    const plan = { ...client.plan, settleProof: async (input: SettleProofInput) => ({ ...(await client.plan.settleProof(input)), setup: [setup], setupSigners: [[]] }) };
+    const settleProof = async (input: SettleProofInput) => {
+      const planned = await plan.settleProof(input);
+      const payer = input.payer ?? input.judge;
+      await client.send(planned.setup, payer);
+      return client.send(planned.instructions, payer);
+    };
+    return { ...client, plan, settleProof };
+  };
+  return { ...actual, createClient };
+});
+
 afterEach(() => {
   faults.marks.length = 0;
+  staged.setup = undefined;
 });
 
 const SPEC = '# Count words\n\n```judge-cases\n{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}\n```\n';
@@ -173,6 +197,81 @@ describe("the exit code of a judge run names its ending", () => {
     const nowhere = join(j.dir, "gone", "verdict.json");
     const stopped = await cli(j.argv().map((arg) => (arg === j.verdict ? nowhere : arg)), j.keys);
     expect([stopped.code, stopped.out]).toEqual([EXIT_USAGE, ""]);
+    expect(j.status()).toBe(IntentStatus.Open);
+  });
+
+  it("exits 2, as for an unreadable file, when --verdict lies in a directory it may not write", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async () => {
+    const j = await escrow(CORRECT);
+    const locked = join(j.dir, "locked");
+    await mkdir(locked);
+    await chmod(locked, 0o500);
+    const inside = join(locked, "verdict.json");
+    const stopped = await cli(j.argv().map((arg) => (arg === j.verdict ? inside : arg)), j.keys);
+    await chmod(locked, 0o700);
+    expect([stopped.code, stopped.out]).toEqual([EXIT_USAGE, ""]);
+    expect(stopped.err).toContain("EACCES");
+    expect(existsSync(inside)).toBe(false);
+    expect(j.status()).toBe(IntentStatus.Open);
+  });
+
+  it("exits 2 and leaves a pipe given as --verdict in place, without blocking on it or judging anything", { skip: process.platform === "win32" }, async () => {
+    const j = await escrow(CORRECT);
+    const pipe = join(j.dir, "verdict.fifo");
+    expect(spawnSync("mkfifo", [pipe]).status).toBe(0);
+    const stopped = await cli(j.argv().map((arg) => (arg === j.verdict ? pipe : arg)), j.keys);
+    expect([stopped.code, stopped.out, stopped.err]).toEqual([EXIT_USAGE, "", verdictNotFile(pipe)]);
+    expect(lstatSync(pipe).isFIFO()).toBe(true);
+    expect(j.status()).toBe(IntentStatus.Open);
+  });
+
+  it("exits 78, not 75, when the RPC node answers 501 or 505, which no retry changes", async () => {
+    expect([500, 501, 502, 503, 505, 511].map((statusCode) => rpcTemporary(new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "status", statusCode })))).toEqual([true, false, true, true, false, true]);
+    const j = await escrow(CORRECT);
+    h.through = { ...transport, getAccount: async () => Promise.reject(new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Not Implemented", statusCode: 501 })) };
+    const refused = await cli(j.argv(), j.keys);
+    expect([refused.code, refused.out]).toEqual([EXIT_REFUSED, ""]);
+    expect(existsSync(j.verdict)).toBe(false);
+    expect(j.status()).toBe(IntentStatus.Open);
+  });
+
+  it("exits 78 without following a link planted at --verdict during the run, since the check ran but nothing was written or sent", { skip: process.platform === "win32" }, async () => {
+    const j = await escrow(WRONG);
+    const target = join(j.dir, "elsewhere.txt");
+    await writeFile(target, "kept\n");
+    let planted = false;
+    h.through = {
+      ...transport,
+      getAccount: async (address) => {
+        if (!planted) {
+          planted = true;
+          symlinkSync(target, j.verdict);
+        }
+        return transport.getAccount(address);
+      },
+    };
+    const stopped = await cli(j.argv(), j.keys);
+    expect([stopped.code, stopped.out]).toEqual([EXIT_REFUSED, ""]);
+    expect(stopped.err).toContain(`the verdict could not be written to ${j.verdict}`);
+    expect(readFileSync(target, "utf8")).toBe("kept\n");
+    expect(j.status()).toBe(IntentStatus.Open);
+  });
+
+  it("does not exit 76 when a setup transaction is signed and fails before the release is signed, since no release was handed to the node", async () => {
+    const j = await escrow(CORRECT);
+    staged.setup = { programAddress: (await generateKeyPairSigner()).address, accounts: [], data: new Uint8Array([1]) };
+    const stopped = await cli(j.argv(), j.keys);
+    expect([stopped.code, stopped.out]).toEqual([EXIT_REFUSED, ""]);
+    expect(stopped.err).not.toContain("may have landed");
+    expect(existsSync(j.verdict)).toBe(false);
+    expect(j.status()).toBe(IntentStatus.Open);
+  });
+
+  it("does not exit 76 when the send fails before the release transaction is signed, since nothing was handed to the node", async () => {
+    const j = await escrow(CORRECT);
+    h.through = { ...transport, send: async () => Promise.reject(new Error("the node gave no blockhash")) };
+    const stopped = await cli(j.argv(), j.keys);
+    expect([stopped.code, stopped.out, stopped.err]).toEqual([EXIT_REFUSED, "", "the node gave no blockhash"]);
+    expect(existsSync(j.verdict)).toBe(false);
     expect(j.status()).toBe(IntentStatus.Open);
   });
 });

@@ -36,6 +36,19 @@ const infra = (reason: string) => `infrastructure error, not a verdict: ${reason
 
 const BOX = { image: SANDBOX_IMAGE, memory: SANDBOX_MEMORY, cpus: SANDBOX_CPUS, tmp: SANDBOX_TMP, gpu: false };
 
+const ZOMBIE_CHECK = `exec node -e '${[
+  'const { spawnSync } = require("node:child_process");',
+  'const fs = require("node:fs");',
+  'const pid = Number(String(spawnSync("/bin/sh", ["-c", "sleep 60 > /dev/null 2>&1 & echo $!"]).stdout).trim());',
+  'process.kill(pid, "SIGKILL");',
+  'const zombie = (p) => { try { return fs.readFileSync("/proc/" + p + "/stat", "utf8").replace(/^.*\\) /, "")[0] === "Z"; } catch { return false; } };',
+  'const count = () => fs.readdirSync("/proc").filter((n) => /^[0-9]+$/.test(n)).filter(zombie).length;',
+  "const until = performance.now() + 2000;",
+  "let left = count();",
+  "while (left > 0 && performance.now() < until) left = count();",
+  "process.exit(left === 0 ? 3 : 4);",
+].join(" ")}'`;
+
 describe("judge --sandbox docker lets the container's own exit decide", () => {
   it("makes a container that exits 137 by itself, which Docker cannot tell from a memory kill it did not flag, infra under the judge's memory, and signs nothing", DOCKER_TEST, async () => {
     for (const run of ["exit 137", "sh -c 'kill -KILL $$'; exit $?", "node -e 'process.kill(process.pid, \"SIGKILL\")'; exit $?"]) {
@@ -77,6 +90,27 @@ describe("judge --sandbox docker lets the container's own exit decide", () => {
     expect([killed.code, killed.out, killed.err]).toEqual([EXIT_RETRY, "", infra(oomInfra("256m"))]);
     expect(existsSync(verdict)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
+  });
+
+  it("judges by its own exit a check that forks a memory hog the kernel kills, as plain Node judges such a case, so the hog cannot turn its fail into infra", DOCKER_TEST, async () => {
+    const forked = (code: number) =>
+      `node -e 'require("node:child_process").spawnSync(process.execPath, ["-e", "const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1))"]); process.exit(${code})'`;
+    const j = await job();
+    const keys = { "judge.json": j.judge };
+    const verdict = join(j.dir, "hog.json");
+    const failed = await cli(boxed(j, forked(1), "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), keys);
+    expect([failed.code, failed.err]).toEqual([EXIT_FAILED, ""]);
+    expect(failed.json()).toMatchObject({ verdict: "fail", sandbox: "docker", exitCode: 1, signature: null });
+    expect(existsSync(verdict)).toBe(true);
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+    expect((await cli(boxed(j, forked(0), "--sandbox-memory", "256m"), keys)).json()).toMatchObject({ verdict: "pass", exitCode: 0 });
+  });
+
+  it("reaps what a check leaves behind, so no zombie stays in its container, and still judges the check by its own exit", DOCKER_TEST, async () => {
+    const j = await job();
+    const reaped = await cli(boxed(j, ZOMBIE_CHECK), { "judge.json": j.judge });
+    expect([reaped.code, reaped.err]).toEqual([EXIT_FAILED, ""]);
+    expect(reaped.json()).toMatchObject({ verdict: "fail", sandbox: "docker", exitCode: 3 });
   });
 
   it("makes a container that hangs until --timeout infra and pays a passing one", DOCKER_TEST, async () => {

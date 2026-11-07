@@ -73,6 +73,8 @@ export async function endedState(name: string, env: NodeJS.ProcessEnv, timeoutSe
 
 export const MEMORY_EVENTS = "/sys/fs/cgroup/memory.events";
 
+export const MEMORY_PROCS = "/sys/fs/cgroup/cgroup.procs";
+
 export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {
   await docker(["rm", "-f", "-v", name], env);
   if ((await docker(["container", "inspect", name], env)).status === 0) {
