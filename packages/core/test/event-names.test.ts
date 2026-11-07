@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as core from "../src/internal.js";
 import { decodeEvent, ENGINE_EVENT_NAMES, EVENT_IX_TAG } from "../src/events.js";
 
-const root = (rel: string) => readFileSync(fileURLToPath(new URL(`../../../${rel}`, import.meta.url)), "utf8");
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const root = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 const idlEvents = (JSON.parse(root("idl/intent_engine.json")) as { events: { name: string; discriminator: number[] }[] }).events;
 const programEvents = [...root("programs/intent_engine/src/events.rs").matchAll(/#\[event\]\s*pub struct (\w+)/g)].map((m) => m[1]);
 const screaming = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase();

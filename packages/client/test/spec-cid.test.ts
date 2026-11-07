@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { InvalidInput } from "@intent-engine/core";
 import { cidOfSpecHash, specHashOfCid } from "../src/index.js";
 
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const cids = JSON.parse(readFileSync(new URL("./demo-spec-cids.json", import.meta.url), "utf8")) as Record<string, string>;
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 const sha = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -25,7 +28,7 @@ describe("the CID of a spec hash", () => {
   });
 
   it("of each demo spec matches the fixture", () => {
-    const found = Object.fromEntries(Object.keys(cids).map((name) => [name, cidOfSpecHash(sha(readFileSync(new URL(`../../../examples/demo/${name}/SPEC.md`, import.meta.url))))]));
+    const found = Object.fromEntries(Object.keys(cids).map((name) => [name, cidOfSpecHash(sha(readFileSync(join(ROOT, "examples", "demo", name, "SPEC.md"))))]));
     expect(found).toStrictEqual(cids);
     expect(Object.keys(cids)).toHaveLength(3);
   });

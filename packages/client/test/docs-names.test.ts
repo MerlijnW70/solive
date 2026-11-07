@@ -9,7 +9,7 @@ import * as node from "../src/node.js";
 import * as svm from "../src/svm.js";
 import * as testing from "../src/testing.js";
 
-const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const repo = process.env["INTENT_ENGINE_ROOT"] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(repo, ...parts), "utf8");
 
 const reports = [read("packages", "client", "api-report.txt"), read("packages", "core", "api-report.txt")];

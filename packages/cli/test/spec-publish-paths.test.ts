@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, getBase58Decoder, getBase64Encoder, signBytes } from "@solana/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SPEC_MIRROR, DEVNET_GENESIS_HASH, MIRROR_OFF, MIRROR_OFF_DEVNET, PUBLISH_SEALED, SPEC_MIRROR_ENV } from "@intent-engine/client/internal";
@@ -35,6 +37,8 @@ const upload = (status: number) => {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
+
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 
 describe("create attested", () => {
   let w: World;
@@ -132,7 +136,7 @@ describe("create attested", () => {
 });
 
 describe("what the docs and help say about --spec-file", () => {
-  const page = (name: string) => readFileSync(new URL(`../../../docs/${name}`, import.meta.url), "utf8");
+  const page = (name: string) => readFileSync(join(ROOT, "docs", name), "utf8");
 
   it("says plainly that the file is uploaded publicly unless --no-publish-spec", () => {
     const usage = "after the send the file, or the bytes at --spec-url, is uploaded to the public mirror, which keeps it only while SOL escrows back it, unless --no-publish-spec";
@@ -145,9 +149,8 @@ describe("what the docs and help say about --spec-file", () => {
     const kept = "while open SOL escrows lock 0.01 SOL per 64 KiB of spec, up to a day after they end unfilled and 30 days after a fill; escrows in TEST or other mints are not mirrored";
     const docKept = kept.replace("64 KiB", "COST_STEP_BYTES (65536, in bytes)");
     expect(page("mcp.md")).toContain(`The upload is public: anyone can read it. The mirror keeps it ${docKept}.`);
-    const root = new URL("../../../", import.meta.url);
-    expect(readFileSync(new URL("services/specs/src/limits.ts", root), "utf8")).toMatch(/^export const COST_STEP_BYTES = \d+;$/m);
-    expect(readFileSync(new URL("packages/client/src/spec-sources.ts", root), "utf8")).toMatch(/^export const SPEC_READ_MS = [\d_]+;$/m);
+    expect(readFileSync(join(ROOT, "services", "specs", "src", "limits.ts"), "utf8")).toMatch(/^export const COST_STEP_BYTES = \d+;$/m);
+    expect(readFileSync(join(ROOT, "packages", "client", "src", "spec-sources.ts"), "utf8")).toMatch(/^export const SPEC_READ_MS = [\d_]+;$/m);
     expect(page("mcp.md")).toContain("the upload adds up to SPEC_READ_MS (20000, in milliseconds) to the send's answer");
     expect(page("sdk-client.md")).toContain(`The upload is public, and the mirror keeps it ${docKept}; a spec whose escrows lock less is refused with 402.`);
     for (const name of ["mcp.md", "sdk-client.md", "reference/cli.md", "reference/mcp-tools.md"]) {

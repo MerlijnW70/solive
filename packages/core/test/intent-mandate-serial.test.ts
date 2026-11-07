@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ACCOUNT_LAYOUTS, decodeIntentAccount, INTENT_VERSION } from "../src/internal.js";
 
-const LAYOUT_RS = readFileSync(fileURLToPath(new URL("../../../tests/svm/tests/layout.rs", import.meta.url)), "utf8");
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const LAYOUT_RS = readFileSync(join(ROOT, "tests", "svm", "tests", "layout.rs"), "utf8");
 const frozen = (field: string): number => {
   const found = LAYOUT_RS.match(new RegExp(`offset_of!\\(Intent, ${field}\\), (\\d+)\\)`));
   if (found?.[1] === undefined) throw new Error(`layout.rs pins no offset for Intent.${field}`);

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type Address, getBase58Decoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { seal, specMemo } from "@intent-engine/core/internal";
@@ -10,6 +12,7 @@ import { NOT_PUBLIC_SPEC } from "../src/job-specs.js";
 import { testWallet } from "../src/testing.js";
 import { createdEvent, engineView, intentBytes, key, OWNER, proofIntent, tx } from "./kill-client-jobs-ledger-kit.js";
 
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const INTENT = key(91);
 const PRIVATE_GENESIS = getBase58Decoder().decode(new Uint8Array(32).fill(7));
 const SPEC = "deliver a module whose tests pass\n";
@@ -234,7 +237,7 @@ describe("a sealed spec", () => {
 });
 
 describe("the spec source sentences of the docs", () => {
-  const page = (name: string) => readFileSync(new URL(`../../../docs/${name}`, import.meta.url), "utf8");
+  const page = (name: string) => readFileSync(join(ROOT, "docs", name), "utf8");
 
   it("name each kind of source, its request and the rule every byte passes", () => {
     const client = page("sdk-client.md");

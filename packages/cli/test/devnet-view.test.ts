@@ -9,9 +9,11 @@ import { fresh } from "./agent-wallet-kit.js";
 import { cli, HOME, runtime, transport, world } from "./harness.js";
 import { defaultWallet } from "../src/wallet.js";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("../../../", import.meta.url).pathname;
-const read = (path: string) => readFileSync(`${ROOT}${path}`, "utf8");
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const ADDRESS = "11111111111111111111111111111112" as Address;
 
 describe("the devnet explorer link", () => {

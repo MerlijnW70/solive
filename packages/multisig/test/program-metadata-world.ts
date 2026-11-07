@@ -28,7 +28,7 @@ import { ENGINE_PROGRAM, LOADER, programDataOf } from "../src/squads.js";
 import { bytesOf, s } from "./multisig-world.js";
 import { engineProgram, programMetadataProgram } from "./svm.js";
 
-export const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+export const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 export const LOCAL_IDL = new Uint8Array(readFileSync(join(ROOT, "idl", "intent_engine.json")));
 export const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 export const LOCAL_HASH = digest(LOCAL_IDL);

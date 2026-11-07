@@ -1,23 +1,19 @@
 import { describe, expect, it } from "vitest";
-import {
+import { type Cli, type Demo, type DemoJob, type Found, type Settings, type Socket, worker } from "./demo-worker-module.js";
+
+const {
   backoff,
-  type Cli,
-  type Demo,
-  type DemoJob,
   emptyLedger,
   FAST_INTERVAL_SECS,
   fastRound,
-  type Found,
   KEEPALIVE,
   pollEvery,
   repeat,
-  type Settings,
-  type Socket,
   WATCH_RETRY_MS,
   WATCHED_INTERVAL_SECS,
   watch,
   watchOnce,
-} from "../../../scripts/demo-worker.mjs";
+} = worker;
 
 const PROGRAM = "Program11111111111111111111111111111111111111";
 const NOW = 1_800_000_000;

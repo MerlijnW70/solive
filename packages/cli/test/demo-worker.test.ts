@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { type Cli, type Demo, demoRound, emptyLedger, jobsOf, loadDemos, MAX_FAILURES, readLedger, type Settings, writeLedger } from "../../../scripts/demo-worker.mjs";
+import { type Cli, type Demo, type Settings, worker } from "./demo-worker-module.js";
 import { DEMO_BASE_URL, DEMO_SPECS } from "../src/agent/mcp.js";
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const DEMO_DIR = join(ROOT, "examples", "demo");
+const { demoRound, emptyLedger, jobsOf, loadDemos, MAX_FAILURES, readLedger, writeLedger } = worker;
 const WORKER = "Worker1111111111111111111111111111111111111";
 const OTHER = "Other11111111111111111111111111111111111111";
 const NOW = 1_800_000_000;

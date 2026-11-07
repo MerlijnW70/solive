@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { CLAIM_SECS, FAST_INTERVAL_SECS, FULL_INTERVAL_SECS, MAX_STAKE_LAMPORTS, runWorker, timingOf, WATCHED_INTERVAL_SECS } from "../../../scripts/demo-worker.mjs";
+import { worker } from "./demo-worker-module.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const { CLAIM_SECS, FAST_INTERVAL_SECS, FULL_INTERVAL_SECS, MAX_STAKE_LAMPORTS, runWorker, timingOf, WATCHED_INTERVAL_SECS } = worker;
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const RUNBOOK = read("docs/maintainers/operations.md");
 const SECONDS = ["DEMO_WORKER_FAST_INTERVAL", "DEMO_WORKER_WATCHED_INTERVAL", "DEMO_WORKER_INTERVAL", "DEMO_WORKER_CLAIM_SECS"];

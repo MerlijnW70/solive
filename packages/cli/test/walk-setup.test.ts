@@ -10,7 +10,7 @@ import { whyAirdrop, WHY_DAILY, WHY_LIMITED, whyShort } from "../src/wallet.js";
 import { cli, h, instant, runtime, transport, world } from "./harness.js";
 import { DEVNET_URL } from "../src/tokens.js";
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const service = readFileSync(join(ROOT, "services/faucet/src/drip.ts"), "utf8");
 const said = (name: string): string => new RegExp(`${name}: "([^"]+)"`).exec(service)?.[1] ?? "";
 const DAILY = said("daily");

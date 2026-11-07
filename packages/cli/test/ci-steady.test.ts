@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse } from "./root-yaml.js";
 import { SANDBOX_IMAGE } from "../src/sandbox.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -70,7 +70,7 @@ async function chain(body: Buffer) {
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const url = "http://" + "127.0.0.1:" + (server.address() as AddressInfo).port;
   return { url, hits: () => hits, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
 }
 

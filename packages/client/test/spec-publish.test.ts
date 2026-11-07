@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { type Address, getBase58Decoder } from "@solana/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { seal, specMemo } from "@intent-engine/core/internal";
-import { createHandler } from "../../../services/specs/src/http.js";
-import { harness, proofIntent as mirrorIntent } from "../../../services/specs/test/harness.js";
+import type * as MirrorHttp from "../../../services/specs/src/http.js";
+import type * as MirrorHarness from "../../../services/specs/test/harness.js";
 import type { Transport } from "../src/index.js";
 import { publishSpec as indexPublish, DEFAULT_SPEC_MIRROR as indexMirror } from "../src/index.js";
 import { DEFAULT_SPEC_MIRROR, DEFAULT_SPEC_SOURCES, defaultSpecSources, DEVNET_GENESIS_HASH, MAX_SPEC_BYTES, MAINNET_GENESIS_HASH, MIRROR_OFF, MIRROR_OFF_DEVNET, MIRROR_UNUSABLE, PLAIN_HTTP_ON_PUBLIC, PUBLISH_SEALED, publishSpec, readSpec, SPEC_MIRROR_ENV, SPEC_PUBLISH_OVER, SPEC_REDIRECTS, type SpecFetch, specMirror } from "../src/internal.js";
@@ -15,6 +17,11 @@ import { createClient, publishSpec as nodePublish } from "../src/node.js";
 import { pinnedFetch } from "../src/pinned-fetch.js";
 import { testWallet } from "../src/testing.js";
 import { createdEvent, engineView, intentBytes, key, OWNER, proofIntent, tx } from "./kill-client-jobs-ledger-kit.js";
+
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const mirrorModule = (...parts: string[]): string => pathToFileURL(join(ROOT, "services", "specs", ...parts)).href;
+const { createHandler } = (await import(mirrorModule("src", "http.ts"))) as typeof MirrorHttp;
+const { harness, proofIntent: mirrorIntent } = (await import(mirrorModule("test", "harness.ts"))) as typeof MirrorHarness;
 
 const SPEC = "deliver a module whose tests pass\n";
 const BYTES = new TextEncoder().encode(SPEC);
@@ -305,17 +312,17 @@ describe("a spec published to the real mirror handler", () => {
     });
     servers.push(server);
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-    const mirror = `http://pinned.invalid:${(server.address() as AddressInfo).port}`;
+    const mirror = "http://" + "pinned.invalid:" + (server.address() as AddressInfo).port;
     const done = await nodePublish(BYTES, { transport: transport(), mirror, rpcUrl: "http://127.0.0.1:8899", lookup: async () => ["127.0.0.1"] });
     expect(done).toMatchObject({ published: true });
     expect(heard).toBe(`PUT /sha256/${HASH}`);
   });
 
-  async function running(deps: Parameters<typeof createHandler>[0]): Promise<string> {
+  async function running(deps: Parameters<typeof MirrorHttp.createHandler>[0]): Promise<string> {
     const server = createServer((request, response) => void createHandler(deps)(request, response));
     servers.push(server);
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    return "http://" + "127.0.0.1:" + (server.address() as AddressInfo).port;
   }
 
   const INTENT = key(91);

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { Rent } from "litesvm";
@@ -130,7 +131,7 @@ describe("the claim stake floor follows the cluster rent", () => {
 });
 
 describe("the guide quotes the stake rule the program has", () => {
-  const guide = readFileSync(fileURLToPath(new URL("../../../docs/judge.md", import.meta.url)), "utf8");
+  const guide = readFileSync(join(process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url)), "docs", "judge.md"), "utf8");
 
   it("says 0 or the rent-exempt minimum of an empty account on the cluster, not a fixed amount", () => {
     const rule = guide.split("\n").find((line) => line.includes("A stake is 0 or at least")) ?? "";

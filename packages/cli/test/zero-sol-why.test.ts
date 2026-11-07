@@ -10,7 +10,7 @@ import { cli, h, instant, world } from "./harness.js";
 import { DEVNET_URL } from "../src/tokens.js";
 import { airdropped } from "./airdrop.js";
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const EMPTY_SAID = "The faucet holds too little SOL right now, so try again later.";
 const SIGNATURE = "5".repeat(88);

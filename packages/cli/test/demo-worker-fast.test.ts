@@ -3,21 +3,20 @@ import { join } from "node:path";
 import { type Address, getAddressEncoder } from "@solana/kit";
 import { attestedResult, CLAIMS_OPEN, encodeParams, getIntentEncoder, getIntentSize, INTENT_DISCRIMINATOR, IntentStatus, Kind } from "@intent-engine/core/internal";
 import { describe, expect, it } from "vitest";
-import {
+import { type Cli, type Demo, type Event, type Found, type Socket, type Rpc, type Settings, worker } from "./demo-worker-module.js";
+import { DEMO_BASE_URL } from "../src/agent/mcp.js";
+import { CLUSTERS as CLI_CLUSTERS } from "../src/clusters.js";
+
+const {
   backoff,
   base58,
-  type Cli,
   CLUSTERS,
-  type Demo,
   demoFilters,
   demoRound,
   emptyLedger,
-  type Event,
   fastRound,
   fastWork,
-  type Found,
   notified,
-  type Socket,
   watch,
   WATCH_RETRY_MS,
   watchOnce,
@@ -30,17 +29,13 @@ import {
   MAX_FAILURES,
   programOf,
   programReader,
-  type Rpc,
   rpcOf,
   rpcUrlOf,
   serialized,
-  type Settings,
   tick,
-} from "../../../scripts/demo-worker.mjs";
-import { DEMO_BASE_URL } from "../src/agent/mcp.js";
-import { CLUSTERS as CLI_CLUSTERS } from "../src/clusters.js";
+} = worker;
 
-const DEMO_DIR = join(fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo");
+const DEMO_DIR = join(process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo");
 const PROGRAM = "GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU";
 const WORKER = "Worker1111111111111111111111111111111111111";
 const OTHER = "Other11111111111111111111111111111111111111";

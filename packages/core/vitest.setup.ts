@@ -1,7 +1,10 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { defineConfig } from "vitest/config";
 
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../..", import.meta.url));
+const CLI_TEST = join(ROOT, "packages", "cli", "test");
 const chosen = process.env["FC_SEED"] ?? "42";
 
 if (chosen !== "random") {
@@ -12,4 +15,4 @@ if (chosen !== "random") {
   fc.configureGlobal({ ...fc.readConfigureGlobal(), seed });
 }
 
-export default defineConfig({ test: { globalSetup: [fileURLToPath(new URL("../cli/test/run-root-setup.ts", import.meta.url))], setupFiles: [fileURLToPath(import.meta.url)] } });
+export default defineConfig({ test: { globalSetup: [join(CLI_TEST, "run-root-setup.ts")], setupFiles: [fileURLToPath(import.meta.url)] } });

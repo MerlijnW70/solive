@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AccountRole, type Instruction } from "@solana/kit";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -5,7 +6,8 @@ import { ENGINE_PROGRAM, LOADER, programDataOf } from "../../src/squads.js";
 import { randomAddress } from "../svm.js";
 import { bytesOf, craftVault, header, multisig, openSvm, proposalOf, s, signerOf } from "../multisig-world.js";
 
-const relayPath = fileURLToPath(new URL("../../../../target/deploy/cpi_relay.so", import.meta.url));
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../../..", import.meta.url));
+const relayPath = join(ROOT, "target", "deploy", "cpi_relay.so");
 
 beforeAll(openSvm);
 
