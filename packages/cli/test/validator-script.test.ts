@@ -103,7 +103,7 @@ describe.skipIf(process.platform === "win32")("the real validator script", () =>
     const port = Number(/--rpc-port (\d+)/.exec(line ?? "")?.[1]);
     expect(port).toBeGreaterThanOrEqual(20_000);
     expect(line).toContain(`--faucet-port ${port + 2}`);
-    expect(done.log).toContain("exec vitest run --fsModuleCache test/validator.test.ts " + "http://" + "127.0.0.1:" + port);
+    expect(done.log).toContain("exec vitest run --fsModuleCache --no-file-parallelism test/validator.test.ts test/validator-releases.test.ts " + "http://" + "127.0.0.1:" + port);
     expect(done.log).toContain('"result":"ok"');
     expect(done.left).toEqual([]);
   });

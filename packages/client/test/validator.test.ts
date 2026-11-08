@@ -1,84 +1,27 @@
-import { readFileSync } from "node:fs";
 import {
   type Address,
-  appendTransactionMessageInstructions,
-  createKeyPairSignerFromBytes,
-  createSolanaRpc,
-  createTransactionMessage,
   generateKeyPairSigner,
-  getBase58Encoder,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
-  type Instruction,
-  type KeyPairSigner,
-  pipe,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
   type Signature,
-  signTransactionMessageWithSigners,
-  type TransactionSigner,
 } from "@solana/kit";
-import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
-import {
-  getCreateAssociatedTokenIdempotentInstructionAsync,
-  getInitializeMint2Instruction,
-  getMintSize,
-  getMintToInstruction,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@solana-program/token";
+import { getTransferSolInstruction } from "@solana-program/system";
+import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintToInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { attestedResult, findAssociatedTokenAddress, IntentStatus, Kind, limitOrder, swapExactIn } from "@intent-engine/core";
-import {
-  ALL_KINDS_MASK,
-  findEventAuthorityPda,
-  findProgramDataAddress,
-  getInitConfigInstructionAsync,
-  getIntentDecoder,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
-} from "@intent-engine/core/internal";
-import { BlockhashExpired, MaybeSent, createClient, type Latest, type Transport } from "../src/index.js";
+import { getIntentDecoder } from "@intent-engine/core/internal";
+import { BlockhashExpired, MaybeSent, createClient, type Transport } from "../src/index.js";
 import { donorsOf, expectedFor, queryShapes } from "./intent-shapes.js";
-import { changedAccount, type Confirmed, confirm, confirmSent, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "../src/internal.js";
+import { changedAccount, type Confirmed, confirm, confirmSent, intentNotifications, type RpcLike } from "../src/internal.js";
+import { authorityFile, chainOf, HEARD_MS, signed, url, within } from "./validator-harness.js";
 
-const url = process.env["VALIDATOR_URL"];
-const authorityFile = process.env["VALIDATOR_AUTHORITY"];
 const ESCROW = 400n;
 const MIN_OUT = 30n;
-const SOL = 1_000_000_000n;
-const HEARD_MS = 30_000;
-
-const socketOf = (http: string) => {
-  const parsed = new URL(http);
-  parsed.port = String(Number(parsed.port) + 1);
-  return parsed.toString();
-};
-
-async function signed(instructions: readonly Instruction[], payer: TransactionSigner, latest: Latest) {
-  return signTransactionMessageWithSigners(
-    pipe(
-      createTransactionMessage({ version: 0 }),
-      (m) => setTransactionMessageFeePayerSigner(payer, m),
-      (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
-      (m) => appendTransactionMessageInstructions(instructions, m),
-    ),
-  );
-}
-
-function within<T>(ms: number, pending: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return pending(controller.signal).finally(() => {
-    clearTimeout(timer);
-    controller.abort();
-  });
-}
 
 describe.skipIf(url === undefined || authorityFile === undefined)("the client against a real validator", () => {
   const http = url ?? "http://" + "127.0.0.1:8899";
-  const socket = socketOf(http);
-  const rpc = createSolanaRpc(http);
-  const watch = signatureWatch(socket);
-  const plain = rpcTransport(rpc as unknown as RpcLike, undefined, watch);
+  const chain = chainOf(http);
+  const { socket, rpc, watch, plain, funded } = chain;
   const confirmations = new Map<string, Confirmed & { heard: Confirmed }>();
   const recording: Transport = {
     ...plain,
@@ -96,49 +39,12 @@ describe.skipIf(url === undefined || authorityFile === undefined)("the client ag
   const client = createClient({ url: http, transport: recording, notifications: intentNotifications(socket) });
   const sender = createClient({ url: http, transport: plain });
 
-  const funded = async (sol: bigint, signer?: KeyPairSigner) => {
-    const wallet = signer ?? (await generateKeyPairSigner());
-    await plain.airdrop(wallet.address, sol * SOL);
-    return wallet;
-  };
-
   const build = async () => {
-    const authority = await funded(100n, await createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(readFileSync(authorityFile ?? "", "utf8")) as number[])));
-    const [feeRecipient, owner, solver] = await Promise.all([funded(10n), funded(10n), funded(10n)]);
-    const [eventAuthority] = await findEventAuthorityPda();
-    await client.send(
-      [
-        await getInitConfigInstructionAsync({
-          authority,
-          engineProgram: INTENT_ENGINE_PROGRAM_ADDRESS,
-          programData: await findProgramDataAddress(),
-          eventAuthority,
-          program: INTENT_ENGINE_PROGRAM_ADDRESS,
-          domain: Uint8Array.from(getBase58Encoder().encode(await plain.genesisHash())),
-          guardian: authority.address,
-          feeRecipient: feeRecipient.address,
-          enabledKinds: ALL_KINDS_MASK,
-          feeBps: 5,
-          paused: 0,
-        }),
-      ],
-      authority,
-    );
-    const space = BigInt(getMintSize());
-    const rent = await rpc.getMinimumBalanceForRentExemption(space).send();
-    const mint = async () => {
-      const created = await generateKeyPairSigner();
-      await client.send(
-        [
-          getCreateAccountInstruction({ payer: authority, newAccount: created, lamports: rent, space, programAddress: TOKEN_PROGRAM_ADDRESS }),
-          getInitializeMint2Instruction({ mint: created.address, decimals: 6, mintAuthority: authority.address }),
-        ],
-        authority,
-      );
-      return created.address;
-    };
-    const inputMint = await mint();
-    const outputMint = await mint();
+    const authority = await chain.authority();
+    const [owner, solver] = await Promise.all([funded(10n), funded(10n)]);
+    await chain.configured(client.send, authority);
+    const inputMint = await chain.mint(client.send, authority);
+    const outputMint = await chain.mint(client.send, authority);
     const ata = (holder: Address, of: Address) => findAssociatedTokenAddress({ owner: holder, mint: of, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     await client.send(
       [

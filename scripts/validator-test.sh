@@ -84,4 +84,4 @@ for attempt in 1 2 3; do
   fi
 done
 VALIDATOR_URL="http://127.0.0.1:$base" VALIDATOR_AUTHORITY="$work/authority.json" \
-  pnpm --filter @intent-engine/client exec vitest run --fsModuleCache test/validator.test.ts
+  pnpm --filter @intent-engine/client exec vitest run --fsModuleCache --no-file-parallelism test/validator.test.ts test/validator-releases.test.ts
