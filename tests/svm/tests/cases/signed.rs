@@ -66,6 +66,14 @@ impl Setup {
         self.env.send(&relayer, ixs, &[])
     }
 
+    fn submit_tabled(
+        &mut self,
+        ixs: &[anchor_lang::solana_program::instruction::Instruction],
+    ) -> Result<litesvm::types::TransactionMetadata, TransactionError> {
+        let relayer = self.relayer.insecure_clone();
+        self.env.send_tabled(&relayer, ixs, &[])
+    }
+
     fn owner_signed(&self) -> anchor_lang::solana_program::instruction::Instruction {
         ed25519_ix(&self.trader.key, &self.message(&self.spec))
     }
@@ -441,7 +449,7 @@ fn relay_style_offset_redirect_is_rejected() -> TestResult {
     )?;
     let ixs = [forged, s.create(&s.spec)];
     assert_eq!(
-        s.submit(&ixs).err(),
+        s.submit_tabled(&ixs).err(),
         Some(engine_error_at(1, EngineError::SigHeader))
     );
     assert!(!s.env.exists(&intent_pda(&s.trader.key.pubkey(), 7)));
@@ -470,7 +478,7 @@ fn a_second_verified_signature_in_the_instruction_is_rejected() -> TestResult {
     )?;
     let ixs = [forged, s.create(&s.spec)];
     assert_eq!(
-        s.submit(&ixs).err(),
+        s.submit_tabled(&ixs).err(),
         Some(engine_error_at(1, EngineError::SigHeader))
     );
     Ok(())

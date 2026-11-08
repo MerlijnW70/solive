@@ -15,6 +15,7 @@ use solana_instruction_error::InstructionError;
 use solana_keypair::Keypair;
 use solana_message::Message;
 use solana_signer::Signer;
+use solana_transaction::versioned::VersionedTransaction;
 use solana_transaction::Transaction;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
@@ -748,12 +749,22 @@ impl World {
         let now = self.env.now();
         self.env.svm.expire_blockhash();
         let payer = self.attacker.key.insecure_clone();
-        let tx = Transaction::new(
+        let bare: VersionedTransaction = Transaction::new(
             &[&payer],
             Message::new(&ixs, Some(&me)),
             self.env.svm.latest_blockhash(),
-        );
-        if let Err(FailedTransactionMetadata { err, meta }) = self.env.svm.send_transaction(tx) {
+        )
+        .into();
+        let landable = if svm_tests::oversize(&bare).is_none() {
+            Some(bare)
+        } else {
+            let table = self.env.lookup_table(&svm_tests::table_accounts(&ixs))?;
+            let packed = self.env.v0_transaction(&payer, &ixs, &[], &[table])?;
+            svm_tests::oversize(&packed).is_none().then_some(packed)
+        };
+        let sent = landable.map(|tx| svm_tests::send_sendable(&mut self.env.svm, tx));
+        if let Some(Err(failed)) = sent {
+            let FailedTransactionMetadata { err, meta } = *failed;
             let crashed = matches!(
                 err,
                 TransactionError::InstructionError(_, InstructionError::ProgramFailedToComplete)

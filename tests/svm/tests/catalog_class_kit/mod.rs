@@ -31,6 +31,7 @@ pub struct Ready {
     pub keys: Vec<Keypair>,
     pub payer: Keypair,
     pub names: Vec<(&'static str, Pubkey)>,
+    pub tabled: bool,
 }
 
 impl Ready {
@@ -44,11 +45,17 @@ impl Ready {
             keys,
             payer,
             names: Vec::new(),
+            tabled: false,
         })
     }
 
     pub fn named(mut self, name: &'static str, key: Pubkey) -> Self {
         self.names.push((name, key));
+        self
+    }
+
+    pub fn tabled(mut self) -> Self {
+        self.tabled = true;
         self
     }
 
@@ -78,8 +85,18 @@ impl Ready {
                 return Err(TransactionError::SignatureFailure);
             }
         }
+        if self.tabled {
+            let payer = self.payer.insecure_clone();
+            let extra: Vec<Keypair> = signers
+                .iter()
+                .filter(|k| k.pubkey() != payer.pubkey())
+                .map(|k| k.insecure_clone())
+                .collect();
+            let extra: Vec<&Keypair> = extra.iter().collect();
+            return self.env.send_tabled(&payer, ixs, &extra);
+        }
         let tx = Transaction::new(&signers, message, self.env.svm.latest_blockhash());
-        self.env.svm.send_transaction(tx).map_err(|f| f.err)
+        svm_tests::send_sendable(&mut self.env.svm, tx).map_err(|f| f.err)
     }
 
     pub fn send_with(&mut self, ix: Instruction) -> Result<TransactionMetadata, TransactionError> {

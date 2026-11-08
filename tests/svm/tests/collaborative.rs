@@ -78,7 +78,7 @@ fn a_collaborative_claim_pays_every_co_author_who_signed_the_split_and_conserves
     );
     let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(&attestor)).collect();
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
-    env.send(&solver.key, &ixs, &[])?;
+    env.send_tabled(&solver.key, &ixs, &[])?;
     let protocol = env.balance(&fee_to)? - fee_before;
     let mut paid = Vec::new();
     for a in &atas {
@@ -130,7 +130,7 @@ fn a_collaborative_claim_rejects_a_split_a_co_author_did_not_sign() -> TestResul
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
     let fill_index = u8::try_from(ixs.len().saturating_sub(1))?;
     assert_eq!(
-        env.send(&solver.key, &ixs, &[]).err(),
+        env.send_tabled(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(fill_index, EngineError::SigMessage)),
         "a split the co-authors signed cannot be swapped for a different one"
     );
@@ -179,13 +179,13 @@ fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_and_the_attest
     let fill = claim(&env);
     let short: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, &attestor], &digest)?, fill];
     assert_eq!(
-        env.send(&solver.key, &short, &[]).err(),
+        env.send_tabled(&solver.key, &short, &[]).err(),
         Some(engine_error_at(1, EngineError::SigHeader)),
         "a co-author left out of the batch is rejected"
     );
     let fill = claim(&env);
     let impostor: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, c, &stranger], &digest)?, fill];
-    let refused = env.send(&solver.key, &impostor, &[]).err();
+    let refused = env.send_tabled(&solver.key, &impostor, &[]).err();
     assert!(
         [EngineError::SigHeader, EngineError::SigMessage]
             .into_iter()
@@ -201,7 +201,7 @@ fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_and_the_attest
         fill,
     ];
     assert_eq!(
-        env.send(&solver.key, &reordered, &[]).err(),
+        env.send_tabled(&solver.key, &reordered, &[]).err(),
         Some(engine_error_at(1, EngineError::SigHeader)),
         "signatures out of key order are rejected"
     );
@@ -212,7 +212,7 @@ fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_and_the_attest
     );
     let fill = claim(&env);
     let honest: Vec<Instruction> = vec![cosign_batch_ix(&[&attestor, c, a, b], &digest)?, fill];
-    env.send(&solver.key, &honest, &[])?;
+    env.send_tabled(&solver.key, &honest, &[])?;
     assert_eq!(
         env.balance(&vault_pda(&intent))?,
         0,
@@ -275,7 +275,7 @@ fn claim_split(
     );
     let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(attestor)).collect();
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
-    let meta = env.send(&solver.key, &ixs, &[])?;
+    let meta = env.send_tabled(&solver.key, &ixs, &[])?;
     Ok(Claimed {
         atas,
         weights,

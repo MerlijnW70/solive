@@ -608,7 +608,7 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
         fill(&w.env, &committee, 0b011),
     ];
     assert_eq!(
-        w.env.send(&solver.key, &ixs, &[]).err(),
+        w.env.send_tabled(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(1, EngineError::SigHeader)),
         "a quorum member missing from the cosign batch is refused"
     );
@@ -619,7 +619,7 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
         fill(&w.env, &committee, 0b011),
     ];
     assert_eq!(
-        w.env.send(&solver.key, &ixs, &[]).err(),
+        w.env.send_tabled(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(1, EngineError::SigHeader)),
         "the envelope lists every member, not only the quorum"
     );
@@ -627,7 +627,7 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
         cosign_ix(&listed, &signers, &digest)?,
         fill(&w.env, &committee, 0b011),
     ];
-    let meta = w.env.send(&solver.key, &ixs, &[])?;
+    let meta = w.env.send_tabled(&solver.key, &ixs, &[])?;
     let mut paid = Vec::new();
     for ata in &atas {
         paid.push(w.env.balance(ata)?);

@@ -555,7 +555,7 @@ fn a_full_claimant_list_reviews_lapses_and_closes() -> TestResult {
     }
     let owner = w.release.trader.key.insecure_clone();
     let size = u8::try_from(workers.len())?;
-    let (first, rest) = workers.split_at(24);
+    let (first, rest) = workers.split_at(16);
     let open = svm_tests::open_claims_listed_review_ix(
         &owner.pubkey(),
         &w.intent(),

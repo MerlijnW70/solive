@@ -4735,6 +4735,7 @@ dependencies = [
  "solana-message",
  "solana-sha256-hasher",
  "solana-signer",
+ "solana-slot-hashes",
  "solana-system-interface 3.3.0",
  "solana-transaction",
  "solana-transaction-error",

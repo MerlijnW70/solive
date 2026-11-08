@@ -367,7 +367,7 @@ impl World {
             Some(&self.fee_to),
             1,
         );
-        Ok(self.env.send(&solver, &[cosign, fill], &[]))
+        Ok(self.env.send_tabled(&solver, &[cosign, fill], &[]))
     }
 
     fn committee_fill<'a>(
@@ -450,7 +450,7 @@ impl World {
             &recipients,
             &WEIGHTS,
         );
-        Ok(self.env.send(&solver, &[cosign, fill], &[]))
+        Ok(self.env.send_tabled(&solver, &[cosign, fill], &[]))
     }
 
     fn exit_lowers_by_what_left(&mut self, nonce: u64, exit: Exit) -> TestResult<u64> {

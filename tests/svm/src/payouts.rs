@@ -40,6 +40,19 @@ pub enum Setting {
     Closed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReleasePlace {
+    pub program: Pubkey,
+    pub members: usize,
+    pub threshold: u8,
+}
+
+pub const RELEASE_T22: ReleasePlace = ReleasePlace {
+    program: anchor_spl::token_2022::ID,
+    members: 3,
+    threshold: 2,
+};
+
 pub fn token_error_at(index: u8, e: TokenError) -> TransactionError {
     TransactionError::InstructionError(index, InstructionError::Custom(e as u32))
 }
@@ -102,7 +115,16 @@ pub struct ReleaseWorld {
 
 impl ReleaseWorld {
     pub fn new(exts: &[MintExt], path: ReleasePath, terms: ReleaseTerms) -> TestResult<Self> {
-        Self::build(exts, path, terms, None)
+        Self::build(&RELEASE_T22, exts, path, terms, None)
+    }
+
+    pub fn on(
+        place: &ReleasePlace,
+        path: ReleasePath,
+        terms: ReleaseTerms,
+        expires_at: Option<i64>,
+    ) -> TestResult<Self> {
+        Self::build(place, &[], path, terms, expires_at)
     }
 
     pub fn expiring(
@@ -111,16 +133,17 @@ impl ReleaseWorld {
         terms: ReleaseTerms,
         expires_at: i64,
     ) -> TestResult<Self> {
-        Self::build(exts, path, terms, Some(expires_at))
+        Self::build(&RELEASE_T22, exts, path, terms, Some(expires_at))
     }
 
     fn build(
+        place: &ReleasePlace,
         exts: &[MintExt],
         path: ReleasePath,
         terms: ReleaseTerms,
         expires_at: Option<i64>,
     ) -> TestResult<Self> {
-        let t22 = anchor_spl::token_2022::ID;
+        let t22 = place.program;
         let mut env = Env::new()?;
         let fee_owner = env.funded()?;
         env.fee_recipient = fee_owner.pubkey();
@@ -130,7 +153,7 @@ impl ReleaseWorld {
         let attestor = env.funded()?;
         let partner = env.funded()?;
         let panel = if path.by_committee() {
-            Some(env.convene(3, 2)?)
+            Some(env.convene(place.members, place.threshold)?)
         } else {
             None
         };
@@ -312,7 +335,11 @@ impl ReleaseWorld {
     ) -> TestResult<Result<TransactionMetadata, TransactionError>> {
         let ixs = self.release_ixs(path, delivery, payee)?;
         let solver = self.solver.insecure_clone();
-        Ok(self.env.send(&solver, &ixs, &[]))
+        if path.split() {
+            Ok(self.env.send_tabled(&solver, &ixs, &[]))
+        } else {
+            Ok(self.env.send(&solver, &ixs, &[]))
+        }
     }
 
     pub fn release(

@@ -74,7 +74,7 @@ fn a_cosign_batch_for_one_intent_cannot_settle_a_different_intent() -> TestResul
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest_a)?, fill_b];
     let fill_index = u8::try_from(ixs.len().saturating_sub(1))?;
     assert_eq!(
-        env.send(&solver.key, &ixs, &[]).err(),
+        env.send_tabled(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(fill_index, EngineError::SigMessage)),
         "signatures gathered for one intent cannot settle a different intent"
     );

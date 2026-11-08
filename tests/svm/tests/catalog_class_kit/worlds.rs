@@ -250,6 +250,7 @@ pub fn create_intent_signed() -> TestResult<Ready> {
     let sig = ed25519_ix(&b.trader.key, &message);
     let mut r = b
         .ready(ix, vec![relayer.insecure_clone()])?
+        .tabled()
         .named("relayer", relayer.pubkey());
     r.before.push(sig);
     Ok(r)
@@ -519,6 +520,7 @@ pub fn fill_attested_split() -> TestResult<Ready> {
     );
     let mut r = b
         .ready(ix, vec![solver.key.insecure_clone()])?
+        .tabled()
         .named("solver", solver.key.pubkey())
         .named("judge", judge.pubkey())
         .named("announcement", delivery.announcement)
@@ -620,6 +622,7 @@ pub fn fill_attested_split_committee() -> TestResult<Ready> {
     );
     let mut r = b
         .ready(ix, vec![solver.key.insecure_clone()])?
+        .tabled()
         .named("solver", solver.key.pubkey())
         .named("committee", panel.address)
         .named("announcement", delivery.announcement)

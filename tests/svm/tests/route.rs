@@ -189,10 +189,7 @@ fn a_multi_hop_route_fits_between_begin_and_end_and_settles() -> TestResult {
         );
         w.env.svm.expire_blockhash();
         let tx = w.versioned(&w.flash(packed)?, Some(&table))?;
-        let meta = w
-            .env
-            .svm
-            .send_transaction(tx)
+        let meta = svm_tests::send_sendable(&mut w.env.svm, tx)
             .map_err(|f| format!("{:?} {:?}", f.err, f.meta.logs))?;
         assert_eq!(w.env.balance(&w.trader.receiver)?, OUT);
         assert_eq!(

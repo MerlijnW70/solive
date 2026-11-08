@@ -70,7 +70,7 @@ fn a_collaborative_claim_whose_weights_do_not_sum_to_full_bps_is_rejected_on_cha
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
     let fill_index = u8::try_from(ixs.len().saturating_sub(1))?;
     assert_eq!(
-        env.send(&solver.key, &ixs, &[]).err(),
+        env.send_tabled(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(fill_index, EngineError::InvalidParams)),
         "weights that do not sum to the full bps denominator are rejected by the split kernel"
     );

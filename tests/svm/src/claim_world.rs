@@ -21,6 +21,15 @@ impl ClaimWorld {
         Self::from_release(ReleaseWorld::expiring(&[], path, terms, expires_at)?)
     }
 
+    pub fn on(
+        place: &ReleasePlace,
+        path: ReleasePath,
+        terms: ReleaseTerms,
+        expires_at: i64,
+    ) -> TestResult<Self> {
+        Self::from_release(ReleaseWorld::on(place, path, terms, Some(expires_at))?)
+    }
+
     fn from_release(mut release: ReleaseWorld) -> TestResult<Self> {
         let payer = release.env.funded()?;
         let cranker = release.env.funded()?;

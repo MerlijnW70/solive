@@ -24,7 +24,7 @@ fn rejection_of(data: Vec<u8>) -> Result<TransactionError, Box<dyn Error>> {
     };
     let message = Message::new(&[instruction], Some(&payer.pubkey()));
     let transaction = Transaction::new(&[&payer], message, svm.latest_blockhash());
-    match svm.send_transaction(transaction) {
+    match svm_tests::send_sendable(&mut svm, transaction) {
         Ok(_) => Err("engine accepted an instruction it does not declare".into()),
         Err(failed) => Ok(failed.err),
     }

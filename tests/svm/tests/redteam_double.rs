@@ -72,7 +72,7 @@ fn a_settled_collaborative_split_cannot_be_settled_a_second_time() -> TestResult
     };
     let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(&attestor)).collect();
     let first: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, claim(&env)];
-    env.send(&solver.key, &first, &[])?;
+    env.send_tabled(&solver.key, &first, &[])?;
     assert_eq!(
         env.balance(&vault_pda(&intent))?,
         0,
@@ -92,7 +92,7 @@ fn a_settled_collaborative_split_cannot_be_settled_a_second_time() -> TestResult
     let again: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, claim(&env)];
     let fill_index = u8::try_from(again.len().saturating_sub(1))?;
     assert_eq!(
-        env.send(&solver.key, &again, &[]).err(),
+        env.send_tabled(&solver.key, &again, &[]).err(),
         Some(engine_error_at(fill_index, EngineError::InvalidTransition)),
         "a second settle of the same intent is rejected once it is no longer open"
     );

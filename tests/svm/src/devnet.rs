@@ -139,9 +139,7 @@ pub fn send_as(
 ) -> Result<TransactionMetadata, TransactionError> {
     env.svm.expire_blockhash();
     let message = Message::new_with_blockhash(ixs, Some(payer), &env.svm.latest_blockhash());
-    env.svm
-        .send_transaction(Transaction::new_unsigned(message))
-        .map_err(|f| f.err)
+    send_sendable(&mut env.svm, Transaction::new_unsigned(message)).map_err(|f| f.err)
 }
 
 pub fn migrate_ix(payer: &Pubkey, account: &Pubkey, config: Option<Pubkey>) -> Instruction {

@@ -87,7 +87,7 @@ fn a_split_cannot_pay_a_recipient_account_that_is_not_the_cosigned_wallets_ata()
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
     let fill_index = u8::try_from(ixs.len().saturating_sub(1))?;
     assert_eq!(
-        env.send(&solver.key, &ixs, &[]).err(),
+        env.send_tabled(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(
             fill_index,
             EngineError::RecipientNotCanonical

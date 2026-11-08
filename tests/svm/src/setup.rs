@@ -170,7 +170,7 @@ impl Env {
         signers.extend_from_slice(extra);
         let message = Message::new(ixs, Some(&payer.pubkey()));
         let tx = Transaction::new(&signers, message, self.svm.latest_blockhash());
-        self.svm.send_transaction(tx).map_err(|f| f.err)
+        send_sendable(&mut self.svm, tx).map_err(|f| f.err)
     }
 
     pub fn now(&self) -> i64 {

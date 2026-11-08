@@ -12,9 +12,9 @@ use solana_transaction_error::TransactionError;
 use svm_tests::{
     anchor_error_at, attestation_proof_message, claim_job_listed_ix, claim_list_pda, claims_pda,
     close_legacy_full_ix, ed25519_ix, engine_error_at, events, extend_claimants_ix, intent_pda,
-    list_claimants_ix, load, open_claims_ix, open_claims_listed_ix, settle_claims_listed_ix,
-    stand_by_listed_ix, swap_spec, Env, IntentSpec, LegacyClose, Market, Solver, TestResult,
-    Trader, DOMAIN,
+    legacy_size, list_claimants_ix, load, open_claims_ix, open_claims_listed_ix,
+    settle_claims_listed_ix, stand_by_listed_ix, swap_spec, table_accounts, v0_size, Env,
+    IntentSpec, LegacyClose, Market, Solver, TestResult, Trader, DOMAIN, PACKET_DATA_SIZE,
 };
 
 const FUNDED: u64 = 1_000;
@@ -381,7 +381,6 @@ fn a_list_too_large_empty_or_with_repeats_is_refused() -> TestResult {
         (1, vec![worker, Pubkey::new_unique()]),
         (2, vec![worker, worker]),
         (1, vec![Pubkey::default()]),
-        (size, too_many),
     ];
     for (size, workers) in refused {
         assert_eq!(
@@ -391,6 +390,16 @@ fn a_list_too_large_empty_or_with_repeats_is_refused() -> TestResult {
             workers.len()
         );
     }
+    let too_large = open_claims_listed_ix(&w.owner(), &w.intent(), HOUR, STAKE, size, &too_many);
+    let table = w
+        .env
+        .lookup_table(&table_accounts(std::slice::from_ref(&too_large)))?;
+    let bare = legacy_size(&w.owner(), std::slice::from_ref(&too_large));
+    let packed = v0_size(&w.owner(), std::slice::from_ref(&too_large), &[table])?;
+    assert!(
+        bare > PACKET_DATA_SIZE && packed > PACKET_DATA_SIZE,
+        "a list over {MAX_CLAIMANTS} never reaches the program: {bare} bytes bare, {packed} with a lookup table"
+    );
     Ok(())
 }
 

@@ -9,6 +9,7 @@ publish.workspace = true
 anchor-lang = { workspace = true }
 anchor-spl = { workspace = true }
 base64 = "0.22"
+bincode = "1"
 bytemuck = { workspace = true }
 intent-core = { workspace = true }
 solana-system-interface = { version = "3.3", features = ["bincode"] }
@@ -22,14 +23,14 @@ solana-instruction = { workspace = true }
 solana-keypair = { workspace = true }
 solana-message = { workspace = true }
 solana-signer = { workspace = true }
+solana-slot-hashes = "3.2"
+solana-address-lookup-table-interface = { version = "3.1", features = ["bincode"] }
 solana-transaction = { workspace = true, features = ["serde"] }
 solana-transaction-error = { workspace = true }
 solana-instruction-error = { workspace = true }
 
 [dev-dependencies]
-bincode = "1"
 proptest = "1.11"
-solana-address-lookup-table-interface = { version = "3.1", features = ["bincode"] }
 
 [lints]
 workspace = true

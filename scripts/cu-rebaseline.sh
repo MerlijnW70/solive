@@ -4,7 +4,7 @@ source "$(dirname "$0")/env.sh"
 records="${CARGO_TARGET_DIR:-target}/debug/solive-cu"
 rm -rf "$records"
 bash scripts/sbf.sh
-for t in attested fill flash forged intent_lifecycle mandate signed; do
+for t in attested fill flash forged heavy_cu intent_lifecycle mandate signed; do
   cargo test --quiet -p svm-tests --test "$t" >/dev/null 2>&1 || true
 done
 baseline=tests/svm/cu-baseline.json

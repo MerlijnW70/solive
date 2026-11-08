@@ -12,7 +12,7 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
     anchor_error_at, cosign_batch_ix, engine_error, intent_pda, partner_ext, split_commit,
-    split_digest, swap_spec, vault_pda, Env, IntentSpec, TestResult, DOMAIN,
+    split_digest, swap_spec, vault_pda, Env, IntentSpec, TestResult, DOMAIN, LANDABLE_SPLIT,
 };
 
 const SMALL: u64 = 10_000;
@@ -76,7 +76,7 @@ fn slots(n: usize) -> BoxedStrategy<Vec<usize>> {
 }
 
 fn split_case() -> impl Strategy<Value = Case> {
-    (1usize..=8)
+    (1usize..=LANDABLE_SPLIT)
         .prop_flat_map(|n| {
             (
                 escrow(),
@@ -178,7 +178,7 @@ fn run_split(case: &Case) -> TestResult {
         .chain(std::iter::once(&attestor))
         .collect();
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
-    let sent = env.send(&solver.key, &ixs, &[]);
+    let sent = env.send_tabled(&solver.key, &ixs, &[]);
     let protocol = env
         .balance(&fee_to)?
         .checked_sub(fee_before)
