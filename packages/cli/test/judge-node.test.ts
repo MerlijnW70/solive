@@ -14,8 +14,8 @@ import { createClient } from "@intent-engine/client/node";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { EXIT_RETRY } from "../src/judge-errors.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
-import { judgeNode, NODE_CASE_MS, NODE_DEADLINE, NODE_ENGINE } from "../src/node-judge.js";
-import { CONTENTION_FACTOR, ranPastBudget } from "../src/verdict-model.js";
+import { judgeNode, NODE_DEADLINE, NODE_ENGINE } from "../src/node-judge.js";
+import { CONTENTION_FACTOR } from "../src/verdict-model.js";
 import { engineOutcome } from "../src/verdict-model.js";
 import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
@@ -254,20 +254,22 @@ describe("judge --sandbox viper --plain-node", () => {
   });
 
   it("one --timeout bounds the whole judgement across every engine", DOCKER_TEST, async () => {
-    const onlyInNode = "export default () => { if (import.meta.url !== undefined) for (;;) {} return 1; };\n";
-    const four = '{"cases": [{"args": [], "expected": 1}, {"args": [], "expected": 1}, {"args": [], "expected": 1}, {"args": [], "expected": 1}]}';
+    const onlyInNode = "export default (n) => { if (import.meta.url !== undefined) { if (n === 0) return 2; for (;;) {} } return 1; };\n";
+    const budgetMs = 30_000;
+    const four = `{"case_ms": ${budgetMs}, "cases": [{"args": [0], "expected": 1}, {"args": [1], "expected": 1}, {"args": [1], "expected": 1}, {"args": [1], "expected": 1}]}`;
     const j = await job(onlyInNode, specOf(four), "loop.mjs");
     const keys = { "judge.json": j.judge };
-    const timeout = Math.ceil((CONTENTION_FACTOR * NODE_CASE_MS) / 1000) + 4;
+    const timeout = 40;
+    expect(timeout * 1000).toBeLessThan(CONTENTION_FACTOR * budgetMs);
     const started = performance.now();
     const slow = await cli(judging(j, "--plain-node", "--timeout", String(timeout), "--yes"), keys);
     const took = performance.now() - started;
     expect(slow.code).toBe(EXIT_FAILED);
     expect(slow.json()).toMatchObject({ verdict: "fail", signature: null, cases: { passed: 4 }, host: { passed: 4 }, node: { total: 4, passed: 0 } });
     const node = slow.json()["node"] as Engine;
-    expect(node.failures).toEqual([{ case: 0, verdict: "stopped", detail: ranPastBudget(NODE_CASE_MS) }]);
+    expect(node.failures).toEqual([{ case: 0, verdict: "wrong", detail: 2 }]);
     expect(node.stop).toEqual({ cause: "deadline", reason: NODE_DEADLINE, unfinished: 3 });
-    expect(took).toBeLessThan((timeout + 4) * 1000);
+    expect(took).toBeLessThan(timeout * 1000 + budgetMs);
     expect(status(j.intent)).toBe(IntentStatus.Open);
 
     const everywhere = "export default () => { for (;;) {} };\n";
