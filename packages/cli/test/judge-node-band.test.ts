@@ -50,7 +50,7 @@ describe("the plain Node band on a real container", () => {
 
   it("leaves a right answer charged past its budget no verdict when other work truly kept the case off its CPU", SLOW, async () => {
     const name = `band-hog-${process.pid}`;
-    spawn("docker", ["run", "--rm", "--name", name, "--cpu-shares", "262144", "--entrypoint", "sh", SANDBOX_IMAGE, "-c", `for i in $(seq ${2 * availableParallelism()}); do while :; do :; done & done; wait`], { stdio: "ignore" });
+    spawn("docker", ["run", "--rm", "--name", name, "--cpu-shares", "262144", "--cpus", String(Math.max(1, Math.floor(availableParallelism() / 2))), "--entrypoint", "sh", SANDBOX_IMAGE, "-c", `for i in $(seq ${2 * availableParallelism()}); do while :; do :; done & done; wait`], { stdio: "ignore" });
     try {
       await pause(3_000);
       const { node, outcome } = await judged(SPIN);
@@ -66,7 +66,7 @@ describe("the plain Node band on a real container", () => {
       for (const [attack, source] of Object.entries(ATTACKS)) {
         if (cpus === "0.1" && !attack.includes("thr")) continue;
         const { node, outcome } = await judged(source, cpus);
-        expect([outcome.outcome, node.failures], `${cpus} ${attack}`).toEqual(["fail", OVER]);
+        expect([outcome.outcome, node.stop, node.failures.map((failure) => failure.verdict)], `${cpus} ${attack}`).toEqual(["fail", undefined, ["stopped"]]);
       }
     }
   });

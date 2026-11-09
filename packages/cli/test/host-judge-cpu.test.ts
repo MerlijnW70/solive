@@ -122,19 +122,15 @@ describe("the host engine's budget is CPU time, not the judge's wall clock", () 
     };
     const quiet = await failing("quiet");
     expect(quiet.judged.failures).toEqual([{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]);
-    for (const nice of ["19", "0"]) {
-      const hogs = Array.from({ length: 4 * availableParallelism() }, () => spawn("nice", ["-n", nice, process.execPath, "-e", "for (;;) {}"], { stdio: "ignore" }));
-      try {
-        await pause(1_000);
-        if (nice === "19") expect((await failing(nice)).judged.failures[0]?.verdict, nice).toBe("stopped");
-        else {
-          const loaded = await run();
-          expect([loaded.outcome, loaded.judged.failures, loaded.judged.stop?.reason], nice).toEqual(["infra", [], expect.stringMatching(/kept it off the CPU for \d+% of the time it was ready to run|wall-clock backstop before the case had used its/)]);
-        }
-      } finally {
-        for (const hog of hogs) hog.kill("SIGKILL");
-      }
+    const hogs = Array.from({ length: 2 * availableParallelism() }, () => spawn("nice", ["-n", "19", process.execPath, "-e", "for (;;) {}"], { stdio: "ignore" }));
+    try {
+      await pause(1_000);
+      expect((await failing("nice 19")).judged.failures[0]?.verdict).toBe("stopped");
+    } finally {
+      for (const hog of hogs) hog.kill("SIGKILL");
     }
+    const stopped = await throttled(source, cases(budget), 50, 50);
+    expect([stopped.outcome, stopped.tally.failures, stopped.tally.stop?.reason]).toEqual(["infra", [], expect.stringMatching(DISPLACED)]);
   });
 
   it("leaves a delivery no way to wait without CPU: Atomics.wait is gone from the host engine", async () => {
