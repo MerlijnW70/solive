@@ -198,8 +198,16 @@ fn autolink(ixs: &mut [Instruction], link_any: bool) -> TestResult {
     Ok(())
 }
 
-fn build(world: &World, piece: &Piece) -> TestResult<Vec<Instruction>> {
+fn joined(prefix: &[Instruction], more: &[Instruction]) -> Vec<Instruction> {
+    let mut ixs = prefix.to_vec();
+    ixs.extend_from_slice(more);
+    ixs.truncate(MAX_INSTRUCTIONS);
+    ixs
+}
+
+fn build(world: &World, prefix: &[Instruction], piece: &Piece) -> TestResult<Vec<Instruction>> {
     let me = world.attacker.key.pubkey();
+    let fits = |tried: &[Instruction]| world.fits(&joined(prefix, tried));
     Ok(match piece {
         Piece::Base {
             base,
@@ -218,22 +226,20 @@ fn build(world: &World, piece: &Piece) -> TestResult<Vec<Instruction>> {
                     .collect(),
                 None => chosen.clone(),
             };
-            if let Some(last) = ixs.last_mut() {
-                world.mutate(last, mutations)?;
-            }
+            world.mutate_while(&mut ixs, mutations, fits)?;
             ixs
         }
         Piece::Replay { pick, mutations } => {
-            let mut ix = world
+            let mut ixs = vec![world
                 .captured
                 .get(
                     pick.checked_rem(world.captured.len())
                         .ok_or("nothing captured")?,
                 )
                 .ok_or("captured")?
-                .clone();
-            world.mutate(&mut ix, mutations)?;
-            vec![ix]
+                .clone()];
+            world.mutate_while(&mut ixs, mutations, fits)?;
+            ixs
         }
         Piece::Forged { claim_victim } => {
             let message = world
@@ -383,12 +389,21 @@ fn apply(ixs: &mut Vec<Instruction>, edit: &Edit) -> TestResult {
 fn compose(world: &mut World, pieces: &[Piece], edits: &[Edit], link_any: bool) -> TestResult {
     let mut ixs = Vec::new();
     for p in pieces {
-        ixs.extend(build(world, p)?);
+        let tried = joined(&ixs, &build(world, &ixs, p)?);
+        if world.fits(&tried) {
+            ixs = tried;
+        }
     }
-    ixs.truncate(MAX_INSTRUCTIONS);
+    if ixs.is_empty() {
+        return Err(format!("no drawn piece fits a transaction: {pieces:?}").into());
+    }
     autolink(&mut ixs, link_any)?;
     for e in edits {
-        apply(&mut ixs, e)?;
+        let mut tried = ixs.clone();
+        apply(&mut tried, e)?;
+        if world.fits(&tried) {
+            ixs = tried;
+        }
     }
     world.submit(ixs)
 }
@@ -571,7 +586,11 @@ fn run(token_2022: bool, flavor: usize, steps: &[Step]) -> TestResult {
     }
     thaw_everything(&mut world);
     liveness(&mut world).map_err(|e| format!("after {} steps: {e}", steps.len()))?;
-    world::attacks_mostly_land()
+    let composed = steps
+        .iter()
+        .filter(|s| matches!(s, Step::Compose { .. }))
+        .count();
+    world.every_attack_landed(composed)
 }
 
 proptest! {
@@ -613,6 +632,163 @@ fn the_honest_agent_orders_the_fuzzer_builds_succeed() -> TestResult {
             .env
             .send(&attacker, base, &[])
             .map_err(|e| format!("honest agent order {n} refused: {e:?}"))?;
+    }
+    Ok(())
+}
+
+fn every_piece(world: &World) -> TestResult<Vec<Piece>> {
+    let mut pieces: Vec<Piece> = (0..world.bases()?.len())
+        .map(|base| Piece::Base {
+            base,
+            take: None,
+            mutations: Vec::new(),
+        })
+        .collect();
+    pieces.extend((0..world.captured.len()).map(|pick| Piece::Replay {
+        pick,
+        mutations: Vec::new(),
+    }));
+    pieces.extend([false, true].map(|claim_victim| Piece::Forged { claim_victim }));
+    pieces.extend([false, true].map(|output| Piece::Donate {
+        to: 0,
+        amount: 1,
+        output,
+    }));
+    pieces.extend((0..world.tracked.len()).map(|pick| Piece::Begin { pick }));
+    pieces.extend((0..4u8).map(|pay| Piece::End { pick: 0, pay }));
+    Ok(pieces)
+}
+
+fn every_mutation() -> Vec<Mutation> {
+    let mut all = vec![
+        Mutation::Account { slot: 0, pick: 0 },
+        Mutation::TokenAccount { slot: 0, pick: 0 },
+        Mutation::Swap { a: 0, b: 1 },
+        Mutation::Truncate { len: 8 },
+        Mutation::Append { byte: 1 },
+        Mutation::Flip { at: 0, mask: 1 },
+        Mutation::Word { at: 0, value: 1 },
+    ];
+    all.extend((0..6).map(|pick| Mutation::Ext { pick }));
+    all
+}
+
+fn biggest_bases(world: &World, count: usize) -> TestResult<Vec<Piece>> {
+    let me = world.attacker.key.pubkey();
+    let mut sized: Vec<(usize, usize)> = world
+        .bases()?
+        .iter()
+        .enumerate()
+        .map(|(at, base)| {
+            (
+                svm_tests::legacy_size(&me, &world.signed_by_attacker(base)),
+                at,
+            )
+        })
+        .collect();
+    sized.sort_unstable_by(|a, b| b.cmp(a));
+    Ok(sized
+        .into_iter()
+        .take(count)
+        .map(|(_, base)| Piece::Base {
+            base,
+            take: None,
+            mutations: Vec::new(),
+        })
+        .collect())
+}
+
+#[test]
+fn an_attack_that_cannot_land_or_is_skipped_fails_the_gate() -> TestResult {
+    let mut world = World::new(anchor_spl::token::ID)?;
+    let mut ixs = world.bases()?.first().ok_or("no base")?.clone();
+    let last = ixs.last_mut().ok_or("empty base")?;
+    last.data.resize(
+        last.data.len().saturating_add(svm_tests::PACKET_DATA_SIZE),
+        0,
+    );
+    assert!(
+        !world.fits(&ixs),
+        "the padded base is measured as unlandable"
+    );
+    world.submit(ixs)?;
+    assert_eq!(
+        (world.landed, world.unlandable),
+        (0, 1),
+        "an unlandable attack is counted"
+    );
+    assert!(
+        world.every_attack_landed(1).is_err(),
+        "an unlandable attack fails the gate"
+    );
+    let mut world = World::new(anchor_spl::token::ID)?;
+    let ixs = world.bases()?.first().ok_or("no base")?.clone();
+    assert!(world.fits(&ixs), "a plain base is measured as landable");
+    world.submit(ixs)?;
+    assert_eq!((world.landed, world.unlandable), (1, 0));
+    world.every_attack_landed(1)?;
+    assert!(
+        world.every_attack_landed(2).is_err(),
+        "an attack skipped without being sent fails the gate"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_composer_trims_a_draw_too_large_to_land() -> TestResult {
+    let mut world = World::new(anchor_spl::token::ID)?;
+    let pieces = biggest_bases(&world, 6)?;
+    let mut all = Vec::new();
+    for p in &pieces {
+        all = joined(&all, &build(&world, &all, p)?);
+    }
+    assert!(!world.fits(&all), "the untrimmed draw cannot land");
+    compose(&mut world, &pieces, &[Edit::Duplicate { at: 0 }], false)?;
+    assert_eq!(
+        (world.landed, world.unlandable),
+        (1, 0),
+        "the trimmed draw lands"
+    );
+    world.every_attack_landed(1)
+}
+
+#[test]
+fn every_piece_mutation_and_flavour_still_lands() -> TestResult {
+    for token_2022 in [false, true] {
+        for flavor in 0..3usize {
+            let program = if token_2022 {
+                anchor_spl::token_2022::ID
+            } else {
+                anchor_spl::token::ID
+            };
+            let mut world = World::with_mints(program, mints(token_2022, flavor))?;
+            let label = format!("token_2022 {token_2022} flavor {flavor}");
+            let bases = world.bases()?;
+            for m in every_mutation() {
+                let mut kept = false;
+                for base in &bases {
+                    let mut tried = base.clone();
+                    if let Some(last) = tried.last_mut() {
+                        world.mutate(last, std::slice::from_ref(&m))?;
+                    }
+                    kept |= tried != *base && world.fits(&tried);
+                }
+                assert!(kept, "{label}: {m:?} lands on no base");
+            }
+            let pieces = every_piece(&world)?;
+            for p in &pieces {
+                let alone = build(&world, &[], p)?;
+                assert!(
+                    !alone.is_empty() && world.fits(&alone),
+                    "{label}: {p:?} cannot land on its own"
+                );
+                compose(&mut world, std::slice::from_ref(p), &[], false)
+                    .map_err(|e| format!("{label}: {p:?}: {e}"))?;
+            }
+            world
+                .every_attack_landed(pieces.len())
+                .map_err(|e| format!("{label}: {e}"))?;
+        }
     }
     Ok(())
 }

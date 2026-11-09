@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anchor_spl::token_2022::spl_token_2022::state::Mint as MintState;
 use intent_core::kinds::{attested_result, dutch_auction, limit_order, Intent as CoreIntent, Kind};
@@ -11,44 +10,23 @@ use litesvm::types::FailedTransactionMetadata;
 
 use anchor_lang::prelude::Pubkey;
 use anchor_spl::token_2022::spl_token_2022::extension::StateWithExtensions;
+use solana_address_lookup_table_interface::state::LOOKUP_TABLE_MAX_ADDRESSES;
 use solana_instruction::Instruction;
 use solana_instruction_error::InstructionError;
 use solana_keypair::Keypair;
-use solana_message::Message;
+use solana_message::{AddressLookupTableAccount, Message};
 use solana_signer::Signer;
 use solana_transaction::versioned::VersionedTransaction;
 use solana_transaction::Transaction;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     agent_lane, attestation_message, canonical_refund, config_pda, delegate_pda, ed25519_ix,
-    event_authority, intent_pda, mandate_pda, mandate_terms, swap_spec, user_pda, vault_pda, Env,
-    IntentSpec, Market, MintExt, Solver, TestResult, Trader, DOMAIN,
+    event_authority, intent_pda, legacy_size, mandate_pda, mandate_terms, swap_spec,
+    table_accounts, user_pda, v0_size, vault_pda, Env, IntentSpec, Market, MintExt, Solver,
+    TestResult, Trader, DOMAIN, PACKET_DATA_SIZE,
 };
 
 pub const FUNDED: u64 = 10_000;
-pub const SKIP_SAMPLE: usize = 200;
-pub const SKIP_SHARE_PCT: usize = 2;
-
-pub static LANDABLE_ATTACKS: AtomicUsize = AtomicUsize::new(0);
-pub static UNLANDABLE_ATTACKS: AtomicUsize = AtomicUsize::new(0);
-
-pub fn unlandable_share(sent: usize, skipped: usize) -> TestResult {
-    let total = sent.saturating_add(skipped);
-    if total >= SKIP_SAMPLE && skipped.saturating_mul(100) > total.saturating_mul(SKIP_SHARE_PCT) {
-        return Err(format!(
-            "{skipped} of {total} composed transactions cannot land even with a lookup table, over {SKIP_SHARE_PCT}%"
-        )
-        .into());
-    }
-    Ok(())
-}
-
-pub fn attacks_mostly_land() -> TestResult {
-    unlandable_share(
-        LANDABLE_ATTACKS.load(Ordering::Relaxed),
-        UNLANDABLE_ATTACKS.load(Ordering::Relaxed),
-    )
-}
 pub const SOLVER_FUNDS: u64 = 5_000;
 pub const ESCROW: u64 = 300;
 pub const VICTIM: usize = 1;
@@ -126,6 +104,8 @@ pub struct World {
     pub captured: Vec<Instruction>,
     pub agent_fees: Pubkey,
     pub own_rent: HashMap<Pubkey, u64>,
+    pub landed: usize,
+    pub unlandable: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -191,6 +171,8 @@ impl World {
             captured: Vec::new(),
             agent_fees: Pubkey::default(),
             own_rent: HashMap::new(),
+            landed: 0,
+            unlandable: 0,
         };
         world.open_intents()?;
         world.grant()?;
@@ -636,9 +618,70 @@ impl World {
             .get(base.checked_rem(bases.len()).ok_or("no bases")?)
             .ok_or("no base")?
             .clone();
-        let last = ixs.last_mut().ok_or("empty base")?;
-        self.mutate(last, mutations)?;
+        if ixs.is_empty() {
+            return Err("empty base".into());
+        }
+        self.mutate_while(&mut ixs, mutations, |tried| self.fits(tried))?;
         self.submit(ixs)
+    }
+
+    pub fn every_attack_landed(&self, attempted: usize) -> TestResult {
+        if self.unlandable > 0 || self.landed != attempted {
+            return Err(format!(
+                "{} of {attempted} attacks landed and {} cannot land even with a lookup table",
+                self.landed, self.unlandable
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    pub fn signed_by_attacker(&self, ixs: &[Instruction]) -> Vec<Instruction> {
+        let me = self.attacker.key.pubkey();
+        let mut ixs = ixs.to_vec();
+        for meta in ixs.iter_mut().flat_map(|ix| ix.accounts.iter_mut()) {
+            if meta.is_signer {
+                meta.pubkey = me;
+            }
+        }
+        ixs
+    }
+
+    pub fn fits(&self, ixs: &[Instruction]) -> bool {
+        let me = self.attacker.key.pubkey();
+        let ixs = self.signed_by_attacker(ixs);
+        if legacy_size(&me, &ixs) <= PACKET_DATA_SIZE {
+            return true;
+        }
+        let addresses = table_accounts(&ixs);
+        addresses.len() <= LOOKUP_TABLE_MAX_ADDRESSES
+            && v0_size(
+                &me,
+                &ixs,
+                &[AddressLookupTableAccount {
+                    key: Pubkey::new_unique(),
+                    addresses,
+                }],
+            )
+            .is_ok_and(|size| size <= PACKET_DATA_SIZE)
+    }
+
+    pub fn mutate_while(
+        &self,
+        ixs: &mut Vec<Instruction>,
+        mutations: &[Mutation],
+        fits: impl Fn(&[Instruction]) -> bool,
+    ) -> TestResult {
+        for m in mutations {
+            let mut tried = ixs.clone();
+            if let Some(last) = tried.last_mut() {
+                self.mutate(last, std::slice::from_ref(m))?;
+            }
+            if fits(&tried) {
+                *ixs = tried;
+            }
+        }
+        Ok(())
     }
 
     pub fn mutate(&self, last: &mut Instruction, mutations: &[Mutation]) -> TestResult {
@@ -714,15 +757,9 @@ impl World {
         Ok(())
     }
 
-    pub fn submit(&mut self, mut ixs: Vec<Instruction>) -> TestResult {
+    pub fn submit(&mut self, ixs: Vec<Instruction>) -> TestResult {
         let me = self.attacker.key.pubkey();
-        for ix in &mut ixs {
-            for meta in &mut ix.accounts {
-                if meta.is_signer {
-                    meta.pubkey = me;
-                }
-            }
-        }
+        let ixs = self.signed_by_attacker(&ixs);
         let before: Vec<Seen> = self
             .tracked
             .iter()
@@ -782,16 +819,20 @@ impl World {
         let landable = if svm_tests::oversize(&bare).is_none() {
             Some(bare)
         } else {
-            let table = self.env.lookup_table(&svm_tests::table_accounts(&ixs))?;
-            let packed = self.env.v0_transaction(&payer, &ixs, &[], &[table])?;
-            svm_tests::oversize(&packed).is_none().then_some(packed)
+            let addresses = table_accounts(&ixs);
+            if addresses.len() > LOOKUP_TABLE_MAX_ADDRESSES {
+                None
+            } else {
+                let table = self.env.lookup_table(&addresses)?;
+                let packed = self.env.v0_transaction(&payer, &ixs, &[], &[table])?;
+                svm_tests::oversize(&packed).is_none().then_some(packed)
+            }
         };
-        let counter = if landable.is_some() {
-            &LANDABLE_ATTACKS
+        if landable.is_some() {
+            self.landed = self.landed.saturating_add(1);
         } else {
-            &UNLANDABLE_ATTACKS
-        };
-        counter.fetch_add(1, Ordering::Relaxed);
+            self.unlandable = self.unlandable.saturating_add(1);
+        }
         let sent = landable.map(|tx| svm_tests::send_sendable(&mut self.env.svm, tx));
         if let Some(Err(failed)) = sent {
             let FailedTransactionMetadata { err, meta } = *failed;

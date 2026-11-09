@@ -46,7 +46,11 @@ fn run(token_2022: bool, steps: &[Step]) -> TestResult {
         }
         .map_err(|e| format!("step {n} {s:?}: {e}"))?;
     }
-    world::attacks_mostly_land()
+    let attacks = steps
+        .iter()
+        .filter(|s| matches!(s, Step::Attack { .. }))
+        .count();
+    world.every_attack_landed(attacks)
 }
 
 #[test]
