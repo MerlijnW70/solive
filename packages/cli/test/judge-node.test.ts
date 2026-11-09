@@ -15,6 +15,7 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { EXIT_RETRY } from "../src/judge-errors.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
 import { judgeNode, NODE_CASE_MS, NODE_DEADLINE, NODE_ENGINE } from "../src/node-judge.js";
+import { ranPastBudget } from "../src/verdict-model.js";
 import { engineOutcome } from "../src/verdict-model.js";
 import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
@@ -264,7 +265,7 @@ describe("judge --sandbox viper --plain-node", () => {
     expect(slow.code).toBe(EXIT_FAILED);
     expect(slow.json()).toMatchObject({ verdict: "fail", signature: null, cases: { passed: 4 }, host: { passed: 4 }, node: { total: 4, passed: 0 } });
     const node = slow.json()["node"] as Engine;
-    expect(node.failures).toEqual([{ case: 0, verdict: "stopped", detail: `the case gave no answer within ${NODE_CASE_MS} ms` }]);
+    expect(node.failures).toEqual([{ case: 0, verdict: "stopped", detail: ranPastBudget(NODE_CASE_MS) }]);
     expect(node.stop).toEqual({ cause: "deadline", reason: NODE_DEADLINE, unfinished: 3 });
     expect(took).toBeLessThan((timeout + 4) * 1000);
     expect(status(j.intent)).toBe(IntentStatus.Open);

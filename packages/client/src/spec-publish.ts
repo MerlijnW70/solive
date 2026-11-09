@@ -2,6 +2,7 @@ import { isSealed } from "@intent-engine/core/internal";
 import type { Lookup } from "./address-ranges.js";
 import { sha256Hex } from "./encoding.js";
 import { webFetch } from "./job-specs.js";
+import { casePinsPreflight } from "./case-pins.js";
 import { runBlockPreflight } from "./run-block.js";
 import { before, guardedSend, type SendAnswer } from "./spec-fetch.js";
 import { MAX_SPEC_BYTES, type SpecFetch, SpecUnreadable } from "./spec-guard.js";
@@ -73,7 +74,7 @@ export async function publishSpec(bytes: Uint8Array, options: PublishSpecOptions
   const sha256 = await sha256Hex(bytes);
   const refused = (reason: string): SpecPublished => ({ published: false, sha256, reason });
   const sealed = isSealed(bytes);
-  const unrunnable = sealed || bytes.length > MAX_SPEC_BYTES ? undefined : runBlockPreflight(bytes);
+  const unrunnable = sealed || bytes.length > MAX_SPEC_BYTES ? undefined : (runBlockPreflight(bytes) ?? casePinsPreflight(bytes));
   if (unrunnable !== undefined) {
     return refused(`${unrunnable}; ${RUN_BLOCK_UNJUDGEABLE}`);
   }

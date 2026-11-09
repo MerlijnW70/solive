@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOST_CALL_MS, HOST_ENGINE, hostDetail, judgeHost } from "../src/host-judge.js";
+import { HOST_CALL_MS, HOST_ENGINE, hostBackstopMs, hostDetail, judgeHost } from "../src/host-judge.js";
 import { type Cases, judgeViper, OUTPUT_BYTES, pinnedWasm } from "../src/viper.js";
 import { combine, engineOutcome } from "../src/verdict-model.js";
 
@@ -34,7 +34,7 @@ describe("a delivery that tries to turn its own fail in the host engine into inf
       const started = performance.now();
       const { judged, outcome: ruled } = await outcome(`export default () => { throw ${thrown}; };`);
       expect([ruled, judged.stop, judged.failures[0]?.verdict], thrown).toEqual(["fail", undefined, verdict]);
-      expect(performance.now() - started, thrown).toBeLessThan(HOST_CALL_MS * 3 + 5_000);
+      expect(performance.now() - started, thrown).toBeLessThan(hostBackstopMs(HOST_CALL_MS) * 2 + 5_000);
     }
     const loading = await outcome("throw new Proxy({}, { get() { for (;;) {} }, getPrototypeOf() { for (;;) {} } }); export default () => 4;");
     expect([loading.outcome, loading.judged.stop, loading.judged.failures[0]?.verdict]).toEqual(["fail", undefined, "stopped"]);

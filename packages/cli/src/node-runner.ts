@@ -4,6 +4,12 @@ export const NODE_UNCOUNTED = '"uncounted"';
 
 export const NODE_UNLOCKED = '"unlocked"';
 
+export const NODE_UNPROBED = '"unprobed"';
+
+export const NODE_UNMETERED = '"unmetered"';
+
+export const STARTED_FD = 3;
+
 export const CASE_OOM_SCORE = 1000;
 
 export const UNPREPARED = "unprepared";
@@ -12,7 +18,7 @@ export const SAME_UID = "the plain Node launcher runs under the uid its cases wo
 
 export const NODE_LAUNCHER = `
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const caseFile = process.argv[2];
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -22,12 +28,60 @@ const sweep = () => {
     process.kill(-1, "SIGKILL");
   } catch {}
 };
-const others = () => {
+const pids = () => {
   try {
-    return readFileSync(config.procs, "utf8").split("\\n").filter((pid) => pid !== "" && pid !== "1" && pid !== String(process.pid)).length;
+    return readFileSync(config.procs, "utf8").split("\\n").filter((pid) => pid !== "" && pid !== "1" && pid !== String(process.pid));
   } catch {
     return null;
   }
+};
+const others = () => {
+  const list = pids();
+  return list === null ? null : list.length;
+};
+const fields = (pid) => {
+  const stat = readFileSync("/proc/" + pid + "/stat", "utf8");
+  return stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+};
+const running = () => readdirSync("/proc").filter((pid) => /^\\d{1,10}$/.test(pid) && pid !== "1" && pid !== String(process.pid));
+const usage = () => {
+  let ticks = 0;
+  try {
+    for (const pid of ["self", "1"]) {
+      const own = fields(pid);
+      ticks += Number(own[13]) + Number(own[14]);
+    }
+  } catch {
+    return null;
+  }
+  for (const pid of running()) {
+    try {
+      const own = fields(pid);
+      ticks += Number(own[11]) + Number(own[12]) + Number(own[13]) + Number(own[14]);
+    } catch {}
+  }
+  return Number.isSafeInteger(ticks) ? (ticks * 1e6) / config.clockTicks : null;
+};
+const runnable = () => {
+  let list;
+  try {
+    list = running();
+  } catch {
+    return null;
+  }
+  for (const pid of list) {
+    let tasks = [];
+    try {
+      tasks = readdirSync("/proc/" + pid + "/task");
+    } catch {}
+    for (const task of tasks) {
+      try {
+        const stat = readFileSync("/proc/" + pid + "/task/" + task + "/stat", "utf8");
+        if (stat.charAt(stat.lastIndexOf(")") + 2) === "R") return true;
+      } catch {}
+    }
+  }
+  return false;
 };
 const settle = async () => {
   const until = performance.now() + config.settleMs;
@@ -49,23 +103,61 @@ const memoryEvents = () => {
     return null;
   }
 };
-const scoreLocked = () => {
-  const probe = spawnSync(process.execPath, ["--disable-sigusr1", caseFile], { input: JSON.stringify({ probe: true, token: "", json: "[]", zeros: [], path: config.path, uid: config.uid, gid: config.gid }), encoding: "utf8", timeout: config.caseMs, stdio: ["pipe", "pipe", "ignore"] });
-  return probe.status === 0 && String(probe.stdout).trim() === "${CASE_OOM_SCORE}";
+const scoreLock = () => {
+  const probe = spawnSync(process.execPath, ["--disable-sigusr1", caseFile], { input: JSON.stringify({ probe: true, token: "", json: "[]", zeros: [], path: config.path, uid: config.uid, gid: config.gid }), encoding: "utf8", timeout: config.probeMs, killSignal: "SIGKILL", stdio: ["pipe", "pipe", "ignore"] });
+  if (probe.status === 0) return String(probe.stdout).trim() === "${CASE_OOM_SCORE}" ? "locked" : "unlocked";
+  return probe.status === 1 ? "unlocked" : "unknown";
 };
 const runCase = (token, json, zeros) =>
   new Promise((done) => {
-    const child = spawn(process.execPath, ["--disable-sigusr1", "--max-old-space-size=" + config.heapMb, "--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore"], detached: true });
+    const child = spawn(process.execPath, ["--disable-sigusr1", "--max-old-space-size=" + config.heapMb, "--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore", "pipe"], detached: true });
     const out = [];
     let bytes = 0;
     let over = false;
     let timedOut = false;
     let code = null;
     let signal = null;
-    const timer = setTimeout(() => {
+    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, stoppedBy: null };
+    let from = null;
+    let last = 0;
+    let lastIdle = false;
+    let sampler;
+    let exited = false;
+    const stopBy = (cause) => {
+      if (exited) return;
+      clock.stoppedBy ??= cause;
       timedOut = true;
       child.kill("SIGKILL");
-    }, config.caseMs);
+    };
+    const read = (final) => {
+      if (from === null) return;
+      const now = performance.now();
+      const idle = final ? lastIdle : runnable() === false;
+      clock.idleMs += idle && lastIdle ? now - last : 0;
+      last = now;
+      lastIdle = idle;
+      const cpu = usage();
+      if (cpu === null) clock.metered = false;
+      else clock.usedMs = Math.max(0, cpu - from.cpu) / 1000;
+    };
+    const tick = () => {
+      sampler = setTimeout(() => {
+        if (exited) return;
+        read(false);
+        if (clock.usedMs + clock.idleMs >= config.caseMs || !clock.metered) stopBy("budget");
+        else tick();
+      }, config.sampleMs);
+    };
+    child.stdio[${STARTED_FD}].once("data", () => {
+      const cpu = usage();
+      if (cpu === null) clock.metered = false;
+      from = { cpu: cpu ?? 0 };
+      last = performance.now();
+      clock.started = true;
+      if (!exited) tick();
+    });
+    child.stdio[${STARTED_FD}].on("error", () => undefined);
+    const timer = setTimeout(() => stopBy("backstop"), config.backstopMs);
     child.stdout.on("data", (chunk) => {
       bytes += chunk.length;
       if (bytes > config.outputBytes) {
@@ -79,17 +171,23 @@ const runCase = (token, json, zeros) =>
     child.stdin.end(JSON.stringify({ token, json, zeros, path: config.path, uid: config.uid, gid: config.gid }));
     child.once("exit", (exitCode, endedBy) => {
       clearTimeout(timer);
+      clearTimeout(sampler);
+      read(true);
+      exited = true;
+      from = null;
       code = exitCode;
       signal = endedBy;
       sweep();
     });
     child.once("error", (error) => {
       clearTimeout(timer);
+      clearTimeout(sampler);
       sweep();
       done({ token, out: "", code: null, signal: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });
     child.once("close", () => {
-      done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, signal, timedOut, over });
+      read(true);
+      done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, signal, timedOut, over, clock });
     });
   });
 for await (const line of lines) {
@@ -100,12 +198,17 @@ for await (const line of lines) {
       process.stderr.write(${JSON.stringify(SAME_UID)} + "\\n");
       process.exit(78);
     }
+    if (usage() === null || runnable() === null) {
+      process.stdout.write(${JSON.stringify(NODE_UNMETERED)} + "\\n");
+      process.exit(0);
+    }
     if (config.pinned === true && memoryEvents() === null) {
       process.stdout.write(${JSON.stringify(NODE_UNCOUNTED)} + "\\n");
       process.exit(0);
     }
-    if (config.pinned === true && !scoreLocked()) {
-      process.stdout.write(${JSON.stringify(NODE_UNLOCKED)} + "\\n");
+    const lock = config.pinned === true ? scoreLock() : "locked";
+    if (lock !== "locked") {
+      process.stdout.write((lock === "unlocked" ? ${JSON.stringify(NODE_UNLOCKED)} : ${JSON.stringify(NODE_UNPROBED)}) + "\\n");
       process.exit(0);
     }
     process.stdout.write(${JSON.stringify(NODE_READY)} + "\\n");
@@ -120,7 +223,7 @@ for await (const line of lines) {
 
 export const NODE_CASE = `
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 const write = writeSync;
 const from = Buffer.from;
@@ -175,6 +278,12 @@ if (input.probe === true) {
   exit(unprepared === "" ? 0 : 1);
 }
 if (unprepared !== "") say(${JSON.stringify(UNPREPARED)}, "string", unprepared);
+try {
+  writeSync(${STARTED_FD}, "s");
+  closeSync(${STARTED_FD});
+} catch (error) {
+  say(${JSON.stringify(UNPREPARED)}, "string", "the case could not tell the launcher that it started: " + describe(error));
+}
 let fn;
 try {
   fn = (await import(url)).default;

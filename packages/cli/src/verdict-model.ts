@@ -14,7 +14,7 @@ export type ContainerFacts = { interrupted?: InterruptSignal; deadline: boolean;
 
 export type ShellFacts = { interrupted?: InterruptSignal; deadline: boolean; exitCode: number | null; signal?: string; problem?: string };
 
-export type Stop = { cause: "deadline" | "fault"; reason: string; unfinished: number };
+export type Stop = { cause: "deadline" | "fault" | "failed"; reason: string; unfinished: number };
 
 export type Tally = { total: number; passed: number; faults?: number; stop?: Stop };
 
@@ -34,6 +34,24 @@ export class EngineStopped extends Error {
 export const faultOf = (reason: string, unfinished: number): Stop => ({ cause: "fault", reason, unfinished });
 
 export const deadlineOf = (reason: string, unfinished: number): Stop => ({ cause: "deadline", reason, unfinished });
+
+export const failedOf = (reason: string, unfinished: number): Stop => ({ cause: "failed", reason, unfinished });
+
+export type CaseClock = { started: boolean; usedMs: number; idleMs: number; stoppedBy: "budget" | "backstop" | null };
+
+export type Timing = "within" | "over" | "starved";
+
+export const ranPastBudget = (budgetMs: number): string => `the case used its ${budgetMs} ms budget of CPU time and of time it spent waiting by its own choice`;
+
+export const starvedCase = (engine: string, budgetMs: number, backstopMs: number): string =>
+  `${engine} stopped a case at its ${backstopMs} ms wall-clock backstop before the case had used its ${budgetMs} ms budget of CPU time and of time it spent waiting by its own choice, so the judge's machine kept it from the CPU, and this is no verdict on the work`;
+
+export function caseTiming(clock: CaseClock, budgetMs: number): Timing {
+  if (clock.started && clock.usedMs + clock.idleMs >= budgetMs) {
+    return "over";
+  }
+  return clock.stoppedBy === null ? "within" : "starved";
+}
 
 const PASS: Outcome = { outcome: "pass" };
 

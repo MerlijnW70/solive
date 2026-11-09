@@ -3,19 +3,16 @@ import { createHash, randomInt } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { CASES_FENCE, utf8Exact } from "@intent-engine/client/internal";
+import { CASE_MS, CASE_MS_MAX, CASE_MS_MIN, CASE_MS_RULE, type CasePins, casePinsOf, casePinsProblem, casePinsRead, CASES_FENCE, NODE_CPUS, NODE_CPUS_RULE, NODE_MEMORY, NODE_MEMORY_RULE, NODE_MIN_MEGABYTES, pinRefused, pinTwice, utf8Exact } from "@intent-engine/client/internal";
 import { JudgeRefused } from "./judge-errors.js";
-import { megabytesOf, memoryValid } from "./sandbox.js";
-import { ambiguous, blockFields, readBlocks, specText, strayFence, topKeys } from "./spec-blocks.js";
+import { ambiguous, blockFields, readBlocks, specText, strayFence } from "./spec-blocks.js";
 import { deadlineOf, ENGINE_FAULT, EngineStopped, faultOf, type Stop } from "./verdict-model.js";
 import { Wtf8Refused, wtf8Decode, wtf8Encode } from "./wtf8.js";
 
 export const VIPER_WASM_SHA256 = "7e698ca9c14f2ea6a030bdd5f18dd7615795531bd6082157f4c3a4fa44eebf5e";
 export const VIPER_ENGINE_COMMIT = "6a25ec47d6e776996062509edfc1164b4f7f3bb5";
 export { CASES_FENCE };
-export const NODE_MEMORY = "node_memory";
-export const NODE_MIN_MEGABYTES = 128;
-export const NODE_MEMORY_RULE = `a string of whole megabytes or gigabytes, such as "512m" or "2g", of at least ${NODE_MIN_MEGABYTES}m, the least under which the launcher and a case that does nothing both start in Node`;
+export { CASE_MS, CASE_MS_MAX, CASE_MS_MIN, CASE_MS_RULE, type CasePins, casePinsRead, NODE_CPUS, NODE_CPUS_RULE, NODE_MEMORY, NODE_MEMORY_RULE, NODE_MIN_MEGABYTES };
 export const DEFAULT_STEPS = 10_000_000;
 export const DEFAULT_HEAP = 64 * 1024 * 1024;
 export const MAX_STEPS = 1_000_000_000;
@@ -33,7 +30,7 @@ export const MAX_DRAW_SLOTS = 100_000;
 export type Primitive = null | boolean | number | string;
 export type Case = { args: Primitive[]; expected: Primitive };
 export type Draw = { count: number; generator: string; checker: string; k: number };
-export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[]; draw?: Draw; nodeMemory?: string };
+export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[]; draw?: Draw } & CasePins;
 export type Run = { seed: number; clock: number };
 export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine" | "crashed";
 export type CaseResult = { verdict: CaseVerdict; detail?: Primitive };
@@ -58,45 +55,18 @@ export { utf8Exact };
 
 export const notUtf8 = "a string with a lone surrogate, which UTF-8 cannot carry, so the engines would not all receive it as written";
 
-export const NODE_MEMORY_TWICE = `has the field ${JSON.stringify(NODE_MEMORY)} more than once`;
+export const NODE_MEMORY_TWICE = pinTwice(NODE_MEMORY);
 
-export const nodeMemoryRefused = (value: unknown): string => `has ${NODE_MEMORY} ${(JSON.stringify(value) ?? String(value)).slice(0, 80)}, which is not ${NODE_MEMORY_RULE}`;
-
-const nodeMemoryProblem = (body: string, fields: Record<string, unknown>): string | undefined => {
-  if (!(NODE_MEMORY in fields)) {
-    return undefined;
-  }
-  if (topKeys(body).filter((key) => key === NODE_MEMORY).length > 1) {
-    return NODE_MEMORY_TWICE;
-  }
-  const value = fields[NODE_MEMORY];
-  return typeof value === "string" && memoryValid(value) && megabytesOf(value) >= NODE_MIN_MEGABYTES ? undefined : nodeMemoryRefused(value);
-};
+export const nodeMemoryRefused = (value: unknown): string => pinRefused(NODE_MEMORY, value, NODE_MEMORY_RULE);
 
 export type NodeMemoryRead = { memory?: string; problem?: string };
 
 export function nodeMemoryRead(spec: Uint8Array): NodeMemoryRead {
-  const read = readBlocks(specText(spec), CASES_FENCE);
-  const body = read.bodies[0] ?? "";
-  if (ambiguous(read) || read.bodies.length !== 1) {
-    return {};
+  const read = casePinsRead(spec);
+  if (read.problem !== undefined) {
+    return { problem: read.problem };
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return {};
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return {};
-  }
-  const fields = parsed as Record<string, unknown>;
-  const problem = nodeMemoryProblem(body, fields);
-  if (problem !== undefined) {
-    return { problem: `the spec's ${CASES_FENCE} block ${problem}` };
-  }
-  const memory = fields[NODE_MEMORY];
-  return typeof memory === "string" ? { memory } : {};
+  return read.pins.nodeMemory === undefined ? {} : { memory: read.pins.nodeMemory };
 }
 
 function bounded(value: unknown, name: string, fallback: number, max: number): number {
@@ -152,12 +122,11 @@ export function casesOf(spec: Uint8Array): Cases {
   if (blocks.length !== 1) {
     throw new JudgeRefused(casesMissing(blocks.length));
   }
-  const fields = blockFields(blocks[0] ?? "", ["steps", "heap", "seed", "clock", "cases", "draw", NODE_MEMORY], refuse);
-  const memoryProblem = nodeMemoryProblem(blocks[0] ?? "", fields);
-  if (memoryProblem !== undefined) {
-    return refuse(memoryProblem);
+  const fields = blockFields(blocks[0] ?? "", ["steps", "heap", "seed", "clock", "cases", "draw", NODE_MEMORY, CASE_MS, NODE_CPUS], refuse);
+  const pinProblem = casePinsProblem(blocks[0] ?? "", fields);
+  if (pinProblem !== undefined) {
+    return refuse(pinProblem);
   }
-  const nodeMemory = fields[NODE_MEMORY];
   const raw = fields["cases"];
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_CASES) {
     return refuse(`must list from 1 to ${MAX_CASES} cases`);
@@ -192,7 +161,7 @@ export function casesOf(spec: Uint8Array): Cases {
     clock: fields["clock"] === undefined ? undefined : bounded(fields["clock"], "clock", 0, 8.64e15),
     cases,
     ...(fields["draw"] === undefined ? {} : { draw: drawOf(fields["draw"]) }),
-    ...(typeof nodeMemory === "string" ? { nodeMemory } : {}),
+    ...casePinsOf(fields),
   };
 }
 

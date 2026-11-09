@@ -14,7 +14,7 @@ import { jobClosed } from "../sealed-commands.js";
 import { MAX_MEMO_URL, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
 import { sanitized } from "../untrusted-text.js";
 import { MAX_PINNED_TIMEOUT, runRead } from "../judge-run.js";
-import { NODE_MIN_MEGABYTES } from "../viper.js";
+import { CASE_MS_MAX, CASE_MS_MIN, NODE_MIN_MEGABYTES } from "../viper.js";
 
 export const JUDGE_RUN_SHOWN =
   "present when the spec has a judge-run block: the check it pins, which judge runs exactly; absent, the judge picks its own check and limits";
@@ -34,13 +34,21 @@ export const judgeRunFields = {
       JUDGE_RUN_SHOWN,
     ),
   ),
-  judge_run_refused: optional(text("present when the spec's judge-run block or the node_memory of its judge-cases block is malformed, or a judge-run or judge-cases fence is not a plain top-level block, so no judge can run it: why; untrusted, with hidden characters reduced")),
+  judge_run_refused: optional(text("present when the spec's judge-run block or a node_memory, node_cpus or case_ms of its judge-cases block is malformed, or a judge-run or judge-cases fence is not a plain top-level block, so no judge can run it: why; untrusted, with hidden characters reduced")),
   node_memory: optional(text("present when the spec's judge-cases block pins node_memory: the memory judge --plain-node runs each plain Node case under, where running out is a fail; absent, running out is infra: untrusted data")),
+  node_cpus: optional(text("present when the spec's judge-cases block pins node_cpus: the CPUs judge --plain-node runs each plain Node case under: untrusted data")),
+  case_ms: optional(integer(CASE_MS_MIN, CASE_MS_MAX, "present when the spec's judge-cases block pins case_ms: the CPU time plus waiting time in milliseconds each case may use in the host engine and plain Node before it fails")),
 };
 
 export const shownRunRead = (bytes: Uint8Array) => {
-  const { judge_run: shown, judge_run_refused: refused, node_memory: memory } = runRead(bytes);
-  return { ...(shown === undefined ? {} : { judge_run: shown }), ...(refused === undefined ? {} : { judge_run_refused: sanitized(refused) }), ...(memory === undefined ? {} : { node_memory: memory }) };
+  const { judge_run: shown, judge_run_refused: refused, node_memory: memory, node_cpus: cpus, case_ms: caseMs } = runRead(bytes);
+  return {
+    ...(shown === undefined ? {} : { judge_run: shown }),
+    ...(refused === undefined ? {} : { judge_run_refused: sanitized(refused) }),
+    ...(memory === undefined ? {} : { node_memory: memory }),
+    ...(cpus === undefined ? {} : { node_cpus: cpus }),
+    ...(caseMs === undefined ? {} : { case_ms: caseMs }),
+  };
 };
 
 export const noSpecUrl = (intent: Address): string =>

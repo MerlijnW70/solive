@@ -1,3 +1,5 @@
+import { HOST_CALL_MS, hostTally } from "../src/host-judge.js";
+import { nodeUnmetered } from "../src/node-judge.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -406,7 +408,9 @@ const OUTCOME_ROWS: Record<string, Ruling | Refusal> = {
   "`--plain-node`: a case kills itself, aborts, exits or is killed with signal 9 while the out-of-memory kill count stays the same during that case":
     caseMemory(ended({ signal: null, rise: kills(0) }), false, LIMITS) ?? caseMemory(ended({ rise: kills(0) }), false, LIMITS) ?? engineOutcome(ENGINE, { total: 1, passed: 0 }),
   "an engine runs past `--timeout`, or past the MCP tool's own time budget": engineOutcome(ENGINE, { total: 1, passed: 0, stop: stopAt("deadline", 1) }),
-  "a case reaches a limit of its own: the host engine's per-call limit, the plain Node per-case limit, or the spec's `steps` or `heap`": engineOutcome(ENGINE, { total: 1, passed: 0 }),
+  "a case uses its budget of CPU time plus the time it waited by its own choice, `HOST_CALL_MS` per host engine call or `NODE_CASE_MS` per plain Node case, or the `case_ms` the spec pins, whether it then answered or was stopped, or it reaches the spec's `steps` or `heap`": engineOutcome(ENGINE, hostTally([{ verdict: "stopped", usedMs: HOST_CALL_MS }], 1, HOST_CALL_MS)),
+  "a host engine call or plain Node case is stopped by the engine's wall-clock backstop, `hostBackstopMs` or `nodeBackstopMs`, before it used its budget, or plain Node cannot read a case's CPU time": engineOutcome(ENGINE, hostTally([{ verdict: "stopped", usedMs: HOST_CALL_MS - 1 }], 1, HOST_CALL_MS)),
+  "`--plain-node` on a host whose containers do not show their processes in `/proc`, so a budget could be read only on the wall clock": refusedBy(new JudgeRefused(nodeUnmetered)),
   "a case answers wrongly, throws, answers no primitive, or the module does not load": engineOutcome(ENGINE, { total: 2, passed: 1 }),
   "an engine ends non-zero, writes no readable verdict, answers the wrong number of cases, or reports a fault of its own (`engine`)": engineOutcome(ENGINE, { total: 2, passed: 1, faults: 1 }),
   "every engine that ran answered every case": engineOutcome(ENGINE, { total: 2, passed: 2 }),

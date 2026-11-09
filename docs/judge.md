@@ -164,7 +164,9 @@ The release pays the announcement the verdict names and records its sha256 and s
 
 ## A signature needs a passing run
 
-Every pass of `judge`, with or without `--yes`, single or committee, and `--watch`, saves a receipt on this machine; a fail or infra saves none. `solive_wallet_attest`, `solive_wallet_attest_split`, `committee vote` and `solive_wallet_committee_vote` sign for a proof escrow only with a receipt that matches the escrow, the spec's sha256, the work's sha256, the announcement it opens and the route that ran.
+Every pass of `judge`, with or without `--yes`, single or committee, and `--watch`, saves a receipt on this machine. Every fail saves a fail receipt in `~/.config/intent-engine/fail-receipts`, and `reject` refuses without one. Infra and refusals save none.
+
+`solive_wallet_attest`, `solive_wallet_attest_split`, `committee vote` and `solive_wallet_committee_vote` sign for a proof escrow only with a receipt that matches the escrow, the spec's sha256, the work's sha256, the announcement it opens and the route that ran.
 
 A committee release only relays the members' votes, each already gated on its member's machine, so any wallet sends it without a receipt. A member who releases a split and signs its own co-author share signs the same bytes as a vote, so that signature needs its own receipt.
 
@@ -301,13 +303,21 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --plain-node --verdict verdict.json
 ```
 
-Plain Node cases run under `--sandbox-memory`, and a case that does not pass after the kernel killed a process of it for memory is infra, since that memory is the judge's choice. A hirer who wants such a case to fail adds `"node_memory": "512m"` to the `judge-cases` block, in the format of `--sandbox-memory` and at least `128m`, `NODE_MIN_MEGABYTES` in `packages/cli/src/viper.ts`, below which plain Node itself may not start.
+Plain Node cases run under `--sandbox-memory`, and a case that does not pass after the kernel killed a process of it for memory is infra, since that memory is the judge's choice. A hirer who wants such a case to fail adds `"node_memory": "512m"` to the `judge-cases` block, in the format of `--sandbox-memory` and at least `128m`, `NODE_MIN_MEGABYTES` in `packages/client/src/case-pins.ts`, below which plain Node itself may not start.
 
 `judge --plain-node` then runs the cases under exactly that memory, fails a case killed for it, and refuses a `--sandbox-memory` that differs. Without `--plain-node` the field changes nothing. `solive_get_spec` and `intent-engine spec` show it as `node_memory`, and refuse a bad value as `judge_run_refused`, as the hirer's checks do before anything is sent.
 
 A pin needs a host whose containers show the kernel's out-of-memory counts, as cgroup v2 gives them, and whose Docker runs as root, so a case cannot lower the out-of-memory score that makes the kernel kill it before the launcher. Elsewhere `judge --plain-node` refuses with exit 78 before any case runs; `sandbox doctor` prints `memory_pin` as `false` where the counts are missing.
 
 A memory kill under the pin fails the case only when the container reached the pinned limit; a kill by the host's own out-of-memory killer is infra.
+
+Each case has a budget of CPU time plus the time it waits by its own choice: `HOST_CALL_MS` (2000 ms) per call in the host engine, in `packages/cli/src/host-judge.ts`, and `NODE_CASE_MS` (5000 ms) per plain Node case from the moment it loads the delivery, in `packages/cli/src/node-judge.ts`. A case that uses its budget fails as `stopped`. The judge's CPU share and load do not count against it.
+
+Each engine keeps a wall-clock backstop well past the budget, `hostBackstopMs` and `nodeBackstopMs`. A case the backstop stops before it used its budget is infra, since the judge's machine kept it from the CPU, and saves no fail receipt.
+
+A hirer pins the budget of both engines with `"case_ms": 1000`, a whole number of milliseconds from 100 to 60000, and the plain Node CPUs with `"node_cpus": "0.5"`, in the format of `--sandbox-cpus`. `judge --plain-node` then refuses a `--sandbox-cpus` that differs. Publishing a spec refuses a `node_memory`, `case_ms` or `node_cpus` that no judge would accept.
+
+Plain Node reads a case's CPU time and its processes' states from `/proc` in its container; where it cannot, `judge --plain-node` refuses with exit 78. The host engine has no `Atomics.wait`, so a call cannot wait without using CPU.
 
 A worker delivers the module as UTF-8 text. `judge` refuses a module that is not, with exit 78, and judges nothing: Node reads such bytes loosely, so a module saved as Windows-1252 may run in plain Node but not in the judge's engines, and failing it would punish an editor's setting. The worker delivers it again saved as UTF-8. `solive_wallet_judge_work` refuses it the same way.
 

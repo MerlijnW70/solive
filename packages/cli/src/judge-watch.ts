@@ -12,7 +12,7 @@ import { infraSkipped, type InterruptSignal, JudgeDeferred, JudgeInfraError, Jud
 import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, pinnedSpec, type Verdict } from "./judge.js";
 import { messageSigner } from "./ledger-keys.js";
 import { rpcFailed } from "./rpc-failure.js";
-import { memoryPinHeld } from "./node-judge.js";
+import { nodeHostHeld } from "./node-judge.js";
 import { checkFilesOf, runPlan } from "./run-plan.js";
 import { dockerEnv, sandboxReady } from "./sandbox.js";
 import { nodeMemoryRead } from "./viper.js";
@@ -142,9 +142,9 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
   }
   const node = plan.sandbox.kind === "viper" ? plan.sandbox.node : undefined;
   const pinned = node === undefined ? undefined : nodeMemoryRead(specBytes).memory;
-  if (node !== undefined && pinned !== undefined) {
+  if (node !== undefined) {
     await sandboxReady(plan.sandbox, dockerEnv(process.env));
-    await memoryPinHeld(node, pinned, command.timeout);
+    await nodeHostHeld(node, pinned, command.timeout);
   }
   const client = createClient({ url: command.url, transport });
   const seen = new Set<Address>();

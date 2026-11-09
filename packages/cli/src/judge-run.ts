@@ -2,7 +2,7 @@ import { manifestSha256 } from "@intent-engine/core/internal";
 import { type PinnedRun, readRunBlock, runBlockProblem } from "@intent-engine/client/internal";
 import type { CheckFiles } from "./artifact.js";
 import { JudgeRefused } from "./judge-errors.js";
-import { nodeMemoryRead } from "./viper.js";
+import { casePinsRead } from "./viper.js";
 
 export {
   BOTH_BLOCKS,
@@ -53,9 +53,9 @@ export const shownRun = (pinned: PinnedRun): ShownRun => ({
   check_sha256: pinned.checkSha256 ?? null,
 });
 
-export const runProblem = (spec: Uint8Array): string | undefined => runBlockProblem(spec) ?? nodeMemoryRead(spec).problem;
+export const runProblem = (spec: Uint8Array): string | undefined => runBlockProblem(spec) ?? casePinsRead(spec).problem;
 
-export type RunRead = { judge_run?: ShownRun; judge_run_refused?: string; node_memory?: string };
+export type RunRead = { judge_run?: ShownRun; judge_run_refused?: string; node_memory?: string; node_cpus?: string; case_ms?: number };
 
 export function runRead(spec: Uint8Array): RunRead {
   const problem = runProblem(spec);
@@ -63,6 +63,11 @@ export function runRead(spec: Uint8Array): RunRead {
     return { judge_run_refused: problem };
   }
   const pinned = pinnedRunOf(spec);
-  const { memory } = nodeMemoryRead(spec);
-  return { ...(pinned === undefined ? {} : { judge_run: shownRun(pinned) }), ...(memory === undefined ? {} : { node_memory: memory }) };
+  const pins = casePinsRead(spec).pins ?? {};
+  return {
+    ...(pinned === undefined ? {} : { judge_run: shownRun(pinned) }),
+    ...(pins.nodeMemory === undefined ? {} : { node_memory: pins.nodeMemory }),
+    ...(pins.nodeCpus === undefined ? {} : { node_cpus: pins.nodeCpus }),
+    ...(pins.caseMs === undefined ? {} : { case_ms: pins.caseMs }),
+  };
 }

@@ -7,7 +7,7 @@ import { RUN_OPTIONS } from "./job-args.js";
 import { checkFilesSha256, type PinnedRun, pinnedRunOf, RUN_FENCE, RUN_OVERHEAD_SECONDS } from "./judge-run.js";
 import { containerArgs, containerName, dockerEnv, megabytesOf, NO_SANDBOX, type Sandbox, SANDBOX_CPUS, SANDBOX_MEMORY, SANDBOX_TMP, shareable } from "./sandbox.js";
 import { containerOutcome, type Limits, type Ruling, shellOutcome } from "./verdict-model.js";
-import { CASES_FENCE, NODE_MEMORY, nodeMemoryRead } from "./viper.js";
+import { CASES_FENCE, casePinsRead, NODE_CPUS, NODE_MEMORY } from "./viper.js";
 
 type JudgeCommand = Extract<Command, { name: "judge" }>;
 
@@ -46,24 +46,31 @@ export const checkDiffers = (path: string, sha256: string, pinned: string): stri
 export const nodeMemoryDiffers = (given: string, pinned: string): string =>
   `${JSON.stringify(given)} is refused: the spec's ${CASES_FENCE} block pins ${NODE_MEMORY} ${JSON.stringify(pinned)}, the memory plain Node cases run under`;
 
+export const nodeCpusDiffers = (given: string, pinned: string): string =>
+  `${JSON.stringify(given)} is refused: the spec's ${CASES_FENCE} block pins ${NODE_CPUS} ${JSON.stringify(pinned)}, the CPUs plain Node cases run under`;
+
 function nodePlan(spec: Uint8Array, command: JudgeCommand): Plan {
   const { sandbox } = command;
   const unpinned = { sandbox, run: command.run, timeout: command.timeout };
   if (sandbox.kind !== "viper" || sandbox.node === undefined) {
     return unpinned;
   }
-  const { memory: pinned, problem } = nodeMemoryRead(spec);
-  if (problem !== undefined) {
-    throw new JudgeRefused(`${problem}; nothing was run or paid`);
+  const read = casePinsRead(spec);
+  if (read.problem !== undefined) {
+    throw new JudgeRefused(`${read.problem}; nothing was run or paid`);
   }
-  if (pinned === undefined) {
+  const { nodeMemory: memory, nodeCpus: cpus } = read.pins;
+  const given = new Set<string>(command.given ?? EVERY_OPTION);
+  if (memory !== undefined && given.has("sandbox-memory") && megabytesOf(sandbox.node.memory) !== megabytesOf(memory)) {
+    return optionRefused("--sandbox-memory", nodeMemoryDiffers(sandbox.node.memory, memory));
+  }
+  if (cpus !== undefined && given.has("sandbox-cpus") && Number(sandbox.node.cpus) !== Number(cpus)) {
+    return optionRefused("--sandbox-cpus", nodeCpusDiffers(sandbox.node.cpus, cpus));
+  }
+  if (memory === undefined && cpus === undefined) {
     return unpinned;
   }
-  const given = new Set<string>(command.given ?? EVERY_OPTION);
-  if (given.has("sandbox-memory") && megabytesOf(sandbox.node.memory) !== megabytesOf(pinned)) {
-    return optionRefused("--sandbox-memory", nodeMemoryDiffers(sandbox.node.memory, pinned));
-  }
-  return { ...unpinned, sandbox: { kind: "viper", node: { ...sandbox.node, memory: pinned } } };
+  return { ...unpinned, sandbox: { kind: "viper", node: { ...sandbox.node, ...(memory === undefined ? {} : { memory }), ...(cpus === undefined ? {} : { cpus }) } } };
 }
 
 export function runPlan(spec: Uint8Array, command: JudgeCommand): Plan {
