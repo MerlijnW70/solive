@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { answers, bodies, check, DAY, HOUR, NOW, record, records, request, SCRIPT, world } from "./faucet-world.js";
+import { answers, bodies, check, DAY, HOUR, NOW, record, records, request, ROOT, SCRIPT, world } from "./faucet-world.js";
 
 const ADDRESS = "4JUfAhAtwAccPT4T8cmsxQBpBwNiaUJgwWt5c5bsvKAo";
 const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
@@ -226,7 +226,7 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
 
   it("states every exit code it uses in the runbook", () => {
     const script = readFileSync(SCRIPT, "utf8");
-    const runbook = readFileSync(join(SCRIPT, "../../docs/maintainers/operations.md"), "utf8");
+    const runbook = readFileSync(join(ROOT, "docs/maintainers/operations.md"), "utf8");
     const codes = [...new Set([...script.matchAll(/\bexit (\d+)/g)].map((m) => Number(m[1])))].filter((code) => code < 10).sort();
     expect(codes).toEqual([0, 1, 2, 3, 4]);
     for (const code of codes) expect(runbook).toMatch(new RegExp(`^\\| ${code} \\| `, "m"));

@@ -1,7 +1,7 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { answers, HOUR, NOW, records, request, SCRIPT, sends, world } from "./faucet-world.js";
+import { answers, HOUR, NOW, records, request, ROOT, sends, world } from "./faucet-world.js";
 
 const ADDRESS = "4JUfAhAtwAccPT4T8cmsxQBpBwNiaUJgwWt5c5bsvKAo";
 const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
@@ -178,8 +178,8 @@ describe("the issue faucet runs one at a time and exits with a documented code",
     const copy = join(faucet.dir, "copy");
     mkdirSync(join(copy, "scripts"), { recursive: true });
     mkdirSync(join(copy, ".github/workflows"), { recursive: true });
-    for (const name of ["faucet.sh", "faucet-parse.mjs"]) copyFileSync(join(SCRIPT, "..", name), join(copy, "scripts", name));
-    const workflow = readFileSync(join(SCRIPT, "../../.github/workflows/faucet.yml"), "utf8");
+    for (const name of ["faucet.sh", "faucet-parse.mjs"]) copyFileSync(join(ROOT, "scripts", name), join(copy, "scripts", name));
+    const workflow = readFileSync(join(ROOT, ".github/workflows/faucet.yml"), "utf8");
     writeFileSync(join(copy, ".github/workflows/faucet.yml"), workflow.replace("cancel-in-progress: false", "cancel-in-progress: true"));
     const run = faucet.run(NOW, { FAUCET_SCRIPT: join(copy, "scripts/faucet.sh") });
     expect(run.code).toBe(2);
