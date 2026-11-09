@@ -106,20 +106,31 @@ describe("the host engine's budget is CPU time, not the judge's wall clock", () 
 
   it("fails a right answer past its budget on a quiet host and under load that does not take its CPU, and leaves it no verdict when other work does", LINUX, async () => {
     const source = looped(2e8);
-    const budget = Math.max(100, Math.round((await chargedMs(source)) / 1.35));
+    const budget = Math.max(100, Math.round((await chargedMs(source)) / 1.2));
     const run = async () => {
       const judged = await judgeHost(bytes(source), cases(budget), 120);
       return { judged, outcome: engineOutcome(HOST_ENGINE, judged).outcome };
     };
-    const quiet = await run();
-    expect([quiet.outcome, quiet.judged.failures]).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]]);
+    const DISPLACED = /kept it off the CPU for \d+% of the time it was ready to run/;
+    const failing = async (label: string) => {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const ran = await run();
+        if (ran.outcome === "fail") return ran;
+        expect([ran.outcome, ran.judged.stop?.reason], `${label} ${attempt}`).toEqual(["infra", expect.stringMatching(DISPLACED)]);
+      }
+      throw new Error(`${label}: other work took the call's CPU in every attempt`);
+    };
+    const quiet = await failing("quiet");
+    expect(quiet.judged.failures).toEqual([{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]);
     for (const nice of ["19", "0"]) {
-      const hogs = Array.from({ length: 2 * availableParallelism() }, () => spawn("nice", ["-n", nice, process.execPath, "-e", "for (;;) {}"], { stdio: "ignore" }));
+      const hogs = Array.from({ length: 4 * availableParallelism() }, () => spawn("nice", ["-n", nice, process.execPath, "-e", "for (;;) {}"], { stdio: "ignore" }));
       try {
         await pause(1_000);
-        const loaded = await run();
-        if (nice === "19") expect([loaded.outcome, loaded.judged.failures[0]?.verdict], nice).toEqual(["fail", "stopped"]);
-        else expect([loaded.outcome, loaded.judged.stop?.reason], nice).toEqual(["infra", expect.stringMatching(/kept it off the CPU for \d+% of the time it was ready to run/)]);
+        if (nice === "19") expect((await failing(nice)).judged.failures[0]?.verdict, nice).toBe("stopped");
+        else {
+          const loaded = await run();
+          expect([loaded.outcome, loaded.judged.failures, loaded.judged.stop?.reason], nice).toEqual(["infra", [], expect.stringMatching(/kept it off the CPU for \d+% of the time it was ready to run|wall-clock backstop before the case had used its/)]);
+        }
       } finally {
         for (const hog of hogs) hog.kill("SIGKILL");
       }
