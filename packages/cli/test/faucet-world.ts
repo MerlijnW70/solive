@@ -122,6 +122,7 @@ const encode = (h) => ("Bhash" + String(h).replaceAll("0", "o")).padEnd(43, "x")
 const decode = (hash) => Number((/^Bhash([1-9o]+)x*$/.exec(hash)?.[1] ?? "").replaceAll("o", "0"));
 const sigOf = (hash, to, amount, memo) => crypto.createHash("sha256").update(hash + "|" + to + "|" + amount + "|" + memo).digest("hex").replaceAll("0", "z");
 const read = () => JSON.parse(fs.readFileSync(process.env.STUB_CHAIN, "utf8"));
+const sender = (entry) => entry.from ?? "Attacker11111111111111111111111111111111111";
 `;
 
 const SOLANA = `#!/usr/bin/env node
@@ -221,11 +222,12 @@ if (body.method === "getLatestBlockhash") {
   if (mode === "down") process.exit(7);
   if (mode === "unreachable") { console.log(JSON.stringify({ jsonrpc: "2.0", error: { code: -32019, message: "Failed to query long-term storage; please try again" }, id: body.id })); process.exit(0); }
   if (options.minContextSlot !== undefined && options.minContextSlot > h) { console.log(JSON.stringify({ jsonrpc: "2.0", error: { code: -32016, message: "Minimum context slot has not been reached" }, id: body.id })); process.exit(0); }
-  if (address !== process.env.STUB_PAYER || mode === "empty") { reply([]); process.exit(0); }
-  const funding = { signature: "F".repeat(64), slot: 1, blockTime: 0, memo: null, err: null };
-  const landed = read().landed.map((each, at) => ({ each, at })).filter(({ each }) => each.slot <= h).sort((a, b) => b.each.slot - a.each.slot || b.at - a.at)
+  if (mode === "empty") { reply([]); process.exit(0); }
+  const wallets = (process.env.STUB_WALLETS || process.env.STUB_PAYER).split(",");
+  const funding = wallets.includes(address) ? [{ signature: "F".repeat(64), slot: 1, blockTime: 0, memo: null, err: null }] : [];
+  const landed = read().landed.map((each, at) => ({ each, at })).filter(({ each }) => each.slot <= h && (sender(each) === address || each.to === address)).sort((a, b) => b.each.slot - a.each.slot || b.at - a.at)
     .map(({ each }) => ({ signature: each.sig, slot: each.slot, blockTime: each.time, memo: each.memo ? "[" + each.memo.length + "] " + each.memo : null, err: null }));
-  let all = [...landed, funding];
+  let all = [...landed, ...funding];
   if (mode === "pruned") all = all.filter((each) => each.slot >= Number(process.env.STUB_PRUNED || h));
   const start = options.before ? all.findIndex((each) => each.signature === options.before) + 1 : 0;
   const stop = options.until ? all.findIndex((each) => each.signature === options.until) : -1;
@@ -234,7 +236,7 @@ if (body.method === "getLatestBlockhash") {
   const entry = read().landed.find((each) => each.sig === body.params[0]);
   if (process.env.STUB_HISTORY === "unreachable") process.exit(7);
   if (!entry) { reply(null); process.exit(0); }
-  const from = entry.from ?? "Attacker11111111111111111111111111111111111";
+  const from = sender(entry);
   reply({
     meta: { err: null },
     transaction: { message: {
@@ -329,8 +331,10 @@ export const request = (number: number, address: string, more: Partial<Issue> = 
 export const FUNDING = "F".repeat(64);
 export const iso = (at: number) => new Date(at * 1000).toISOString().replace(".000", "");
 
-export const record = (address: string, sig: string, slot: number, last: number, at = NOW, anchor = FUNDING) =>
-  `Sending 0.5 devnet SOL to \`${address}\` from \`${PAYER}\` in transaction ${sig}, signed at ${iso(at)} after slot ${slot} and wallet transaction ${anchor}, valid until block height ${last}. The faucet checks this transaction before it sends again.`;
+export const record = (address: string, sig: string, slot: number, last: number, at = NOW, anchor = FUNDING, payer = PAYER) =>
+  `Sending 0.5 devnet SOL to \`${address}\` from \`${payer}\` in transaction ${sig}, signed at ${iso(at)} after slot ${slot} and wallet transaction ${anchor}, valid until block height ${last}. The faucet checks this transaction before it sends again.`;
+
+export const marker = (sig: string): Comment => ({ author: "github-actions", body: `Transaction ${sig} is on its way.` });
 
 export const check = (sig: string, at: number) =>
   `No transfer from transaction ${sig} has landed as of ${iso(at)}. The faucet checks again at least 2 hours later before it sends anything new.`;

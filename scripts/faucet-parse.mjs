@@ -77,21 +77,21 @@ function page(payer, options) {
   return entries;
 }
 
-function verified(signature, payer, address, memo, lamports) {
+function verified(signature, payer, memo, lamports) {
   const tx = rpc("getTransaction", [signature, { encoding: "jsonParsed", commitment: "finalized", maxSupportedTransactionVersion: 0 }]);
   const message = tx?.transaction?.message;
-  if (tx?.meta?.err !== null || !Array.isArray(message?.accountKeys) || !Array.isArray(message?.instructions)) return false;
+  if (tx?.meta?.err !== null || !Array.isArray(message?.accountKeys) || !Array.isArray(message?.instructions)) return undefined;
   const first = message.accountKeys[0];
-  if (first?.pubkey !== payer || first?.signer !== true) return false;
-  const paid = message.instructions.some(
-    (ix) => ix?.program === "system" && ix.parsed?.type === "transfer" && ix.parsed.info?.source === payer && ix.parsed.info?.destination === address && ix.parsed.info?.lamports === lamports,
+  if (first?.pubkey !== payer || first?.signer !== true) return undefined;
+  if (!message.instructions.some((ix) => ix?.program === "spl-memo" && ix.parsed === memo)) return undefined;
+  const paid = message.instructions.find(
+    (ix) => ix?.program === "system" && ix.parsed?.type === "transfer" && ix.parsed.info?.source === payer && typeof ix.parsed.info?.destination === "string" && ix.parsed.info?.lamports === lamports,
   );
-  const tagged = message.instructions.some((ix) => ix?.program === "spl-memo" && ix.parsed === memo);
-  return paid && tagged;
+  return paid?.parsed.info.destination;
 }
 
 function scan() {
-  const [payer, until, since, floor, memo, address, lamports, wanted = "-"] = args;
+  const [payer, until, since, floor, memo, lamports, wanted = "-"] = args;
   const want = new Set(wanted.split(",").filter((each) => each !== "-"));
   const base = floor === "-" ? {} : { minContextSlot: Number(floor) };
   const tag = new RegExp(`(^|; )\\[\\d+\\] ${memo.replace(/[^a-z0-9 ]/g, "")}($|;)`);
@@ -104,8 +104,9 @@ function scan() {
     const entries = page(payer, { ...base, ...(until === "-" ? {} : { until }), ...(before ? { before } : {}) });
     for (const entry of entries) {
       seen.push(entry);
-      if (entry.err === null && typeof entry.memo === "string" && tag.test(entry.memo)) tagged.push(entry.signature);
-      if (since !== "-" && Number.isSafeInteger(entry.blockTime) && entry.blockTime < Number(since)) covered = true;
+      const early = since !== "-" && Number.isSafeInteger(entry.blockTime) && entry.blockTime < Number(since);
+      if (entry.err === null && !early && typeof entry.memo === "string" && tag.test(entry.memo)) tagged.push(entry.signature);
+      if (early) covered = true;
     }
     complete = entries.length < PAGE;
     before = entries.at(-1)?.signature ?? before;
@@ -114,11 +115,12 @@ function scan() {
     const next = page(payer, { ...base, limit: 1, ...(before ? { before } : {}) });
     covered = next.length === 1 && next[0].signature === until;
   }
-  if (tagged.length > MAX_TAGGED) throw new Error("too many tagged entries to verify");
-  const hits = tagged.filter((signature) => verified(signature, payer, address, memo, Number(lamports)));
+  const checked = tagged.slice(-MAX_TAGGED);
+  const hits = checked.map((signature) => [signature, verified(signature, payer, memo, Number(lamports))]).filter(([, to]) => to !== undefined);
   out(`state ${covered ? "covered" : "short"}`);
+  if (tagged.length > checked.length) out(`over ${tagged.length - checked.length}`);
   for (const entry of seen) if (want.has(entry.signature)) out(`seen ${entry.signature} ${entry.err === null ? 0 : 1}`);
-  for (const signature of hits) out(`hit ${signature}`);
+  for (const [signature, to] of hits) out(`hit ${signature} ${to}`);
 }
 
 function chain(reply) {

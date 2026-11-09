@@ -65,7 +65,7 @@ answer() {
 
 later() {
   if [ "$parks" -ge "$max_parks" ]; then
-    answer "Refused: the faucet could not reach devnet to check \`$address\` after $max_parks tries. Nothing was sent. File a new request to try again." "not planned"
+    answer "Refused: $2 after $max_parks tries. Nothing was sent. File a new request to try again." "not planned"
   fi
   retry_at=$(date -u -d "@$((now + retry_secs))" +%Y-%m-%dT%H:%M:%SZ)
   message="$1 The request stays open. Retry after: $retry_at."
@@ -95,18 +95,22 @@ call() {
 }
 
 scan() {
-  local tag sig failed
+  local tag sig more
   scan_state=error
   scan_hits=()
   scan_seen=" "
-  while read -r tag sig failed; do
+  scan_over=0
+  while read -r tag sig more; do
     case "$tag" in
       state) scan_state="$sig" ;;
-      seen) scan_seen+="$sig:$failed " ;;
-      hit) scan_hits+=("$sig") ;;
+      over) scan_over="$sig" ;;
+      seen) scan_seen+="$sig:$more " ;;
+      hit) scan_hits+=("$sig $more") ;;
     esac
   done < <(FAUCET_RPC="$rpc" FAUCET_SCAN_PAGES="$scan_pages" parse scan "$@")
 }
+
+source "$here/faucet-settle.sh"
 
 busy() {
   local closed open marked
@@ -119,235 +123,28 @@ busy() {
   echo $((closed + open + marked))
 }
 
-load() {
-  local found facts
-  view=$(gh issue view "$issue" --json comments,labels,state,createdAt)
-  facts=$(printf '%s' "$view" | parse facts)
-  read -r state created <<< "$facts"
-  found=$(printf '%s' "$view" | parse records)
-  records=()
-  if [ -n "$found" ]; then
-    mapfile -t records <<< "$found"
-  fi
-  markers=" $(printf '%s' "$view" | parse markers) "
-}
-
-unpend() {
-  local labelled
-  labelled=$(printf '%s' "$view" | parse labelled faucet-pending)
-  if [ "$labelled" = yes ]; then
-    gh issue edit "$issue" --remove-label faucet-pending > /dev/null
-  fi
-}
-
-deliver() {
-  local text="Sent $amount_sol devnet SOL to \`$2\`: https://explorer.solana.com/tx/$1?cluster=devnet" said
-  said=$(printf '%s' "$view" | parse said "$text")
-  if [ "$said" != yes ]; then
-    gh issue comment "$issue" --body "$text" > /dev/null
-  fi
-  gh issue edit "$issue" --add-label faucet-sent --remove-label faucet-pending > /dev/null
-  if [ "$state" = open ]; then
-    gh issue close "$issue" --reason completed > /dev/null
-  fi
-  echo "$text"
-  exit 0
-}
-
-tries() {
-  local entry sig total=0
-  for entry in "${records[@]}"; do
-    sig="${entry%% *}"
-    if [[ "$markers" == *" $sig "* ]]; then
-      total=$((total + 1))
-    fi
-  done
-  echo "$total"
-}
-
-doubted() {
-  local sig checked line check_sig check_at newest=0 done=" "
-  checked=$(printf '%s' "$view" | parse checks)
-  for sig in "$@"; do
-    if [[ "$done" == *" $sig "* ]]; then
-      continue
-    fi
-    done+="$sig "
-    check_at=""
-    while read -r check_sig line; do
-      if [ "$check_sig" = "$sig" ]; then
-        check_at="${check_at:-$line}"
-      fi
-    done <<< "$checked"
-    if [ -z "$check_at" ]; then
-      gh issue comment "$issue" --body "No transfer from transaction $sig has landed as of $(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ). The faucet checks again at least 2 hours later before it sends anything new." > /dev/null
-      check_at="$now"
-    fi
-    if [ "$check_at" -gt "$newest" ]; then
-      newest="$check_at"
-    fi
-  done
-  [ $((now - newest)) -ge "$check_secs" ]
-}
-
-resolve() {
-  local entry sig to payer slot last anchor at status latest final_valid final_slot height lowest="" oldest="" wanted="" open_entries=() absent=()
-  outcome=dead
-  waiting_sig=""
-  read -r _ to _ <<< "${records[-1]}"
-  landed_to="$to"
-  for entry in "${records[@]}"; do
-    read -r sig to payer slot last anchor at <<< "$entry"
-    if status=$(solana confirm --url "$url" --commitment finalized --output json "$sig" 2> /dev/null); then
-      status=$(printf '%s' "$status" | parse status)
-    else
-      status=unknown
-    fi
-    case "$status" in
-      landed)
-        outcome=landed
-        landed_sig="$sig"
-        landed_to="$to"
-        return 0
-        ;;
-      failed) ;;
-      *)
-        open_entries+=("$entry")
-        wanted+="$sig,"
-        if [ -z "$lowest" ] || [ "$slot" -lt "$lowest" ]; then
-          lowest="$slot"
-          oldest="$anchor"
-        fi
-        ;;
-    esac
-  done
-  if [ "${#open_entries[@]}" -eq 0 ]; then
-    return 0
-  fi
-  outcome=undecided
-  waiting_sig="${open_entries[0]%% *}"
-  latest=$(call getLatestBlockhash '[{"commitment":"finalized"}]') || return 0
-  read -r _ final_valid final_slot < <(printf '%s' "$latest" | parse latest) || return 0
-  height=$((final_valid - 150))
-  scan "$payer" "$oldest" - "$final_slot" "faucet request $issue" "$landed_to" "$amount" "${wanted%,}"
-  if [ "${#scan_hits[@]}" -gt 0 ]; then
-    outcome=landed
-    landed_sig="${scan_hits[0]}"
-    return 0
-  fi
-  if [ "$scan_state" != covered ]; then
-    return 0
-  fi
-  outcome=dead
-  for entry in "${open_entries[@]}"; do
-    read -r sig to payer slot last anchor at <<< "$entry"
-    if [[ "$scan_seen" == *" $sig:0 "* ]]; then
-      outcome=landed
-      landed_sig="$sig"
-      landed_to="$to"
-      return 0
-    fi
-    if [[ "$scan_seen" == *" $sig:1 "* ]]; then
-      continue
-    fi
-    if [ "$height" -le $((last + expiry_margin)) ]; then
-      outcome=undecided
-      waiting_sig="$sig"
-    else
-      absent+=("$sig")
-    fi
-  done
-  if [ "$outcome" = dead ] && [ "${#absent[@]}" -gt 0 ] && ! doubted "${absent[@]}"; then
-    outcome=undecided
-    waiting_sig="${absent[0]}"
-  fi
-}
-
-body_address() {
-  local text found=()
-  text=$(gh issue view "$issue" --json body --jq .body)
-  mapfile -t found < <(printf '%s\n' "$text" | tr -d '\r' | grep -Ex "[[:space:]]*$base58{32,44}[[:space:]]*" | sed 's/[[:space:]]//g' | sort -u)
-  if [ "${#found[@]}" -eq 1 ]; then
-    echo "${found[0]}"
-  fi
-}
-
-orphan() {
-  local payer target
-  target=$(body_address)
-  if [ -z "$target" ]; then
-    return 0
-  fi
-  payer=$(solana address --keypair "$keypair")
-  scan "$payer" - "$created" - "faucet request $issue" "$target" "$amount" -
-  if [ "${#scan_hits[@]}" -gt 0 ]; then
-    deliver "${scan_hits[0]}" "$target"
-  fi
-}
-
-settle() {
-  local labelled at
-  issue="$1"
-  load
-  if [ "${#records[@]}" -eq 0 ]; then
-    labelled=$(printf '%s' "$view" | parse labelled faucet-pending)
-    if [ "$labelled" = yes ]; then
-      orphan
-      echo "Pending: request $issue carries faucet-pending but no transfer record, and devnet shows no landed transfer for it; a maintainer checks and removes the label."
-      exit 10
-    fi
-    return 0
-  fi
-  resolve
-  case "$outcome" in
-    landed) deliver "$landed_sig" "$landed_to" ;;
-    undecided)
-      read -r _ _ _ _ _ _ at <<< "${records[-1]}"
-      if [ $((now - at)) -ge "$pending_secs" ]; then
-        unpend
-        gh issue comment "$issue" --body "Closed undecided: the faucet could not prove within 7 days whether transaction $waiting_sig landed, so it never sends again for this request. A maintainer can check it at https://explorer.solana.com/tx/$waiting_sig?cluster=devnet." > /dev/null
-        if [ "$state" = open ]; then
-          gh issue close "$issue" --reason "not planned" > /dev/null
-        fi
-        echo "Closed undecided: request $issue, transaction $waiting_sig."
-        exit 12
-      fi
-      echo "Pending: request $issue waits for transaction $waiting_sig to finalize or for devnet to show it can no longer land."
-      exit 10
-      ;;
-  esac
-  unpend
-  if [ "$state" != open ]; then
-    gh issue comment "$issue" --body "Nothing was sent: this request was closed before its transfer landed." > /dev/null
-    echo "Closed: request $issue was closed before its transfer landed; nothing was sent."
-    exit 0
-  fi
-  if [ "$(tries)" -ge "$max_sends" ]; then
-    read -r _ to _ <<< "${records[-1]}"
-    answer "Refused: the faucet tried $max_sends times to send to \`$to\` and no transfer landed. Nothing was sent. File a new request to try again." "not planned"
-  fi
-}
-
-settle_only() {
-  settle "$1"
-  exit 11
-}
-
 send() {
-  local floor latest blockhash last slot payer key anchor signed signature text before first copies entry total memo="faucet request $issue" waited=0
+  local floor latest blockhash last slot payer key anchor signed signature text before first copies entry total lost memo="faucet request $issue" waited=0 unread="the faucet could not read its devnet history to check that nothing was sent for this request"
   if ! floor=$(solana block-height --url "$url" --commitment finalized 2> /dev/null) || [[ ! "$floor" =~ ^[0-9]+$ ]] ||
     ! latest=$(call getLatestBlockhash '[{"commitment":"confirmed"}]') ||
     ! read -r blockhash last slot < <(printf '%s' "$latest" | parse latest) ||
     [ "$last" -lt "$floor" ] || [ "$last" -gt $((floor + 1000)) ]; then
-    later "The faucet could not reach devnet to send to \`$address\`. Nothing was sent, and this request does not count toward your one request a day."
+    later "The faucet could not reach devnet to send to \`$address\`. Nothing was sent, and this request does not count toward your one request a day." "the faucet could not reach devnet to send to \`$address\`"
   fi
   key=$(solana address --keypair "$keypair")
-  scan "$key" - "$created" - "$memo" "$address" "$amount" -
+  scan "$key" - "$created" - "$memo" "$amount" -
   if [ "${#scan_hits[@]}" -gt 0 ]; then
-    deliver "${scan_hits[0]}" "$address"
+    deliver "${scan_hits[0]%% *}" "${scan_hits[0]#* }"
   fi
   if [ "$scan_state" != covered ] || ! anchor=$(FAUCET_RPC="$rpc" parse newest "$key"); then
-    later "The faucet could not read its devnet history to check that nothing was sent for this request yet. Nothing was sent, and this request does not count toward your one request a day."
+    later "The faucet could not read its devnet history to check that nothing was sent for this request yet. Nothing was sent, and this request does not count toward your one request a day." "$unread"
+  fi
+  lost=$(unrecorded)
+  if [ "$scan_over" -gt 0 ] && [ -n "$lost" ]; then
+    later "The faucet lost its record of transaction $lost for this request, and more transfers to its wallet carry this request's memo than it verifies, so it cannot prove that transaction never landed. Nothing was sent, and this request does not count toward your one request a day." "the faucet lost its record of transaction $lost for this request and could not prove it never landed"
+  fi
+  if [ "$scan_over" -gt 0 ]; then
+    echo "request $issue: $scan_over entries with its memo were not verified; its own records list every faucet transfer for it" >&2
   fi
   signed=$(solana transfer --url "$url" --keypair "$keypair" --sign-only --blockhash "$blockhash" --with-memo "$memo" --allow-unfunded-recipient --output json "$address" "$amount_sol" | parse signer)
   read -r payer signature <<< "$signed"
@@ -404,6 +201,15 @@ send() {
   exit 10
 }
 
+body_address() {
+  local text found=()
+  text=$(gh issue view "$issue" --json body --jq .body)
+  mapfile -t found < <(printf '%s\n' "$text" | tr -d '\r' | grep -Ex "[[:space:]]*$base58{32,44}[[:space:]]*" | sed 's/[[:space:]]//g' | sort -u)
+  if [ "${#found[@]}" -eq 1 ]; then
+    echo "${found[0]}"
+  fi
+}
+
 serve() {
   settle "$1"
   read -r parks until < <(printf '%s' "$view" | parse parks)
@@ -436,7 +242,7 @@ serve() {
     answer "Refused: the faucet sent its daily limit. Try again tomorrow, or request devnet SOL at https://faucet.solana.com." "not planned"
   fi
   if ! held=$(solana balance "$address" --url "$url" --lamports 2> /dev/null); then
-    later "The faucet could not reach devnet to check \`$address\`. Nothing was sent, and this request does not count toward your one request a day."
+    later "The faucet could not reach devnet to check \`$address\`. Nothing was sent, and this request does not count toward your one request a day." "the faucet could not reach devnet to check \`$address\`"
   fi
   if [ "${held%% *}" -ge "$funded" ]; then
     answer "Refused: \`$address\` already holds 1 devnet SOL or more." "not planned"

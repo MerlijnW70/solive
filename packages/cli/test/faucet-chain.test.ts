@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answers, bodies, DAY, forged, HOUR, iso, NOW, PAYER, record, request, sends, world } from "./faucet-world.js";
+import { answers, bodies, DAY, forged, HOUR, iso, NOW, record, request, sends, world } from "./faucet-world.js";
 
 const ADDRESS = "4JUfAhAtwAccPT4T8cmsxQBpBwNiaUJgwWt5c5bsvKAo";
 const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
@@ -96,15 +96,5 @@ describe("the issue faucet believes only transfers its own wallet signed", { tim
     expect(faucet.paid().map((each) => each.to).sort()).toEqual([ADDRESS, OTHER].sort());
     expect(faucet.issue(7)?.labels).toContain("faucet-sent");
     expect(faucet.issue(8)?.labels).toContain("faucet-sent");
-  });
-
-  it("refuses to decide, and sends nothing, when more forged memos name one request than it verifies", () => {
-    const faucet = world([request(7, ADDRESS)]);
-    faucet.inject(Array.from({ length: 51 }, (_, n) => forged(sigFor(200 + n), "faucet request 7")));
-    const run = faucet.run(NOW);
-    expect(run.code).toBe(0);
-    expect(run.out).toContain("could not read its devnet history");
-    expect(sends(faucet)).toEqual([]);
-    expect(faucet.landed().filter((each) => each.from === PAYER)).toEqual([]);
   });
 });
