@@ -157,7 +157,14 @@ impl Env {
         &mut self,
         addresses: &[Pubkey],
     ) -> Result<AddressLookupTableAccount, TransactionError> {
-        let authority = Keypair::new();
+        self.lookup_table_by(&Keypair::new(), addresses)
+    }
+
+    pub fn lookup_table_by(
+        &mut self,
+        authority: &Keypair,
+        addresses: &[Pubkey],
+    ) -> Result<AddressLookupTableAccount, TransactionError> {
         self.svm
             .airdrop(&authority.pubkey(), FUNDING)
             .map_err(|f| f.err)?;
@@ -174,7 +181,7 @@ impl Env {
         }
         let (create, key) =
             table_ix::create_lookup_table(authority.pubkey(), authority.pubkey(), slot);
-        self.send(&authority, &[create], &[])?;
+        self.send(authority, &[create], &[])?;
         for chunk in addresses.chunks(TABLE_EXTEND_CHUNK) {
             let extend = table_ix::extend_lookup_table(
                 key,
@@ -182,7 +189,7 @@ impl Env {
                 Some(authority.pubkey()),
                 chunk.to_vec(),
             );
-            self.send(&authority, &[extend], &[])?;
+            self.send(authority, &[extend], &[])?;
         }
         self.svm.warp_to_slot(slot.saturating_add(1));
         Ok(AddressLookupTableAccount {

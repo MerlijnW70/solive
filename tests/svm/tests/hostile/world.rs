@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anchor_spl::token_2022::spl_token_2022::state::Mint as MintState;
 use intent_core::kinds::{attested_result, dutch_auction, limit_order, Intent as CoreIntent, Kind};
@@ -25,6 +26,29 @@ use svm_tests::{
 };
 
 pub const FUNDED: u64 = 10_000;
+pub const SKIP_SAMPLE: usize = 200;
+pub const SKIP_SHARE_PCT: usize = 2;
+
+pub static LANDABLE_ATTACKS: AtomicUsize = AtomicUsize::new(0);
+pub static UNLANDABLE_ATTACKS: AtomicUsize = AtomicUsize::new(0);
+
+pub fn unlandable_share(sent: usize, skipped: usize) -> TestResult {
+    let total = sent.saturating_add(skipped);
+    if total >= SKIP_SAMPLE && skipped.saturating_mul(100) > total.saturating_mul(SKIP_SHARE_PCT) {
+        return Err(format!(
+            "{skipped} of {total} composed transactions cannot land even with a lookup table, over {SKIP_SHARE_PCT}%"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+pub fn attacks_mostly_land() -> TestResult {
+    unlandable_share(
+        LANDABLE_ATTACKS.load(Ordering::Relaxed),
+        UNLANDABLE_ATTACKS.load(Ordering::Relaxed),
+    )
+}
 pub const SOLVER_FUNDS: u64 = 5_000;
 pub const ESCROW: u64 = 300;
 pub const VICTIM: usize = 1;
@@ -762,6 +786,12 @@ impl World {
             let packed = self.env.v0_transaction(&payer, &ixs, &[], &[table])?;
             svm_tests::oversize(&packed).is_none().then_some(packed)
         };
+        let counter = if landable.is_some() {
+            &LANDABLE_ATTACKS
+        } else {
+            &UNLANDABLE_ATTACKS
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
         let sent = landable.map(|tx| svm_tests::send_sendable(&mut self.env.svm, tx));
         if let Some(Err(failed)) = sent {
             let FailedTransactionMetadata { err, meta } = *failed;

@@ -570,7 +570,8 @@ fn run(token_2022: bool, flavor: usize, steps: &[Step]) -> TestResult {
         .map_err(|e| format!("step {n} {s:?}: {e}"))?;
     }
     thaw_everything(&mut world);
-    liveness(&mut world).map_err(|e| format!("after {} steps: {e}", steps.len()).into())
+    liveness(&mut world).map_err(|e| format!("after {} steps: {e}", steps.len()))?;
+    world::attacks_mostly_land()
 }
 
 proptest! {

@@ -65,3 +65,26 @@ fn repeats_the_empty_key_and_overfills_are_refused_and_change_nothing() -> Resul
     }
     Ok(())
 }
+
+#[test]
+fn more_workers_than_the_list_holds_are_refused_in_one_call_and_change_nothing() {
+    let over: Vec<Key> = (1..=33u8).map(key).collect();
+    assert_eq!(over.len(), MAX_CLAIMANTS + 1);
+    let mut workers = [Key::default(); MAX_CLAIMANTS];
+    let size = u8::try_from(MAX_CLAIMANTS).unwrap_or(u8::MAX);
+    assert_eq!(
+        extend(&mut workers, 0, size, &over),
+        Err(Error::ClaimListInvalid)
+    );
+    assert_eq!(workers, [Key::default(); MAX_CLAIMANTS]);
+    let mut roomy = [Key::default(); 2 * MAX_CLAIMANTS];
+    assert_eq!(
+        extend(&mut roomy, 0, size, &over),
+        Err(Error::ClaimListInvalid)
+    );
+    assert_eq!(
+        extend(&mut roomy, 0, size.saturating_add(1), &over),
+        Err(Error::ClaimListInvalid)
+    );
+    assert_eq!(roomy, [Key::default(); 2 * MAX_CLAIMANTS]);
+}

@@ -1,8 +1,11 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use anchor_lang::prelude::Pubkey;
+use solana_address_lookup_table_interface::instruction::deactivate_lookup_table;
+use solana_keypair::Keypair;
 use solana_message::AddressLookupTableAccount;
 use solana_signer::Signer;
+use solana_slot_hashes::SlotHashes;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     legacy_size, release_world, unsigned_size, v0_size, wire_size, Form, Release, ReleaseKind,
@@ -12,12 +15,7 @@ use svm_tests::{
 fn team_split() -> TestResult<Release> {
     release_world(
         anchor_spl::token::ID,
-        Shape {
-            kind: ReleaseKind::SplitCommittee,
-            recipients: 2,
-            members: 3,
-            threshold: 2,
-        },
+        Shape::new(ReleaseKind::SplitCommittee, 2, 3, 2),
     )
 }
 
@@ -122,5 +120,35 @@ fn a_table_that_resolves_no_account_fails_the_test() -> TestResult {
     }));
     let text = panic_text(sent.err().ok_or("an idle table passed")?);
     assert!(text.contains("resolve no account"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn a_deactivated_table_resolves_nothing_once_its_slot_ages_out() -> TestResult {
+    let mut r = team_split()?;
+    let payer = r.payer.insecure_clone();
+    let ixs = r.ixs.clone();
+    let authority = Keypair::new();
+    let accounts = r.table.clone();
+    let table = r.env.lookup_table_by(&authority, &accounts)?;
+    r.env.send(
+        &authority,
+        &[deactivate_lookup_table(table.key, authority.pubkey())],
+        &[],
+    )?;
+    let slot = r.env.svm.get_sysvar::<anchor_lang::prelude::Clock>().slot;
+    let next = slot.saturating_add(1);
+    r.env.svm.warp_to_slot(next);
+    let hash = r.env.svm.latest_blockhash();
+    r.env.svm.set_sysvar(&SlotHashes::new(&[(next, hash)]));
+    let escrowed = r.env.balance(&r.vault)?;
+    assert_eq!(
+        r.env.send_v0(&payer, &ixs, &[], &[table]).err(),
+        Some(TransactionError::AddressLookupTableNotFound)
+    );
+    assert_eq!(r.env.balance(&r.vault)?, escrowed, "nothing moved");
+    let fresh = r.lookup()?;
+    r.env.send_v0(&payer, &ixs, &[], &[fresh])?;
+    assert_eq!(r.env.balance(&r.vault)?, 0);
     Ok(())
 }
