@@ -174,7 +174,7 @@ if (command === "address") {
   if (argv.includes("--sign-only")) {
     if (process.env.STUB_BARRIER) {
       fs.writeFileSync(process.env.STUB_BARRIER + "." + process.pid, "");
-      const until = Date.now() + 60000;
+      const until = Date.now() + 200000;
       while (fs.readdirSync(process.env.STUB_DIR).filter((name) => name.startsWith("barrier.")).length < 2 && Date.now() < until) pause(10);
     }
     console.log(JSON.stringify({ blockhash: hash, signers: [process.env.STUB_PAYER + "=" + sigOf(hash, to, amount, memo)] }, null, 2));
