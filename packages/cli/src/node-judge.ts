@@ -8,7 +8,7 @@ import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { CASE_OOM_SCORE, NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED, NODE_UNLOCKED, NODE_UNMETERED, NODE_UNPROBED, UNPREPARED } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { type CaseClock, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, DISPLACED_LIMIT, ENGINE_FAULT, failedOf, faultOf, type Limits, type MemoryRise, type Outcome, pinnedLauncherEnd, type Stop, starvedCase, stoppedDetail, type Timing } from "./verdict-model.js";
+import { type CaseClock, caseFilledPinned, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, DISPLACED_LIMIT, ENGINE_FAULT, failedOf, faultOf, type Limits, type MemoryRise, type Outcome, pinnedLauncherEnd, type Stop, starvedCase, stoppedDetail, type Timing } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
@@ -308,18 +308,19 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       token = "";
       settle(answer, sent);
     };
-    const memoryOf = (answer: Answer, passed: boolean): Outcome | undefined => {
+    const memoryOf = (answer: Answer, passed: boolean, unmetered: boolean): Outcome | undefined => {
       const end = { signal: answer.signal ?? null, stoppedByJudge: answer.timedOut || answer.over, rise: riseOf(answer.oomBefore, answer.oomAfter) };
       const blurred = unsettled;
       unsettled = answer.settled === false;
-      const charged = caseMemory(end, passed, limits);
       const pinned = limits.pinned?.memory;
+      const reached = unmetered && pinned !== undefined && (end.rise?.oom ?? 0) > 0 ? { outcome: "fail" as const, reason: caseFilledPinned(pinned) } : undefined;
+      const charged = caseMemory(end, passed, limits) ?? reached;
       return blurred && pinned !== undefined && charged?.outcome === "fail" ? { outcome: "infra", reason: caseUnsettled(pinned) } : charged;
     };
     const settle = (answer: Answer, sent: string) => {
       const clock = clockOf(answer.clock);
       if (clock === null || !clock.metered) {
-        const memory = memoryOf(answer, false);
+        const memory = memoryOf(answer, false, true);
         if (memory?.outcome === "fail") {
           results.push({ verdict: "crashed", detail: memory.reason });
           next();
@@ -343,7 +344,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         kill(faultOf(contendedCase(ENGINE, budgetMs, clock.displaced), left()));
         return;
       }
-      const memory = memoryOf(answer, verdict.verdict === "pass");
+      const memory = memoryOf(answer, verdict.verdict === "pass", false);
       if (memory?.outcome === "infra") {
         kill(faultOf(memory.reason, left()));
         return;

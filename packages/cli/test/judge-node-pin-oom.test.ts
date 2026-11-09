@@ -228,6 +228,15 @@ describe("the two out-of-memory counts a plain Node case is judged by", () => {
     ];
     const pinned = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
     expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures]).toEqual([1, undefined, [{ case: 0, verdict: "crashed", detail: caseOomPinned(MEMORY) }]]);
+    fake.replies = [{ code: null, signal: "SIGKILL", before: at(0, 0), after: at(3, 0), metered: false }];
+    const reached = await judgeNode(BOX, MODULE, "count.mjs", { ...PINNED, cases: [PINNED.cases[0] ?? { args: [], expected: 0 }] }, 7, 60);
+    expect([reached.judged.stop, reached.judged.failures, engineOutcome(NODE_ENGINE, reached.judged).outcome]).toEqual([undefined, [{ case: 0, verdict: "crashed", detail: caseFilledPinned(MEMORY) }], "fail"]);
+    fake.replies = [{ code: 0, signal: null, before: at(0, 0), after: at(3, 0), value: 2 }];
+    const touched = await judgeNode(BOX, MODULE, "count.mjs", { ...PINNED, cases: [PINNED.cases[0] ?? { args: [], expected: 0 }] }, 7, 60);
+    expect([touched.judged.passed, touched.judged.failures, touched.judged.stop]).toEqual([1, [], undefined]);
+    fake.replies = [{ code: null, signal: "SIGKILL", before: null, after: at(3, 0), metered: false }];
+    const unread = await judgeNode(BOX, MODULE, "count.mjs", { ...PINNED, cases: [PINNED.cases[0] ?? { args: [], expected: 0 }] }, 7, 60);
+    expect([unread.judged.failures, engineOutcome(NODE_ENGINE, unread.judged).outcome]).toEqual([[], "infra"]);
     fake.replies = [{ code: null, signal: "SIGKILL", before: at(0), after: at(1), metered: false }];
     const chosen = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
     expect([chosen.judged.failures, chosen.judged.stop?.reason]).toEqual([[], caseOomInfra(MEMORY)]);
