@@ -73,6 +73,19 @@ describe("the host engine's budget is CPU time, not the judge's wall clock", () 
     expect(looped).toMatchObject({ total: 3, passed: 0, stop: { cause: "failed", unfinished: 2 } });
   }, 120_000);
 
+  it("settles a module's evaluation on this Node, whose vm may keep that promise in the context's own microtask queue, and still meters top-level microtasks", async () => {
+    const two = [...ONE, { args: [3], expected: 6 }];
+    for (const source of ["export default (n) => n * 2;", "let k = 0; for (let i = 0; i < 1000; i += 1) k = await Promise.resolve(2); export default (n) => n * k;"]) {
+      expect(await judgeHost(bytes(source), cases(200, two), 20), source).toEqual({ engine: HOST_ENGINE, total: 2, passed: 2, failures: [] });
+    }
+    const pending = await judgeHost(bytes("await new Promise(() => {}); export default (n) => n * 2;"), cases(200), 20);
+    expect(pending.failures).toEqual([{ case: 0, verdict: "no-module", detail: "the module's top-level code never finished loading" }]);
+    for (const source of ["Promise.resolve().then(() => { for (;;) {} }); export default (n) => n * 2;", "await (async () => { for (;;) await 0; })(); export default (n) => n * 2;"]) {
+      const spun = await judgeHost(bytes(source), cases(200), 20);
+      expect([engineOutcome(HOST_ENGINE, spun).outcome, spun.failures[0]?.verdict], source).toEqual(["fail", "stopped"]);
+    }
+  }, 120_000);
+
   it("leaves a delivery no way to wait without CPU: Atomics.wait is gone from the host engine", async () => {
     const waiting = await judgeHost(bytes("export default () => typeof Atomics.wait;"), cases(undefined, [{ args: [], expected: "undefined" }]), 20);
     expect(waiting.passed).toBe(1);

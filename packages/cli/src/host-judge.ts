@@ -108,7 +108,9 @@ try {
   process.once("beforeExit", () => {
     if (loading) all("no-module", "the module's top-level code never finished loading", used(loadFrom), others(loadHost, used(loadFrom)));
   });
-  await module.evaluate({ timeout: backstopMs });
+  const evaluated = module.evaluate({ timeout: backstopMs });
+  vm.runInContext("", context, { timeout: backstopMs, displayErrors: false });
+  await evaluated;
   loading = false;
   fn = module.namespace.default;
 } catch (error) {
