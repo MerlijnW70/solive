@@ -107,7 +107,8 @@ const memoryEvents = () => {
     const text = readFileSync(config.events, "utf8");
     const oom = /^oom (\\d{1,15})$/m.exec(text);
     const oomKill = /^oom_kill (\\d{1,15})$/m.exec(text);
-    return oom === null || oomKill === null ? null : { oom: Number(oom[1]), oomKill: Number(oomKill[1]) };
+    const groupKill = /^oom_group_kill (\\d{1,15})$/m.exec(text);
+    return oom === null || oomKill === null ? null : { oom: Number(oom[1]), oomKill: Number(oomKill[1]), groupKill: groupKill === null ? 0 : Number(groupKill[1]) };
   } catch {
     return null;
   }

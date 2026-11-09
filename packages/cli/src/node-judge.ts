@@ -113,16 +113,16 @@ const countOf = (value: unknown): number | null => (typeof value === "number" &&
 
 const eventsOf = (value: unknown): MemoryRise | null => {
   if (value === null || typeof value !== "object") return null;
-  const { oom, oomKill } = value as Record<string, unknown>;
-  const counted = { oom: countOf(oom), oomKill: countOf(oomKill) };
-  return counted.oom === null || counted.oomKill === null ? null : { oom: counted.oom, oomKill: counted.oomKill };
+  const { oom, oomKill, groupKill } = value as Record<string, unknown>;
+  const counted = { oom: countOf(oom), oomKill: countOf(oomKill), groupKill: groupKill === undefined ? 0 : countOf(groupKill) };
+  return counted.oom === null || counted.oomKill === null || counted.groupKill === null ? null : { oom: counted.oom, oomKill: counted.oomKill, groupKill: counted.groupKill };
 };
 
 export function riseOf(before: unknown, after: unknown): MemoryRise | null {
   const first = eventsOf(before);
   const last = eventsOf(after);
-  if (first === null || last === null || last.oom < first.oom || last.oomKill < first.oomKill) return null;
-  return { oom: last.oom - first.oom, oomKill: last.oomKill - first.oomKill };
+  if (first === null || last === null || last.oom < first.oom || last.oomKill < first.oomKill || (last.groupKill ?? 0) < (first.groupKill ?? 0)) return null;
+  return { oom: last.oom - first.oom, oomKill: last.oomKill - first.oomKill, groupKill: (last.groupKill ?? 0) - (first.groupKill ?? 0) };
 }
 
 const ENGINE = "the plain Node engine";

@@ -11,10 +11,10 @@ import { judgeNode, memoryUncounted, NODE_ENGINE, sigusr1Unsupported } from "../
 import { MEMORY_PIN_UNHELD, sandboxDoctor } from "../src/sandbox-doctor.js";
 import { MEMORY_EVENTS } from "../src/container-check.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
-import { caseFilledChosen, caseFilledPinned, caseOomInfra, caseOomPinned, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
+import { caseFilledChosen, caseFilledPinned, caseOomPinned, engineOutcome, OOM_UNREAD } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 import { announced, keyed } from "./announce.js";
-import { DOCKER_TEST } from "./docker-switch.js";
+import { DOCKER_TEST, selfKilledChosen, selfKilledPinned } from "./docker-switch.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
 import { status } from "./judge-kit.js";
 
@@ -121,14 +121,14 @@ const DEBUGGER = lines(
   "export default () => reached;",
 );
 
-const memoryStop = { cause: "fault", reason: caseOomInfra(MEMORY), unfinished: 2 };
+const memoryStop = { cause: "fault", reason: selfKilledChosen(MEMORY), unfinished: 2 };
 
 describe("a plain Node case killed for memory under the memory the judge chose", () => {
   it("is infra whether V8's heap or other memory fills it, since the kernel stops it before V8's own heap limit can", DOCKER_TEST, async () => {
     for (const module of [HEAP_FILLER, BUFFER_FILLER]) {
       const { judged } = await judgeNode(BOX, bytes(module), "count.mjs", CASES, 7, 60);
       expect([judged.passed, judged.failures, judged.stop], module).toEqual([0, [], memoryStop]);
-      expect(engineOutcome(NODE_ENGINE, judged), module).toEqual({ outcome: "infra", reason: caseOomInfra(MEMORY) });
+      expect(engineOutcome(NODE_ENGINE, judged), module).toEqual({ outcome: "infra", reason: selfKilledChosen(MEMORY) });
     }
   });
 
@@ -271,7 +271,7 @@ describe("judge --sandbox viper --plain-node with a case killed for memory", () 
     const verdict = join(dir, "verdict.json");
     const argv = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", specPath, "--artifact", artifact, "--sandbox", "viper", "--plain-node", "--sandbox-memory", MEMORY, "--verdict", verdict, "--yes"];
     const judged = await cli(argv, { "judge.json": judge });
-    expect([judged.code, judged.out, judged.err]).toEqual([EXIT_RETRY, "", `infrastructure error, not a verdict: ${caseOomInfra(MEMORY)}; ${INFRA_NEXT}`]);
+    expect([judged.code, judged.out, judged.err]).toEqual([EXIT_RETRY, "", `infrastructure error, not a verdict: ${selfKilledChosen(MEMORY)}; ${INFRA_NEXT}`]);
     expect(existsSync(verdict)).toBe(false);
     expect(status(intent)).toBe(IntentStatus.Open);
   });

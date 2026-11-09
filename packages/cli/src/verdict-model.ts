@@ -131,7 +131,7 @@ function chosenMemoryEnd(state: ContainerState, memory: string, inBlock: boolean
 export const RUN_UNTIMED =
   "the check's container ended, but on the judge's own clock it may have run for the spec's pinned timeout, so whether it kept to it is unknown";
 
-export type MemoryRise = { oom: number; oomKill: number };
+export type MemoryRise = { oom: number; oomKill: number; groupKill?: number };
 
 export type CaseEnd = { signal: string | null; stoppedByJudge: boolean; rise: MemoryRise | null };
 
@@ -191,7 +191,7 @@ export function chosenFill(rise: MemoryRise | null, limits: Limits): Outcome | u
 }
 
 export function caseMemory(end: CaseEnd, passed: boolean, limits: Limits): Outcome | undefined {
-  if (!passed && end.signal === "SIGKILL" && !end.stoppedByJudge) {
+  if (!passed && end.signal === "SIGKILL" && !end.stoppedByJudge && (end.rise?.groupKill ?? 0) <= 0) {
     return caseOutcome(end, limits);
   }
   return pinnedFill(end.rise, limits) ?? (passed ? undefined : chosenFill(end.rise, limits));

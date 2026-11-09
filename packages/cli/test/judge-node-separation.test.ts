@@ -10,10 +10,10 @@ import { EXIT_RETRY, INFRA_NEXT } from "../src/judge-errors.js";
 import { EXIT_FAILED } from "../src/main.js";
 import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_TMP } from "../src/sandbox.js";
-import { caseOomInfra, caseOomPinned, engineOutcome, failedCases } from "../src/verdict-model.js";
+import { engineOutcome, failedCases } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 import { announced, keyed } from "./announce.js";
-import { DOCKER_TEST } from "./docker-switch.js";
+import { DOCKER_TEST, selfKilledChosen, selfKilledPinned } from "./docker-switch.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
 import { status } from "./judge-kit.js";
 
@@ -116,13 +116,13 @@ describe("a plain Node case killed for memory the spec pins", () => {
       0,
       undefined,
       [
-        { case: 0, verdict: "crashed", detail: caseOomPinned(MEMORY) },
-        { case: 1, verdict: "crashed", detail: caseOomPinned(MEMORY) },
+        { case: 0, verdict: "crashed", detail: selfKilledPinned(MEMORY) },
+        { case: 1, verdict: "crashed", detail: selfKilledPinned(MEMORY) },
       ],
     ]);
     expect(engineOutcome(NODE_ENGINE, pinned.judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 2, 2) });
     const chosen = await judgeNode({ ...BOX, memory: MEMORY }, bytes(FILLER), "count.mjs", CASES, 7, 60);
-    expect(engineOutcome(NODE_ENGINE, chosen.judged)).toEqual({ outcome: "infra", reason: caseOomInfra(MEMORY) });
+    expect(engineOutcome(NODE_ENGINE, chosen.judged)).toEqual({ outcome: "infra", reason: selfKilledChosen(MEMORY) });
   });
 
   it("makes judge --plain-node exit 1 with a fail verdict under the pin, and exit 75 with none for the same spec without it", DOCKER_TEST, async () => {
@@ -146,11 +146,11 @@ describe("a plain Node case killed for memory the spec pins", () => {
       expect(judged.code, block).toBe(code);
       expect(status(intent), block).toBe(IntentStatus.Open);
       if (code === EXIT_RETRY) {
-        expect([judged.out, judged.err, existsSync(verdict)]).toEqual(["", `infrastructure error, not a verdict: ${caseOomInfra(MEMORY)}; ${INFRA_NEXT}`, false]);
+        expect([judged.out, judged.err, existsSync(verdict)]).toEqual(["", `infrastructure error, not a verdict: ${selfKilledChosen(MEMORY)}; ${INFRA_NEXT}`, false]);
         continue;
       }
       const written = JSON.parse(readFileSync(verdict, "utf8")) as { verdict: string; node: { failures: unknown[] } };
-      expect([written.verdict, written.node.failures]).toEqual(["fail", [{ case: 0, verdict: "crashed", detail: caseOomPinned(MEMORY) }]]);
+      expect([written.verdict, written.node.failures]).toEqual(["fail", [{ case: 0, verdict: "crashed", detail: selfKilledPinned(MEMORY) }]]);
     }
   });
 });

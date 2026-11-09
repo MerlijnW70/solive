@@ -219,6 +219,27 @@ describe("the two out-of-memory counts a plain Node case is judged by", () => {
     expect(engineOutcome(NODE_ENGINE, judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 2, 2) });
   });
 
+  it("reads the kernel's group kill from the launcher, and then charges the fill to the case without saying its own process used it", async () => {
+    fake.exitCode = 0;
+    fake.oomKilled = false;
+    fake.replies = [
+      { code: null, signal: "SIGKILL", before: { oom: 3, oomKill: 3, groupKill: 0 }, after: { oom: 4, oomKill: 6, groupKill: 1 } },
+      { code: null, signal: "SIGKILL", before: { oom: 4, oomKill: 6, groupKill: 1 }, after: { oom: 5, oomKill: 7, groupKill: 1 } },
+    ];
+    const { judged } = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
+    expect([judged.passed, judged.stop, judged.failures]).toEqual([
+      0,
+      undefined,
+      [
+        { case: 0, verdict: "crashed", detail: caseFilledPinned(MEMORY) },
+        { case: 1, verdict: "crashed", detail: caseOomPinned(MEMORY) },
+      ],
+    ]);
+    fake.replies = [{ code: null, signal: "SIGKILL", before: { oom: 0, oomKill: 0, groupKill: 2 }, after: { oom: 1, oomKill: 1, groupKill: 1 } }];
+    const fallen = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
+    expect([fallen.judged.failures, engineOutcome(NODE_ENGINE, fallen.judged).outcome]).toEqual([[], "infra"]);
+  });
+
   it("makes a case that exits non-zero after a memory kill infra under the memory the judge chose, and passes one that answers rightly", async () => {
     fake.exitCode = 0;
     fake.oomKilled = false;
