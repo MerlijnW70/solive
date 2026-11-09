@@ -404,6 +404,21 @@ The issue faucet's budget is one chain of numbers. `scripts/faucet.sh` sends 0.5
 
 The issue faucet finds requests by one rule, kept in `scripts/faucet.sh` and `.github/workflows/faucet.yml` as the same two commands: open issues titled exactly `Devnet SOL` that lack the `faucet` label, and open issues with the `faucet` label that lack `faucet-sent`. When devnet cannot be reached for an address, the script leaves the request open and comments `Retry after:` with a time 3 hours ahead; every run before that time skips the request. Only comments by `github-actions` count. After 8 such tries, 24 hours in all, the script closes the request and asks for a new one.
 
+The issue faucet pays each request at most once. It signs the transfer offline with a fresh blockhash, comments the signature and the blockhash's last valid block height on the request, labels it `faucet-pending`, and only then sends. When the send gives no clear answer, the request stays open with that label and comment. The script creates the `faucet-pending` label the first time it needs it.
+
+Each run first checks the pending requests by their commented signatures. A confirmed transaction closes the request as sent. A signature the chain does not know can never land once the finalized block height is 150 past its last valid height; the script then removes the label and signs a new transfer, and after 3 such transfers it refuses the request. Any other answer, or none from devnet, leaves the request for a later run.
+
+Two runs never both send for one request. After its comment, a run waits `FAUCET_SETTLE` seconds, 5 by default, and sends only when its comment is the first new transfer comment on the request. The daily cap counts requests closed as `faucet-sent` in the last day plus open requests labelled `faucet-sent` or `faucet-pending`, and a run that pushes the count past the cap withdraws its label and sends nothing.
+
+`scripts/faucet.sh` exits with one code per run. Any code but 0 fails the workflow run, and GitHub emails the owner. Code 1 wins over code 3.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Every open request was answered, parked until its retry time, or needed nothing. |
+| 1 | A request hit an unexpected error, such as a failed `gh` or `solana` command; the script sent nothing more for that request in this run. |
+| 2 | The script refused to start: `FAUCET_KEYPAIR` is empty, or `FAUCET_URL`, `FAUCET_NOW` or `FAUCET_SETTLE` is malformed. It read and sent nothing. |
+| 3 | A request stays `faucet-pending` because its transfer has not landed or expired yet, or a run stepped aside for another; a later run decides it. |
+
 Run it weekly with `/etc/systemd/system/solive-faucet-topup.service`:
 
 ```ini

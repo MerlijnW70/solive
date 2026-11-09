@@ -16,18 +16,24 @@ const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
 const NOW = 1_791_662_400;
 const DAY = 86_400;
 const SOL = 1_000_000_000;
-const SIGNATURE = "5igSig";
+const SIGNATURE = "5igSig".padEnd(88, "x");
+const PAYER = "CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS";
+const BLOCKHASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const dayAgo = new Date((NOW - DAY) * 1000).toISOString().replace(".000", "");
 
 const GH = `#!/usr/bin/env bash
 echo "gh $*" >> "$STUB_LOG"
 case "$1 $2" in
   "api users/"*) echo "$STUB_CREATED" ;;
+  "label create") ;;
+  "issue comment") node -e 'require("node:fs").appendFileSync(process.argv[1], JSON.stringify({ author: { login: "github-actions" }, body: process.argv[2] }) + "\\n")' "$STUB_ISSUES/$3/comments" "$5" ;;
   "issue view")
-    if [[ "$*" == *"--json comments"* ]]; then echo '{"comments":[]}'
+    if [[ "$*" == *"--json comments"* ]]; then node -e 'const lines = require("node:fs").readFileSync(process.argv[1], "utf8").split("\\n").filter(Boolean); console.log(JSON.stringify({ comments: lines.map((l) => JSON.parse(l)), labels: [] }))' "$STUB_ISSUES/$3/comments"
     elif [[ "$*" == *"--json body"* ]]; then cat "$STUB_ISSUES/$3/body"; else cat "$STUB_ISSUES/$3/author"; fi ;;
   "issue list")
     if [[ "$*" == *"--search"* ]]; then cat "$STUB_ISSUES/untagged"
+    elif [[ "$*" == *"--label faucet-pending"* ]]; then :
+    elif [[ "$*" == *"--json labels "* ]]; then echo 0
     elif [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"
     elif [[ "$*" == *faucet-sent* ]]; then echo $((STUB_SENT + $(grep -c -- "--add-label faucet-sent" "$STUB_LOG")))
     else echo "$STUB_EARLIER"; fi ;;
@@ -41,8 +47,17 @@ case "$1" in
     if [ "$2" = "--keypair" ]; then echo "$STUB_LEFT lamports"; exit 0; fi
     if [ "$2" = "$STUB_INVALID" ]; then exit 1; fi
     echo "$STUB_HELD lamports" ;;
-  transfer) echo '{"signature":"'"$STUB_SIGNATURE"'"}' ;;
+  block-height) echo 1000 ;;
+  confirm) echo '{"confirmationStatus":"finalized"}' ;;
+  transfer)
+    if [[ "$*" == *--sign-only* ]]; then echo '{"blockhash":"${BLOCKHASH}","signers":["'"$STUB_PAYER=$STUB_SIGNATURE"'"]}'
+    else echo '{"signature":"'"$STUB_SIGNATURE"'"}'; fi ;;
 esac
+`;
+
+const CURL = `#!/usr/bin/env bash
+echo "curl $*" >> "$STUB_LOG"
+echo '{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":{"blockhash":"${BLOCKHASH}","lastValidBlockHeight":1150}},"id":1}'
 `;
 
 type Stub = { created: string; earlier: number; sent: number; held: number; left: number; invalid: string };
@@ -72,8 +87,9 @@ function requests(issues: Issue[], stub: Partial<Stub> = {}) {
     mkdirSync(join(store, String(issue.number)));
     writeFileSync(join(store, String(issue.number), "body"), `${issue.body}\n`);
     writeFileSync(join(store, String(issue.number), "author"), `${issue.author ?? "a-user"}\n`);
+    writeFileSync(join(store, String(issue.number), "comments"), "");
   }
-  for (const [name, text] of [["gh", GH], ["solana", SOLANA]] as const) {
+  for (const [name, text] of [["gh", GH], ["solana", SOLANA], ["curl", CURL]] as const) {
     writeFileSync(join(dir, name), text);
     chmodSync(join(dir, name), 0o755);
   }
@@ -87,7 +103,9 @@ function requests(issues: Issue[], stub: Partial<Stub> = {}) {
       PATH: `${dir}:${process.env["PATH"] ?? ""}`,
       FAUCET_KEYPAIR: join(dir, "faucet.json"),
       FAUCET_NOW: String(NOW),
+      FAUCET_SETTLE: "0",
       STUB_LOG: log,
+      STUB_PAYER: PAYER,
       STUB_ISSUES: store,
       STUB_CREATED: s.created,
       STUB_EARLIER: String(s.earlier),
@@ -103,10 +121,11 @@ function requests(issues: Issue[], stub: Partial<Stub> = {}) {
 }
 
 const form = (address: string) => `### Wallet address\n\n${address}`;
-const sent = (calls: string[]) => calls.filter((c) => c.startsWith("solana transfer"));
+const sent = (calls: string[]) => calls.filter((c) => c.startsWith("solana transfer") && !c.includes(" --sign-only "));
+const signed = (calls: string[]) => calls.filter((c) => c.startsWith("solana transfer") && c.includes(" --sign-only "));
 const closed = (calls: string[]) => calls.find((c) => c.startsWith("gh issue close"));
 
-describe("the devnet faucet", () => {
+describe("the devnet faucet", { timeout: 240_000 }, () => {
   it("is described in its request form with the limits the script enforces", () => {
     const script = readFileSync(SCRIPT, "utf8");
     const value = (name: string) => Number(new RegExp(`^${name}=(\\d+)$`, "m").exec(script)?.[1]);
@@ -119,14 +138,24 @@ describe("the devnet faucet", () => {
 
   it("sends 0.5 devnet SOL to the one address in the request, links the transfer and closes the request", () => {
     const { out, calls } = request(form(ADDRESS));
+    expect(signed(calls)).toHaveLength(1);
+    expect(signed(calls)[0]).toMatch(
+      new RegExp(`^solana transfer --url devnet --keypair \\S+/faucet\\.json --sign-only --blockhash ${BLOCKHASH} --with-memo faucet request 7 --allow-unfunded-recipient --output json ${ADDRESS} 0\\.5$`),
+    );
     expect(sent(calls)).toHaveLength(1);
     expect(sent(calls)[0]).toMatch(
-      new RegExp(`^solana transfer --url devnet --keypair \\S+/faucet\\.json --allow-unfunded-recipient --output json ${ADDRESS} 0\\.5$`),
+      new RegExp(
+        `^solana transfer --url devnet --keypair \\S+/faucet\\.json --blockhash ${BLOCKHASH} --from ${PAYER} --fee-payer ${PAYER} --signer ${PAYER}=${SIGNATURE} --with-memo faucet request 7 --allow-unfunded-recipient --output json ${ADDRESS} 0\\.5$`,
+      ),
     );
+    const record = calls.findIndex((c) => c.startsWith("gh issue comment 7 --body Sending 0.5 devnet SOL to "));
+    expect(record).toBeGreaterThan(calls.indexOf(signed(calls)[0] ?? ""));
+    expect(record).toBeLessThan(calls.indexOf("gh issue edit 7 --add-label faucet-pending"));
+    expect(calls.indexOf("gh issue edit 7 --add-label faucet-pending")).toBeLessThan(calls.indexOf(sent(calls)[0] ?? ""));
     expect(out.startsWith("Sent 0.5 devnet SOL to ")).toBe(true);
     expect(out).toContain(ADDRESS);
     expect(out.endsWith(`/tx/${SIGNATURE}?cluster=devnet`)).toBe(true);
-    expect(calls).toContain("gh issue edit 7 --add-label faucet-sent");
+    expect(calls).toContain("gh issue edit 7 --add-label faucet-sent --remove-label faucet-pending");
     expect(closed(calls)).toBe("gh issue close 7 --reason completed");
     expect(calls).toContain(
       `gh issue list --author a-user --label faucet --state all --limit 100 --json number,createdAt --jq [.[] | select(.number < 7 and .createdAt >= "${dayAgo}")] | length`,
@@ -208,7 +237,7 @@ describe("the devnet faucet", () => {
     expect(calls.filter((c) => c.startsWith("gh issue list --label faucet --state open"))).toEqual([
       `gh issue list --label faucet --state open --limit 100 --json number,labels --jq .[] | select(all(.labels[]; .name != "faucet-sent")) | .number`,
     ]);
-    expect(calls.filter((c) => c.startsWith("gh issue comment")).map((c) => c.split(" ")[3])).toEqual(["7", "8", "9"]);
+    expect(calls.filter((c) => c.startsWith("gh issue comment") && !c.includes(" --body Sending ")).map((c) => c.split(" ")[3])).toEqual(["7", "8", "9"]);
     expect(sent(calls)).toHaveLength(2);
     expect(sent(calls)[0]).toContain(ADDRESS);
     expect(sent(calls)[1]).toContain(OTHER);
