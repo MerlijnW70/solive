@@ -33,6 +33,7 @@ describe("forged memos never stop the retry of a request whose own transfers nev
       expect(doubt.out).toContain("Pending: request 7 waits for transaction ");
       const retry = faucet.run(NOW + 3 * HOUR);
       expect(retry.code).toBe(0);
+      expect(retry.err).toBe(count > 50 ? `request 7: ${count - 50} entries with its memo were not verified; its own records list every faucet transfer for it` : "");
       expect(faucet.paid()).toHaveLength(1);
       expect(answers(faucet, 7)).toEqual([sent(faucet.paid()[0]?.sig ?? "?")]);
       expect(faucet.run(NOW + DAY)).toEqual(idle);
@@ -40,14 +41,32 @@ describe("forged memos never stop the retry of a request whose own transfers nev
     });
   }
 
-  it("pays a fresh request once when more forged memos name it than the faucet verifies", () => {
+  it("parks a request without any record of its own when more forged memos name it than the faucet verifies, and names that cause", () => {
     const faucet = world([request(7, ADDRESS)]);
     faucet.inject(flood(51, 200, 2 * NOW - 10, NOW - 10));
     const run = faucet.run(NOW);
     expect(run.code).toBe(0);
-    expect(run.out).toBe(sent(faucet.paid()[0]?.sig ?? "?"));
-    expect(run.err).toBe("request 7: 1 entries with its memo were not verified; its own records list every faucet transfer for it");
+    expect(run.out).toMatch(/^More transfers to the faucet wallet carry this request's memo than the faucet verifies, and it holds no record of its own for this request, .* Retry after: /);
+    expect(sends(faucet)).toEqual([]);
+    const last = world([request(7, ADDRESS, { comments: parks(8) })]);
+    last.inject(flood(51, 200, 2 * NOW - 10, NOW - 10));
+    expect(last.run(NOW).out).toBe("Refused: more transfers to the faucet wallet carry this request's memo than it verifies, and it holds no record of its own to decide by after 8 tries. Nothing was sent. File a new request to try again.");
+    expect(last.issue(7)?.state).toBe("closed");
+    expect(sends(last)).toEqual([]);
+  });
+
+  it("never sends again when 50 forged memos precede a landed transfer whose record, marker and label were all deleted", () => {
+    const faucet = world([request(7, ADDRESS)]);
+    faucet.inject(Array.from({ length: 50 }, (_, n) => forged(sigFor(500 + n), "faucet request 7", { slot: 2 * NOW - 100 + n, time: NOW - 100 + n })));
+    faucet.run(NOW, { STUB_SEND: "land-timeout", STUB_CONFIRM: "forget" });
+    faucet.edit((issues) => Object.assign(issues[0] ?? {}, { comments: [], labels: ["faucet"] }));
+    for (const at of [HOUR, 4 * HOUR, DAY]) {
+      const run = faucet.run(NOW + at, { STUB_CONFIRM: "forget" });
+      expect(run.code).toBe(0);
+      expect(run.out).toContain("it holds no record of its own for this request");
+    }
     expect(faucet.paid()).toHaveLength(1);
+    expect(sends(faucet)).toHaveLength(1);
   });
 
   it("parks a request whose transfer record is gone while forged memos outnumber the check, and names that cause", () => {

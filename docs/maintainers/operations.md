@@ -414,7 +414,7 @@ Each record names the wallet that signed it. The script reads each wallet's hist
 
 That verdict must hold again on a run at least 2 hours later before the script sends anew; the first verdict leaves a comment with its time. A node can miss a landed transfer: when its long-term storage lags and the node restarted recently, both the status and the history can skip it, and the node reports no error. The second look covers only a lag shorter than 2 hours.
 
-A longer lag can lead to a second landing. Its bound: a request ends after at most 3 sent transfers, so it receives at most 1.5 SOL, and the daily cap counts it once. The script adds no other evidence. The recipient's history comes from the same storage, and `minimumLedgerSlot` may come from another node behind the same load balancer, so neither proves more.
+A longer lag can lead to a second landing. Its bound: a request ends after at most 3 sent transfers, so it receives at most 1.5 SOL. The daily cap counts such a request once, so the real daily bound is 50 × 1.5 = 75 SOL. The script adds no other evidence. The recipient's history comes from the same storage, and `minimumLedgerSlot` may come from another node behind the same load balancer, so neither proves more.
 
 A maintainer who sees a `Sent` answer after a `No transfer from transaction` comment checks those transactions in the explorer. When a node keeps failing this way, point `FAUCET_URL` at a node that keeps its full history.
 
@@ -422,7 +422,9 @@ An error, an incomplete history, a node behind that slot, or more than `FAUCET_S
 
 Before each new transfer, and for a pending request whose record comment is gone, the script reads the wallet's history back to the request's creation for a transfer with the request's memo. It believes one only after `getTransaction` shows the faucet wallet as fee payer and signer, a system transfer of the request's amount from the faucet, and the memo. The faucet signs that memo only for that request, so the transfer counts whatever address it paid, and the answer names that address. Anyone can send a memo to the faucet wallet, so it ignores every other entry.
 
-It verifies the 50 oldest entries with the memo since the request was filed. The entries beyond those stop only a request whose journal is damaged: the journal is the faucet's records and its `is on its way` comments. When every such comment has its record, the records list every transfer the faucet sent, and the script decides by them. When one lacks its record, the request stays parked or pending, and the answer names that transaction.
+It verifies the 50 oldest entries with the memo since the request was filed. The entries beyond those stop only a request whose journal is damaged: the journal is the faucet's records and its `is on its way` comments. When every such comment has its record, the records list every transfer the faucet sent, and the script decides by them. When one lacks its record, the request stays parked or pending, and the answer names that transaction. A request with no record at all is parked too, with that reason, and refused after 8 tries.
+
+Never delete or edit the faucet's comments on a request. A deleted record together with its `is on its way` comment leaves no trace that the faucet acted, so only the memo check stands between that request and a second transfer.
 
 A request labelled `faucet-pending` without a record stays pending, and each run logs only what it proved: that the history could not be read, that too many entries carry the memo, or that the history shows no such transfer. 7 days after the request was filed, the script closes it with an answer, removes the label and never sends for it again.
 

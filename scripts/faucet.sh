@@ -143,6 +143,9 @@ send() {
   if [ "$scan_over" -gt 0 ] && [ -n "$lost" ]; then
     later "The faucet lost its record of transaction $lost for this request, and more transfers to its wallet carry this request's memo than it verifies, so it cannot prove that transaction never landed. Nothing was sent, and this request does not count toward your one request a day." "the faucet lost its record of transaction $lost for this request and could not prove it never landed"
   fi
+  if [ "$scan_over" -gt 0 ] && [ "${#records[@]}" -eq 0 ]; then
+    later "More transfers to the faucet wallet carry this request's memo than the faucet verifies, and it holds no record of its own for this request, so it cannot prove that nothing was sent. Nothing was sent, and this request does not count toward your one request a day." "more transfers to the faucet wallet carry this request's memo than it verifies, and it holds no record of its own to decide by"
+  fi
   if [ "$scan_over" -gt 0 ]; then
     echo "request $issue: $scan_over entries with its memo were not verified; its own records list every faucet transfer for it" >&2
   fi
