@@ -21,9 +21,10 @@ export type Issue = {
   state: "open" | "closed";
   createdAt?: string;
   closedAt?: string;
+  updatedAt?: string;
   comments: Comment[];
 };
-export type Landed = { sig: string; to: string; lamports: number; slot: number; memo: string };
+export type Landed = { sig: string; from?: string; to: string; lamports: number; slot: number; time?: number; memo: string };
 export type Run = { code: number; out: string; err: string };
 
 const LOCK = `
@@ -54,6 +55,7 @@ try {
   const save = () => fs.writeFileSync(process.env.STUB_STATE, JSON.stringify(state));
   const has = (issue, label) => issue.labels.includes(label);
   const visible = (c) => !process.env.STUB_LAG || !c.run || c.run === process.env.RUN_ID || Date.now() - c.at > Number(process.env.STUB_LAG);
+  const stamp = new Date((Number(process.env.FAUCET_NOW) || 0) * 1000).toISOString().replace(".000", "");
   const [area, verb] = argv;
   const issue = state.issues.find((each) => each.number === Number(argv[2]));
   if (area === "api") {
@@ -87,20 +89,25 @@ try {
     if (jq.includes('all(.labels[]; .name != "faucet-sent")')) pool = pool.filter((each) => !has(each, "faucet-sent"));
     const since = /\\.closedAt >= "([^"]+)"/.exec(jq);
     if (since) pool = pool.filter((each) => (each.closedAt ?? "") >= since[1]);
+    const updated = /\\.updatedAt >= "([^"]+)"/.exec(jq);
+    if (updated) pool = pool.filter((each) => (each.updatedAt ?? state.issueCreated) >= updated[1]);
     const before = /\\.number < (\\d+)/.exec(jq);
     if (before) pool = pool.filter((each) => each.number < Number(before[1]));
     if (jq.startsWith("[") || jq === "length") console.log(pool.length);
     else for (const each of pool) console.log(each.number);
   } else if (verb === "comment") {
     issue.comments.push({ author: "github-actions", body: flag("--body"), run: process.env.RUN_ID, at: Date.now() });
+    issue.updatedAt = stamp;
     save();
   } else if (verb === "close") {
     issue.state = "closed";
-    issue.closedAt = new Date(Number(process.env.FAUCET_NOW) * 1000).toISOString().replace(".000", "");
+    issue.closedAt = stamp;
+    issue.updatedAt = stamp;
     save();
   } else if (verb === "edit") {
     if (flag("--add-label") && !has(issue, flag("--add-label"))) issue.labels.push(flag("--add-label"));
     if (flag("--remove-label")) issue.labels = issue.labels.filter((label) => label !== flag("--remove-label"));
+    issue.updatedAt = stamp;
     save();
   }
 } finally {
@@ -138,7 +145,7 @@ const land = (sig, to, amount, memo) => {
   try {
     const chain = read();
     if (chain.landed.some((each) => each.sig === sig)) fail("Error: This transaction has already been processed");
-    chain.landed.push({ sig, to, lamports: Math.round(Number(amount) * 1e9), slot: height() + 1, time: Number(process.env.FAUCET_NOW), memo: memo ?? "" });
+    chain.landed.push({ sig, from: process.env.STUB_PAYER, to, lamports: Math.round(Number(amount) * 1e9), slot: height() + 1, time: Number(process.env.FAUCET_NOW), memo: memo ?? "" });
     fs.writeFileSync(chainFile, JSON.stringify(chain));
   } finally {
     release();
@@ -216,11 +223,28 @@ if (body.method === "getLatestBlockhash") {
   if (options.minContextSlot !== undefined && options.minContextSlot > h) { console.log(JSON.stringify({ jsonrpc: "2.0", error: { code: -32016, message: "Minimum context slot has not been reached" }, id: body.id })); process.exit(0); }
   if (address !== process.env.STUB_PAYER || mode === "empty") { reply([]); process.exit(0); }
   const funding = { signature: "F".repeat(64), slot: 1, blockTime: 0, memo: null, err: null };
-  const landed = read().landed.filter((each) => each.slot <= h).map((each) => ({ signature: each.sig, slot: each.slot, blockTime: each.time, memo: each.memo ? "[" + each.memo.length + "] " + each.memo : null, err: null }));
-  let all = [...landed.reverse(), funding];
+  const landed = read().landed.map((each, at) => ({ each, at })).filter(({ each }) => each.slot <= h).sort((a, b) => b.each.slot - a.each.slot || b.at - a.at)
+    .map(({ each }) => ({ signature: each.sig, slot: each.slot, blockTime: each.time, memo: each.memo ? "[" + each.memo.length + "] " + each.memo : null, err: null }));
+  let all = [...landed, funding];
   if (mode === "pruned") all = all.filter((each) => each.slot >= Number(process.env.STUB_PRUNED || h));
   const start = options.before ? all.findIndex((each) => each.signature === options.before) + 1 : 0;
-  reply(all.slice(start, start + options.limit));
+  const stop = options.until ? all.findIndex((each) => each.signature === options.until) : -1;
+  reply(all.slice(start, stop >= start ? stop : all.length).slice(0, options.limit));
+} else if (body.method === "getTransaction") {
+  const entry = read().landed.find((each) => each.sig === body.params[0]);
+  if (process.env.STUB_HISTORY === "unreachable") process.exit(7);
+  if (!entry) { reply(null); process.exit(0); }
+  const from = entry.from ?? "Attacker11111111111111111111111111111111111";
+  reply({
+    meta: { err: null },
+    transaction: { message: {
+      accountKeys: [{ pubkey: from, signer: true, writable: true }, { pubkey: entry.to, signer: false, writable: true }],
+      instructions: [
+        { program: "system", parsed: { type: "transfer", info: { source: from, destination: entry.to, lamports: entry.lamports } } },
+        ...(entry.memo ? [{ program: "spl-memo", parsed: entry.memo }] : []),
+      ],
+    } },
+  });
 } else {
   process.exit(22);
 }
@@ -231,7 +255,7 @@ export function world(issues: Issue[], created = new Date((NOW - 30 * DAY) * 100
   const stateFile = join(dir, "state.json");
   const chainFile = join(dir, "chain.json");
   const log = join(dir, "calls.log");
-  const issueCreated = new Date((NOW - DAY) * 1000).toISOString().replace(".000", "");
+  const issueCreated = new Date((NOW - DAY / 2) * 1000).toISOString().replace(".000", "");
   writeFileSync(stateFile, JSON.stringify({ created, issueCreated, issues }));
   writeFileSync(chainFile, JSON.stringify({ landed: [] }));
   writeFileSync(log, "");
@@ -268,6 +292,12 @@ export function world(issues: Issue[], created = new Date((NOW - 30 * DAY) * 100
       writeFileSync(stateFile, JSON.stringify(state));
     },
     landed: () => (JSON.parse(readFileSync(chainFile, "utf8")) as { landed: Landed[] }).landed,
+    paid: () => (JSON.parse(readFileSync(chainFile, "utf8")) as { landed: Landed[] }).landed.filter((each) => each.from === PAYER),
+    inject: (entries: Landed[]) => {
+      const chain = JSON.parse(readFileSync(chainFile, "utf8")) as { landed: Landed[] };
+      chain.landed.push(...entries);
+      writeFileSync(chainFile, JSON.stringify(chain));
+    },
     calls: () => readFileSync(log, "utf8").split("\n").filter((each) => each !== ""),
     run: (now: number, extra: Record<string, string> = {}): Run => {
       const result = spawnSync("bash", [script(extra)], { cwd: dir, encoding: "utf8", env: runEnv(now, extra), timeout: 120_000 });
@@ -296,8 +326,16 @@ export const request = (number: number, address: string, more: Partial<Issue> = 
   ...more,
 });
 
-export const record = (address: string, sig: string, slot: number, last: number) =>
-  `Sending 0.5 devnet SOL to \`${address}\` from \`${PAYER}\` in transaction ${sig}, signed after slot ${slot} and valid until block height ${last}. The faucet checks this transaction before it sends again.`;
+export const FUNDING = "F".repeat(64);
+export const iso = (at: number) => new Date(at * 1000).toISOString().replace(".000", "");
+
+export const record = (address: string, sig: string, slot: number, last: number, at = NOW, anchor = FUNDING) =>
+  `Sending 0.5 devnet SOL to \`${address}\` from \`${PAYER}\` in transaction ${sig}, signed at ${iso(at)} after slot ${slot} and wallet transaction ${anchor}, valid until block height ${last}. The faucet checks this transaction before it sends again.`;
+
+export const check = (sig: string, at: number) =>
+  `No transfer from transaction ${sig} has landed as of ${iso(at)}. The faucet checks again at least 2 hours later before it sends anything new.`;
+
+export const forged = (sig: string, memo: string, more: Partial<Landed> = {}) => ({ sig, to: PAYER, lamports: 0, slot: 2 * NOW - 10, time: NOW - 10, memo, ...more });
 
 export const bodies = (faucet: ReturnType<typeof world>, number: number, start: string) =>
   (faucet.issue(number)?.comments ?? []).filter((c) => c.author === "github-actions" && c.body.startsWith(start)).map((c) => c.body);

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { answers, DAY, HOUR, NOW, record, records, request, SCRIPT, world } from "./faucet-world.js";
+import { answers, bodies, check, DAY, HOUR, NOW, record, records, request, SCRIPT, world } from "./faucet-world.js";
 
 const ADDRESS = "4JUfAhAtwAccPT4T8cmsxQBpBwNiaUJgwWt5c5bsvKAo";
 const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
@@ -62,13 +62,17 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
     expect(again.out).toContain("Pending: request 7 waits for transaction ");
     expect(records(faucet, 7)).toHaveLength(1);
     expect(faucet.landed()).toEqual([]);
-    const retry = faucet.run(NOW + HOUR);
+    expect(faucet.run(NOW + HOUR).code).toBe(3);
+    expect(faucet.landed()).toEqual([]);
+    expect(bodies(faucet, 7, "No transfer from transaction ")).toHaveLength(1);
+    expect(faucet.run(NOW + 2 * HOUR).code).toBe(3);
+    const retry = faucet.run(NOW + 3 * HOUR);
     expect(retry.code).toBe(0);
     expect(faucet.landed()).toHaveLength(1);
     expect(records(faucet, 7)).toHaveLength(2);
     expect(answers(faucet, 7)).toHaveLength(1);
     expect(faucet.issue(7)?.labels).toEqual(["faucet", "faucet-sent"]);
-    expect(faucet.run(NOW + 2 * HOUR).out).toBe("");
+    expect(faucet.run(NOW + 4 * HOUR).out).toBe("");
     expect(faucet.landed()).toHaveLength(1);
   });
 
@@ -89,7 +93,10 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
   it("resolves pending requests before it serves new ones, so an expired transfer stops counting toward the cap", () => {
     const closedAt = new Date((NOW - HOUR) * 1000).toISOString().replace(".000", "");
     const done = Array.from({ length: 49 }, (_, at) => request(100 + at, OTHER, { labels: ["faucet", "faucet-sent"], state: "closed" as const, closedAt }));
-    const expired = request(300, OTHER, { labels: ["faucet", "faucet-pending"], comments: [{ author: "github-actions", body: record(OTHER, FOREIGN, 2 * NOW - 1200, 2 * NOW - 1000) }] });
+    const expired = request(300, OTHER, { labels: ["faucet", "faucet-pending"], comments: [
+        { author: "github-actions", body: record(OTHER, FOREIGN, 2 * NOW - 1200, 2 * NOW - 1000, NOW - 4 * HOUR) },
+        { author: "github-actions", body: check(FOREIGN, NOW - 3 * HOUR) },
+      ] });
     const faucet = world([...done, request(299, ADDRESS), expired]);
     expect(faucet.run(NOW).code).toBe(0);
     expect(faucet.landed().map((each) => each.to)).toEqual([ADDRESS]);
@@ -132,10 +139,11 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
     const runs = await Promise.all([faucet.start(NOW, extra), faucet.start(NOW, extra)]);
     expect(runs.map((r) => r.code)).toEqual([3, 3]);
     expect(faucet.landed()).toEqual([]);
-    expect(faucet.run(NOW + HOUR).code).toBe(0);
+    expect(faucet.run(NOW + HOUR).code).toBe(3);
+    expect(faucet.run(NOW + 3 * HOUR).code).toBe(0);
     expect(faucet.landed()).toHaveLength(1);
     expect(answers(faucet, 7)).toHaveLength(1);
-    expect(faucet.run(NOW + 2 * HOUR).out).toBe("");
+    expect(faucet.run(NOW + 4 * HOUR).out).toBe("");
   });
 
   it("leaves a pending request alone during an RPC outage and answers it once devnet is back", () => {
@@ -166,7 +174,8 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
     expect(faucet.run(NOW, { STUB_GH_FAIL: "--add-label faucet-pending" }).code).toBe(1);
     expect(faucet.calls().filter((c) => c.startsWith("solana transfer") && !c.includes("--sign-only"))).toEqual([]);
     expect(records(faucet, 7)).toHaveLength(1);
-    expect(faucet.run(NOW + HOUR).code).toBe(0);
+    expect(faucet.run(NOW + HOUR).code).toBe(3);
+    expect(faucet.run(NOW + 3 * HOUR).code).toBe(0);
     expect(faucet.landed()).toHaveLength(1);
   });
 
@@ -180,22 +189,23 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
     const other = world([request(8, ADDRESS)]);
     const rich = { STUB_HELD: String(0.6 * SOL) };
     other.run(NOW, { ...rich, STUB_SEND: "lost-timeout" });
-    expect(other.run(NOW + HOUR, rich).code).toBe(0);
+    expect(other.run(NOW + HOUR, rich).code).toBe(3);
+    expect(other.run(NOW + 3 * HOUR, rich).code).toBe(0);
     expect(other.landed()).toHaveLength(1);
   });
 
   it("refuses honestly after three transfers that never landed, and never leaves the request open", () => {
     const faucet = world([request(7, ADDRESS)]);
     const lost = { STUB_SEND: "lost-timeout" };
-    for (const at of [0, 1, 2]) expect(faucet.run(NOW + at * HOUR, lost).code).toBe(3);
-    const last = faucet.run(NOW + 3 * HOUR, lost);
+    for (const at of [0, 3, 6, 9, 12, 15]) expect(faucet.run(NOW + at * HOUR, lost).code).toBe(3);
+    const last = faucet.run(NOW + 18 * HOUR, lost);
     expect(last.code).toBe(0);
     expect(last.out).toBe(`Refused: the faucet tried 3 times to send to \`${ADDRESS}\` and no transfer landed. Nothing was sent. File a new request to try again.`);
     expect(records(faucet, 7)).toHaveLength(3);
     expect(faucet.landed()).toEqual([]);
     expect(faucet.issue(7)?.state).toBe("closed");
     expect(faucet.issue(7)?.labels).toEqual(["faucet"]);
-    expect(faucet.run(NOW + DAY).out).toBe("");
+    expect(faucet.run(NOW + 2 * DAY).out).toBe("");
   });
 
   it("ignores a transfer record that anyone but the faucet posts", () => {
@@ -218,7 +228,7 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
     const script = readFileSync(SCRIPT, "utf8");
     const runbook = readFileSync(join(SCRIPT, "../../docs/maintainers/operations.md"), "utf8");
     const codes = [...new Set([...script.matchAll(/\bexit (\d+)/g)].map((m) => Number(m[1])))].filter((code) => code < 10).sort();
-    expect(codes).toEqual([0, 1, 2, 3]);
+    expect(codes).toEqual([0, 1, 2, 3, 4]);
     for (const code of codes) expect(runbook).toMatch(new RegExp(`^\\| ${code} \\| `, "m"));
   });
 });

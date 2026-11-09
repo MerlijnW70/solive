@@ -34,7 +34,7 @@ case "$1 $2" in
   "issue list")
     if [[ "$*" == *"--label faucet-sent --state closed"* ]]; then echo $((STUB_SENT + $(grep -c -- "--add-label faucet-sent" "$STUB_LOG")))
     elif [[ "$*" == *"--search"* ]]; then cat "$STUB_ISSUES/untagged"
-    elif [[ "$*" == *"--label faucet-pending"* && "$*" == *"--jq length"* ]]; then echo 0
+    elif [[ "$*" == *"--label faucet-pending"* && "$*" == *"--json updatedAt"* ]]; then echo 0
     elif [[ "$*" == *"--label faucet-pending"* ]]; then :
     elif [[ "$*" == *"--label faucet-sent --state open"* ]]; then echo 0
     elif [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"

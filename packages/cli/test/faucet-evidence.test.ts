@@ -36,12 +36,26 @@ describe("the issue faucet decides a send is dead only on positive evidence", { 
     });
   }
 
+  for (const history of ["empty", "pruned"]) {
+    it(`never sends again while the history stays ${history} across runs hours apart`, () => {
+      const faucet = world([request(7, ADDRESS)]);
+      faucet.run(NOW, ambiguous);
+      for (const at of [1, 3, 6, 12]) expect(faucet.run(NOW + at * HOUR, { STUB_CONFIRM: "forget", STUB_HISTORY: history }).code).toBe(3);
+      expect(sends(faucet)).toHaveLength(1);
+      expect(faucet.run(NOW + 13 * HOUR, { STUB_CONFIRM: "forget" }).code).toBe(0);
+      expect(faucet.landed()).toHaveLength(1);
+      expect(answers(faucet, 7)).toHaveLength(1);
+    });
+  }
+
   it("retries a transfer that never landed only once the history covers its whole validity window", () => {
     const faucet = world([request(7, ADDRESS)]);
     faucet.run(NOW, { STUB_SEND: "lost-timeout" });
     expect(faucet.run(NOW + HOUR, { STUB_HISTORY: "empty" }).code).toBe(3);
     expect(sends(faucet)).toHaveLength(1);
-    expect(faucet.run(NOW + 2 * HOUR).code).toBe(0);
+    expect(faucet.run(NOW + 2 * HOUR).code).toBe(3);
+    expect(sends(faucet)).toHaveLength(1);
+    expect(faucet.run(NOW + 4 * HOUR).code).toBe(0);
     expect(faucet.landed()).toHaveLength(1);
   });
 
@@ -72,9 +86,8 @@ describe("the issue faucet counts attempts, closed requests and lost records hon
     const faucet = world([request(7, ADDRESS)]);
     const extra = { STUB_BARRIER: join(faucet.dir, "barrier") };
     await Promise.all([faucet.start(NOW, extra), faucet.start(NOW, extra)]);
-    faucet.run(NOW + HOUR, { STUB_SEND: "lost-timeout" });
-    faucet.run(NOW + 2 * HOUR, { STUB_SEND: "lost-timeout" });
-    const third = faucet.run(NOW + 3 * HOUR);
+    for (const at of [3, 6, 9, 12, 15]) faucet.run(NOW + at * HOUR, { STUB_SEND: "lost-timeout" });
+    const third = faucet.run(NOW + 18 * HOUR);
     expect(records(faucet, 7)).toHaveLength(5);
     expect(sends(faucet)).toHaveLength(3);
     expect(third.out).not.toContain("tried 3 times");
@@ -101,10 +114,11 @@ describe("the issue faucet counts attempts, closed requests and lost records hon
     const faucet = world([request(7, ADDRESS)]);
     faucet.run(NOW, { STUB_SEND: "lost-timeout" });
     faucet.edit((issues) => Object.assign(issues[0] ?? {}, { state: "closed" }));
-    expect(faucet.run(NOW + HOUR).code).toBe(0);
+    expect(faucet.run(NOW + HOUR).code).toBe(3);
+    expect(faucet.run(NOW + 3 * HOUR).code).toBe(0);
     expect(faucet.issue(7)?.comments.at(-1)?.body).toBe("Nothing was sent: this request was closed before its transfer landed.");
     expect(faucet.issue(7)?.labels).toEqual(["faucet"]);
-    expect(faucet.run(NOW + 2 * HOUR).out).toBe("");
+    expect(faucet.run(NOW + 4 * HOUR).out).toBe("");
     expect(sends(faucet)).toHaveLength(1);
   });
 

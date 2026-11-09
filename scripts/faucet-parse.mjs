@@ -1,8 +1,14 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const [mode, arg = ""] = process.argv.slice(2);
+const [mode, ...args] = process.argv.slice(2);
+const arg = args[0] ?? "";
 const KEY = "[1-9A-HJ-NP-Za-km-z]";
+const SIGNATURE = new RegExp(`^${KEY}{64,88}$`);
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const PAGE = 1000;
+const MAX_PAGES = Number(process.env.FAUCET_SCAN_PAGES ?? 100);
+const MAX_TAGGED = 50;
 const out = (line) => process.stdout.write(`${line}\n`);
 const stop = () => process.exit(1);
 
@@ -20,11 +26,22 @@ function keyBytes(text) {
 
 function issue(view) {
   const mine = (view.comments ?? []).filter((c) => c.author?.login === process.env.BOT).map((c) => String(c.body ?? ""));
+  const time = "(\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ)";
   if (mode === "records") {
-    const pattern = new RegExp(`^Sending \\S+ devnet SOL to \`(${KEY}{32,44})\` from \`(${KEY}{32,44})\` in transaction (${KEY}{64,88}), signed after slot (\\d{1,15}) and valid until block height (\\d{1,15})\\.`);
+    const pattern = new RegExp(
+      `^Sending \\S+ devnet SOL to \`(${KEY}{32,44})\` from \`(${KEY}{32,44})\` in transaction (${KEY}{64,88}), signed at ${time} after slot (\\d{1,15}) and wallet transaction (${KEY}{64,88}), valid until block height (\\d{1,15})\\.`,
+    );
     for (const body of mine) {
       const found = pattern.exec(body);
-      if (found) out([found[3], found[1], found[2], found[4], found[5]].join(" "));
+      const at = found ? Math.floor(Date.parse(found[4]) / 1000) : NaN;
+      if (found && Number.isSafeInteger(at)) out([found[3], found[1], found[2], found[5], found[7], found[6], at].join(" "));
+    }
+  } else if (mode === "checks") {
+    const pattern = new RegExp(`^No transfer from transaction (${KEY}{64,88}) has landed as of ${time}\\.`);
+    for (const body of mine) {
+      const found = pattern.exec(body);
+      const at = found ? Math.floor(Date.parse(found[2]) / 1000) : NaN;
+      if (found && Number.isSafeInteger(at)) out(`${found[1]} ${at}`);
     }
   } else if (mode === "markers") {
     const pattern = new RegExp(`^Transaction (${KEY}{64,88}) is on its way\\.$`);
@@ -45,19 +62,63 @@ function issue(view) {
   }
 }
 
-function history(reply) {
-  const page = reply?.result;
-  if (reply?.error !== undefined || !Array.isArray(page)) return out("error");
-  const tag = new RegExp(`(^|; )\\[\\d+\\] ${arg.replace(/[^a-z0-9 ]/g, "")}($|;)`);
-  const lines = [];
-  for (const entry of page) {
-    if (!new RegExp(`^${KEY}{64,88}$`).test(String(entry?.signature)) || !Number.isSafeInteger(entry?.slot)) return out("error");
-    const time = Number.isSafeInteger(entry.blockTime) ? entry.blockTime : -1;
-    const hit = typeof entry.memo === "string" && tag.test(entry.memo) ? 1 : 0;
-    lines.push(["entry", entry.signature, entry.slot, time, entry.err === null ? 0 : 1, hit].join(" "));
+function rpc(method, params) {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
+  const text = execFileSync("curl", ["-sS", "--max-time", "30", "-H", "Content-Type: application/json", "-d", body, process.env.FAUCET_RPC], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+  const reply = JSON.parse(text);
+  if (reply.error !== undefined || !("result" in reply)) throw new Error(`${method} failed`);
+  return reply.result;
+}
+
+function page(payer, options) {
+  const entries = rpc("getSignaturesForAddress", [payer, { limit: PAGE, commitment: "finalized", ...options }]);
+  if (!Array.isArray(entries)) throw new Error("not a list");
+  for (const entry of entries) if (!SIGNATURE.test(String(entry?.signature)) || !Number.isSafeInteger(entry?.slot)) throw new Error("bad entry");
+  return entries;
+}
+
+function verified(signature, payer, address, memo, lamports) {
+  const tx = rpc("getTransaction", [signature, { encoding: "jsonParsed", commitment: "finalized", maxSupportedTransactionVersion: 0 }]);
+  const message = tx?.transaction?.message;
+  if (tx?.meta?.err !== null || !Array.isArray(message?.accountKeys) || !Array.isArray(message?.instructions)) return false;
+  const first = message.accountKeys[0];
+  if (first?.pubkey !== payer || first?.signer !== true) return false;
+  const paid = message.instructions.some(
+    (ix) => ix?.program === "system" && ix.parsed?.type === "transfer" && ix.parsed.info?.source === payer && ix.parsed.info?.destination === address && ix.parsed.info?.lamports === lamports,
+  );
+  const tagged = message.instructions.some((ix) => ix?.program === "spl-memo" && ix.parsed === memo);
+  return paid && tagged;
+}
+
+function scan() {
+  const [payer, until, since, floor, memo, address, lamports, wanted = "-"] = args;
+  const want = new Set(wanted.split(",").filter((each) => each !== "-"));
+  const base = floor === "-" ? {} : { minContextSlot: Number(floor) };
+  const tag = new RegExp(`(^|; )\\[\\d+\\] ${memo.replace(/[^a-z0-9 ]/g, "")}($|;)`);
+  const seen = [];
+  const tagged = [];
+  let covered = false;
+  let complete = false;
+  let before;
+  for (let pages = 0; pages < MAX_PAGES && !covered && !complete; pages += 1) {
+    const entries = page(payer, { ...base, ...(until === "-" ? {} : { until }), ...(before ? { before } : {}) });
+    for (const entry of entries) {
+      seen.push(entry);
+      if (entry.err === null && typeof entry.memo === "string" && tag.test(entry.memo)) tagged.push(entry.signature);
+      if (since !== "-" && Number.isSafeInteger(entry.blockTime) && entry.blockTime < Number(since)) covered = true;
+    }
+    complete = entries.length < PAGE;
+    before = entries.at(-1)?.signature ?? before;
   }
-  for (const line of lines) out(line);
-  out(`${page.length} ${page.at(-1)?.signature ?? "-"}`);
+  if (until !== "-" && complete) {
+    const next = page(payer, { ...base, limit: 1, ...(before ? { before } : {}) });
+    covered = next.length === 1 && next[0].signature === until;
+  }
+  if (tagged.length > MAX_TAGGED) throw new Error("too many tagged entries to verify");
+  const hits = tagged.filter((signature) => verified(signature, payer, address, memo, Number(lamports)));
+  out(`state ${covered ? "covered" : "short"}`);
+  for (const entry of seen) if (want.has(entry.signature)) out(`seen ${entry.signature} ${entry.err === null ? 0 : 1}`);
+  for (const signature of hits) out(`hit ${signature}`);
 }
 
 function chain(reply) {
@@ -75,8 +136,6 @@ function chain(reply) {
     const found = Array.isArray(signers) && signers.length === 1 ? new RegExp(`^(${KEY}{32,44})=(${KEY}{64,88})$`).exec(signers[0]) : null;
     if (!found) stop();
     out(`${found[1]} ${found[2]}`);
-  } else if (mode === "history") {
-    history(reply);
   } else {
     issue(reply);
   }
@@ -84,12 +143,26 @@ function chain(reply) {
 
 if (mode === "key-bytes") {
   out(String(keyBytes(arg)));
+} else if (mode === "scan") {
+  try {
+    scan();
+  } catch {
+    out("state error");
+  }
+} else if (mode === "newest") {
+  try {
+    const entries = page(arg, { limit: 1 });
+    if (entries.length !== 1) stop();
+    out(entries[0].signature);
+  } catch {
+    stop();
+  }
 } else {
   let reply;
   try {
     reply = JSON.parse(readFileSync(0, "utf8"));
   } catch {
-    if (mode === "status" || mode === "history") out(mode === "status" ? "unknown" : "error");
+    if (mode === "status") out("unknown");
     else stop();
     process.exit(0);
   }
