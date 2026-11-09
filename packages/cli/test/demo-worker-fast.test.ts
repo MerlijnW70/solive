@@ -42,7 +42,7 @@ const OTHER = "Other11111111111111111111111111111111111111";
 const KEY = "11111111111111111111111111111111" as Address;
 const OWNER = "CMbTKrcjd6kVd2VDMUzN6qkMoxsRSDgGHvjFKxB5n9iy" as Address;
 const NOW = 1_800_000_000;
-const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, claimSecs: 900 };
+const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900 };
 
 type Escrow = { pubkey: string; specHash: string; nonce?: bigint; kind?: number; status?: number; claims?: number; expiresAt?: number };
 
@@ -166,11 +166,11 @@ function cliStub(listed: () => object[] = () => [], board: Board = {}): { cli: C
       case "jobs":
         return { jobs: listed() };
       case "claims show":
-        return { state: board.state ?? "free", worker: board.worker ?? null, stake: board.stake ?? "1000000", max_secs: 3600, line: { head: 0, tail: 0, waiting: board.waiting ?? 0 } };
+        return { state: board.state ?? "free", worker: board.worker ?? null, until: String(NOW + 600), stake: board.stake ?? "1000000", max_secs: 3600, review_secs: 3600, kill_fee: "1000000", review: null, line: { head: 0, tail: 0, waiting: board.waiting ?? 0 } };
       case "claims take":
         return { sent: true, signature: `claim-${at("--nonce")}` };
       case "deliver":
-        return { sent: true, signature: `announce-${at("--intent")}` };
+        return args.includes("--yes") ? { sent: true, signature: `announce-${at("--intent")}` } : { sent: false, protected: true, review_until: String(NOW + 3600) };
       default:
         throw new Error(`unexpected command ${args.join(" ")}`);
     }
@@ -178,7 +178,7 @@ function cliStub(listed: () => object[] = () => [], board: Board = {}): { cli: C
   return { cli, calls };
 }
 
-const verbs = (calls: string[][]) => calls.map((args) => (args[0] === "claims" ? `claims ${args[1]}` : (args[0] ?? "")));
+const verbs = (calls: string[][]) => calls.map((args) => (args[0] === "claims" ? `claims ${args[1]}` : args[0] === "deliver" && !args.includes("--yes") ? "preview" : (args[0] ?? "")));
 const shown = (events: Event[]) => events.map(({ intent, action }) => `${action} ${intent}`);
 
 describe("the demo worker's fast path", () => {
@@ -222,10 +222,10 @@ describe("the demo worker's fast path", () => {
     const ledger = emptyLedger();
     const read = programReader(rpc, PROGRAM);
     expect(shown(await fastRound(cli, read, demos, SETTINGS, ledger, NOW))).toEqual(["delivered fizz-escrow", "claimed claimable-escrow", "delivered claimable-escrow"]);
-    expect(verbs(calls)).toEqual(["deliver", "claims show", "claims take", "deliver"]);
+    expect(verbs(calls)).toEqual(["deliver", "claims show", "claims take", "preview", "deliver"]);
     const take = calls.find((args) => args[1] === "take") ?? [];
     expect([take[take.indexOf("--owner") + 1], take[take.indexOf("--nonce") + 1]]).toEqual([OWNER, "4"]);
-    const delivered = calls.filter(([verb]) => verb === "deliver");
+    const delivered = calls.filter((args) => args[0] === "deliver" && args.includes("--yes"));
     expect(delivered.map((args) => args[args.indexOf("--artifact") + 1])).toEqual([fizz.solution, palindrome.solution]);
     calls.length = 0;
     expect(await fastRound(cli, read, demos, SETTINGS, ledger, NOW + 2)).toEqual([]);
@@ -273,7 +273,7 @@ describe("the demo worker's fast path", () => {
     }
     const mine = cliStub(() => [], { state: "held", worker: WORKER });
     expect(shown(await fastRound(mine.cli, read, demos, SETTINGS, ledger, NOW))).toEqual(["delivered held"]);
-    expect(verbs(mine.calls)).toEqual(["claims show", "deliver"]);
+    expect(verbs(mine.calls)).toEqual(["claims show", "preview", "deliver"]);
   });
 
   it("lets the full scan find a demo escrow the fast path missed, and the fast path then leaves it alone", async () => {
@@ -306,7 +306,7 @@ describe("the demo worker's fast path", () => {
     expect(err.map((line) => JSON.parse(line))).toEqual([{ at: at().toISOString(), round: "failed", path: "fast", detail: "getProgramAccounts failed: the node answered 429" }]);
     expect(await tick("fast", round, { out: (line) => out.push(line), err: (line) => err.push(line) }, at)).toBe(true);
     expect(out.map((line) => JSON.parse(line))).toEqual([{ at: at().toISOString(), intent: "late", demo: (demos[2] as Demo).name, action: "delivered", detail: "announce-late" }]);
-    expect(node.reads).toBe(2 * demos.length);
+    expect(node.reads).toBe(1 + demos.length);
     expect([0, 1, 2, 30].map((failures) => backoff(2000, failures))).toEqual([2000, 4000, 8000, MAX_BACKOFF_MS]);
     expect(backoff(300_000, 3)).toBe(300_000);
   });
@@ -382,7 +382,7 @@ describe("the demo worker's fast path", () => {
           }
         });
       const log = { out: () => undefined, err: (line: string) => err.push(line) };
-      void watch(() => (opens.shift() as () => FakeSocket)(), "wss://node", PROGRAM, demos, () => NOW, seen, log, async (ms) => waits.push(ms), () => opens.length > 0);
+      void watch(() => (opens.shift() as () => FakeSocket)(), "wss://node", PROGRAM, demos, () => NOW, seen, log, async (ms) => waits.push(ms), () => opens.length > 0, { random: () => 0 });
     });
     expect(err.map((line) => JSON.parse(line).detail)).toEqual(["connect ECONNREFUSED", 'programSubscribe failed: {"code":-32601,"message":"Method not found"}']);
     expect(waits).toEqual([backoff(WATCH_RETRY_MS, 1), backoff(WATCH_RETRY_MS, 2)]);

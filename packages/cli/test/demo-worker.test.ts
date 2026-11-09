@@ -13,7 +13,7 @@ const { demoRound, emptyLedger, jobsOf, loadDemos, MAX_FAILURES, readLedger, wri
 const WORKER = "Worker1111111111111111111111111111111111111";
 const OTHER = "Other11111111111111111111111111111111111111";
 const NOW = 1_800_000_000;
-const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, claimSecs: 900 };
+const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900 };
 
 type Listed = { intent: string; specHash: string; takes_claims?: boolean; claimed_by?: string | null; waiting?: number; expiresAt?: string };
 
@@ -43,10 +43,14 @@ function stub(jobs: () => object[], answers: { stake?: string; maxSecs?: number;
       return { jobs: jobs() };
     }
     if (verb === "claims" && sub === "show") {
-      return { state: "free", worker: null, stake: answers.stake ?? "1000000", max_secs: answers.maxSecs ?? 3600 };
+      const mine = args[args.indexOf("--owner") + 1] === "owner-of-held-by-me";
+      return { state: mine ? "held" : "free", worker: mine ? WORKER : null, until: String(NOW + 600), stake: answers.stake ?? "1000000", max_secs: answers.maxSecs ?? 3600, review_secs: 3600, kill_fee: "1000000", review: null };
     }
     if (verb === "claims" && sub === "take") {
       return { sent: true, signature: `claim-${args[args.indexOf("--owner") + 1]}` };
+    }
+    if (verb === "deliver" && !args.includes("--yes")) {
+      return { sent: false, protected: true, review_until: String(NOW + 3600) };
     }
     if (verb === "deliver") {
       if (deliverFailures > 0) {
@@ -60,7 +64,7 @@ function stub(jobs: () => object[], answers: { stake?: string; maxSecs?: number;
   return { cli, calls };
 }
 
-const verbs = (calls: string[][]) => calls.map((args) => (args[0] === "claims" ? `claims ${args[1]}` : (args[0] ?? "")));
+const verbs = (calls: string[][]) => calls.map((args) => (args[0] === "claims" ? `claims ${args[1]}` : args[0] === "deliver" && !args.includes("--yes") ? "preview" : (args[0] ?? "")));
 const argOf = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 
 const temp: string[] = [];
@@ -95,8 +99,8 @@ describe("the demo worker", () => {
     const { cli, calls } = stub(() => open);
     const ledger = emptyLedger();
     const events = await demoRound(cli, demos, SETTINGS, ledger, NOW);
-    expect(verbs(calls)).toEqual(["jobs", "deliver", "claims show", "claims take", "deliver", "deliver"]);
-    const delivered = calls.filter(([verb]) => verb === "deliver");
+    expect(verbs(calls)).toEqual(["jobs", "deliver", "claims show", "claims take", "preview", "deliver", "claims show", "preview", "deliver"]);
+    const delivered = calls.filter((args) => args[0] === "deliver" && args.includes("--yes"));
     expect(delivered.map((args) => argOf(args, "--intent"))).toEqual(["plain-demo", "claimable-demo", "held-by-me"]);
     expect(delivered.map((args) => [argOf(args, "--artifact"), argOf(args, "--work-url"), argOf(args, "--keypair"), args.at(-1)])).toEqual([
       [fizz.solution, fizz.workUrl, SETTINGS.keypair, "--yes"],
@@ -131,7 +135,7 @@ describe("the demo worker", () => {
     const ledger = await readLedger(path);
     await demoRound(first.cli, demos, SETTINGS, ledger, NOW);
     await writeLedger(path, ledger);
-    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ done: ["once"] });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ done: ["once"], holds: [], last_delivery: { at: NOW, intent: "once" }, collected_lamports: "0", lost_lamports: "0" });
     const second = stub(() => open);
     expect(await demoRound(second.cli, demos, SETTINGS, await readLedger(path), NOW)).toEqual([]);
     expect(verbs(second.calls)).toEqual(["jobs"]);

@@ -87,7 +87,107 @@ export const subscription = (program: string, demo: Demo) => [program, { encodin
 
 export function programReader(rpc: Rpc, program: string): Read {
   return async (demos, now) => {
-    const listed = await Promise.all(demos.map((demo) => rpc("getProgramAccounts", subscription(program, demo))));
-    return demos.flatMap((demo, at) => foundIn(demo, listed[at], now));
+    const found: Found[] = [];
+    for (const demo of demos) {
+      found.push(...foundIn(demo, await rpc("getProgramAccounts", subscription(program, demo)), now));
+    }
+    return found;
+  };
+}
+
+export type Cli = (args: readonly string[]) => Promise<unknown>;
+
+export type Action = "claimed" | "delivered" | "skipped" | "failed" | "gave-up" | "dropped" | "collected" | "ended" | "lost";
+
+export type Event = { intent: string; demo: string; action: Action; detail?: string };
+
+export type Log = { out: (line: string) => void; err: (line: string) => void };
+
+export const sentSignature = (output: unknown, what: string): string => {
+  const shown = record(output);
+  const signature = textOf(shown["signature"]);
+  if (shown["sent"] !== true || signature === null) {
+    throw new Error(`${what} sent nothing: ${textOf(shown["next"]) ?? JSON.stringify(output)}`);
+  }
+  return signature;
+};
+
+export const MAX_BACKOFF_MS = 60_000;
+export const JITTER = 0.5;
+
+export const backoff = (every: number, failures: number): number => Math.max(every, Math.min(every * 2 ** Math.min(failures, 16), MAX_BACKOFF_MS));
+
+export const jittered = (ms: number, random: () => number): number => Math.round(ms * (1 + JITTER * Math.min(Math.max(random(), 0), 1)));
+
+export const CLUSTERS: Readonly<Record<string, string>> = {
+  localnet: "http://127.0.0.1:8899",
+  devnet: "https://api.devnet.solana.com",
+  testnet: "https://api.testnet.solana.com",
+  "mainnet-beta": "https://api.mainnet-beta.solana.com",
+};
+
+export const rpcUrlOf = (url: string): string => CLUSTERS[url] ?? url;
+
+export function wsUrlOf(url: string): string {
+  const parsed = new URL(rpcUrlOf(url));
+  parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  if (parsed.port !== "") {
+    parsed.port = String(Number(parsed.port) + 1);
+  }
+  return parsed.toString();
+}
+
+export const RPC_TIMEOUT_MS = 15_000;
+export const BUSY_HOLD_MS = 30_000;
+export const MAX_RETRY_AFTER_MS = 600_000;
+
+export type Gate = { wait: () => Promise<void>; hold: (ms: number) => void; until: () => number };
+
+export const pause = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+
+export function gateOf(clock: () => number = Date.now, sleep: (ms: number) => Promise<unknown> = pause): Gate {
+  let until = 0;
+  return {
+    until: () => until,
+    hold: (ms) => {
+      until = Math.max(until, clock() + Math.min(Math.max(ms, 0), MAX_RETRY_AFTER_MS));
+    },
+    wait: async () => {
+      for (let left = until - clock(); left > 0; left = until - clock()) {
+        await sleep(left);
+      }
+    },
+  };
+}
+
+export function retryAfterMs(header: string | null, nowMs: number): number | null {
+  const raw = header?.trim() ?? "";
+  if (/^\d+$/.test(raw)) {
+    return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
+  }
+  const at = raw === "" ? Number.NaN : Date.parse(raw);
+  return Number.isFinite(at) ? Math.min(Math.max(at - nowMs, 0), MAX_RETRY_AFTER_MS) : null;
+}
+
+export function rpcOf(url: string, fetcher: typeof fetch = fetch, gate: Gate = gateOf(), clock: () => number = Date.now): Rpc {
+  let id = 0;
+  return async (method, params) => {
+    await gate.wait();
+    id += 1;
+    const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+    const response = await fetcher(url, { method: "POST", headers: { "content-type": "application/json" }, body, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
+    if (response.status === 429) {
+      const asked = retryAfterMs(response.headers?.get("retry-after") ?? null, clock());
+      gate.hold(asked ?? BUSY_HOLD_MS);
+      throw new Error(`${method} failed: the node answered 429; this worker waits ${Math.ceil((asked ?? BUSY_HOLD_MS) / 1000)} seconds${asked === null ? "" : ", as its Retry-After asks"}`);
+    }
+    if (!response.ok) {
+      throw new Error(`${method} failed: the node answered ${response.status}`);
+    }
+    const answer = record(await response.json());
+    if (answer["error"] !== undefined) {
+      throw new Error(`${method} failed: ${JSON.stringify(answer["error"]).slice(0, 500)}`);
+    }
+    return answer["result"];
   };
 }
