@@ -45,15 +45,7 @@ fn landed(row: &svm_tests::Row) -> TestResult<u64> {
 
 fn largest_split(kind: ReleaseKind, members: usize, threshold: u8) -> TestResult<svm_tests::Row> {
     for n in (1..=MAX_SPLIT_RECIPIENTS).rev() {
-        let row = measure_shape(
-            PROGRAM,
-            Shape {
-                kind,
-                recipients: n,
-                members,
-                threshold,
-            },
-        )?;
+        let row = measure_shape(PROGRAM, Shape::new(kind, n, members, threshold).full())?;
         if row.landed.is_some() {
             return Ok(row);
         }
@@ -65,14 +57,13 @@ fn largest_split(kind: ReleaseKind, members: usize, threshold: u8) -> TestResult
 fn the_largest_releases_that_fit_stay_within_their_measured_budgets() -> TestResult {
     let split = largest_split(ReleaseKind::Split, 0, 0)?;
     let split_committee = largest_split(ReleaseKind::SplitCommittee, 3, 2)?;
+    let wider_panel = measure_shape(
+        PROGRAM,
+        Shape::new(ReleaseKind::SplitCommittee, 2, 5, 3).full(),
+    )?;
     let committee = measure_shape(
         PROGRAM,
-        Shape {
-            kind: ReleaseKind::Committee,
-            recipients: 1,
-            members: MAX_MEMBERS,
-            threshold: MAX_THRESHOLD,
-        },
+        Shape::new(ReleaseKind::Committee, 1, MAX_MEMBERS, MAX_THRESHOLD).full(),
     )?;
     cu_gates(&[
         (format!("fill_attested_split{CU_SUFFIX}"), landed(&split)?),
@@ -80,6 +71,10 @@ fn the_largest_releases_that_fit_stay_within_their_measured_budgets() -> TestRes
         (
             format!("fill_attested_split_committee{CU_SUFFIX}"),
             landed(&split_committee)?,
+        ),
+        (
+            format!("fill_attested_split_committee_five_members{CU_SUFFIX}"),
+            landed(&wider_panel)?,
         ),
     ])
 }
@@ -90,12 +85,7 @@ fn a_held_claim_and_a_refute_at_the_largest_split_stay_within_their_budgets() ->
         let last = n.saturating_sub(1);
         let mut r = release_world_with(
             PROGRAM,
-            Shape {
-                kind: ReleaseKind::Split,
-                recipients: n,
-                members: 0,
-                threshold: 0,
-            },
+            Shape::new(ReleaseKind::Split, n, 0, 0),
             Setup {
                 copied: true,
                 frozen: Some(last),

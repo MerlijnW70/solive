@@ -6,6 +6,8 @@ pub const LIMIT_JUDGE_FEE: u64 = 10_000;
 pub const LIMIT_SPEC: [u8; 32] = [0x6c; 32];
 pub const MAX_COMPUTE_UNITS: u32 = 1_400_000;
 pub const LANDABLE_SPLIT: usize = 4;
+pub const LIMIT_STAKE: u64 = 50_000_000;
+pub const LIMIT_PARTNER_BPS: u16 = 10;
 pub const COMPUTE_BUDGET_ID: Pubkey =
     Pubkey::from_str_const("ComputeBudget111111111111111111111111111111");
 
@@ -42,6 +44,48 @@ pub struct Shape {
     pub recipients: usize,
     pub members: usize,
     pub threshold: u8,
+    pub full: bool,
+}
+
+impl Shape {
+    pub fn new(kind: ReleaseKind, recipients: usize, members: usize, threshold: u8) -> Self {
+        Self {
+            kind,
+            recipients,
+            members,
+            threshold,
+            full: false,
+        }
+    }
+
+    pub fn full(self) -> Self {
+        Self { full: true, ..self }
+    }
+}
+
+pub fn mint_cap_pda(mint: &Pubkey) -> Pubkey {
+    pda(&[intent_engine::state::MINT_CAP_SEED, mint.as_ref()])
+}
+
+pub fn set_mint_cap_ix(admin: &Pubkey, mint: &Pubkey, max_per_order: u64) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::SetMintCap {
+            admin: *admin,
+            payer: *admin,
+            config: config_pda(),
+            mint: *mint,
+            mint_cap: mint_cap_pda(mint),
+            system_program: anchor_lang::system_program::ID,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::SetMintCap {
+            max_per_order,
+            window_cap: max_per_order.saturating_mul(100),
+            window_secs: 3_600,
+            total_limit: 0,
+        },
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,6 +170,8 @@ pub struct Release {
     pub paid_to: Vec<Pubkey>,
     pub fee_to: Pubkey,
     pub judge_to: Pubkey,
+    pub partner_to: Option<Pubkey>,
+    pub holder: Option<Pubkey>,
     pub vault: Pubkey,
     pub derived: Vec<Pubkey>,
 }
@@ -168,7 +214,20 @@ pub fn release_world_with(program: Pubkey, shape: Shape, setup: Setup) -> TestRe
         .map_or((judge.pubkey(), judge.pubkey()), |p| {
             (p.address, p.fee_wallet)
         });
-    let spec = judged_spec(0, LIMIT_ESCROW, &attestor, LIMIT_SPEC, LIMIT_JUDGE_FEE)?;
+    let mut spec = judged_spec(0, LIMIT_ESCROW, &attestor, LIMIT_SPEC, LIMIT_JUDGE_FEE)?;
+    let partner = Pubkey::new_unique();
+    if shape.full {
+        let admin = env.authority.insecure_clone();
+        let cap = set_mint_cap_ix(
+            &admin.pubkey(),
+            &market.input_mint,
+            LIMIT_ESCROW.saturating_mul(10),
+        );
+        env.send(&admin, &[cap], &[])?;
+        env.mint_cap = Some(mint_cap_pda(&market.input_mint));
+        spec.ext = partner_ext(&partner, LIMIT_PARTNER_BPS);
+        env.partner_to = Some(env.create_ata(&partner, &market.input_mint, program)?);
+    }
     env.create_intent(&trader, &market, &spec)?;
     let judge_to = env.create_ata(&fee_wallet, &market.input_mint, program)?;
     env.judge_to = Some(judge_to);
@@ -206,7 +265,23 @@ pub fn release_world_with(program: Pubkey, shape: Shape, setup: Setup) -> TestRe
         None
     };
     let first = coauthors.first().ok_or("no co-author")?.insecure_clone();
+    let holder = if shape.full {
+        let open = open_claims_ix(&owner, &intent, 3_600, LIMIT_STAKE);
+        env.send(&trader.key, &[open], &[])?;
+        env.send(
+            &first,
+            &[claim_job_ix(&first.pubkey(), &intent, &owner, 600)],
+            &[],
+        )?;
+        Some(first.pubkey())
+    } else {
+        None
+    };
     let delivery = env.announce_as(&first, &intent)?;
+    if shape.full {
+        env.claims = Some(claims_pda(&intent));
+        env.stake_to = holder;
+    }
     if let Some(index) = setup.frozen {
         let wallet = coauthors
             .get(index)
@@ -304,7 +379,9 @@ pub fn release_world_with(program: Pubkey, shape: Shape, setup: Setup) -> TestRe
     let derived: Vec<Pubkey> = std::iter::once(env.config()?.fee_recipient)
         .chain(std::iter::once(fee_wallet))
         .chain(wallets.iter().copied().filter(|_| shape.kind.split()))
+        .chain(std::iter::once(partner).filter(|_| shape.full))
         .collect();
+    let partner_to = env.partner_to;
     Ok(Release {
         env,
         shape,
@@ -322,6 +399,8 @@ pub fn release_world_with(program: Pubkey, shape: Shape, setup: Setup) -> TestRe
         paid_to,
         fee_to,
         judge_to,
+        partner_to,
+        holder,
         vault: vault_pda(&intent),
         derived,
     })
@@ -340,7 +419,16 @@ impl Release {
         self.env.lookup_table(&table)
     }
 
-    fn conserved(&self, fee_before: u64, judge_before: u64) -> TestResult {
+    fn partner_balance(&self) -> TestResult<u64> {
+        self.partner_to.map_or(Ok(0), |a| self.env.balance(&a))
+    }
+
+    fn holder_lamports(&self) -> u64 {
+        self.holder.map_or(0, |h| self.env.lamports(&h))
+    }
+
+    fn conserved(&self, before: [u64; 4]) -> TestResult {
+        let [fee_before, judge_before, partner_before, holder_before] = before;
         let paid = self
             .paid_to
             .iter()
@@ -357,9 +445,20 @@ impl Release {
             .balance(&self.judge_to)?
             .checked_sub(judge_before)
             .ok_or("the judge account shrank")?;
+        let partnered = self
+            .partner_balance()?
+            .checked_sub(partner_before)
+            .ok_or("the partner account shrank")?;
+        if (partnered > 0) != self.partner_to.is_some() {
+            return Err(format!("{:?}: the partner got {partnered}", self.shape).into());
+        }
+        let staked = self.holder_lamports().saturating_sub(holder_before);
+        if staked != self.holder.map_or(0, |_| LIMIT_STAKE) {
+            return Err(format!("{:?}: the holder got back {staked}", self.shape).into());
+        }
         let total = paid
             .iter()
-            .chain([fees, judged, held].iter())
+            .chain([fees, judged, partnered, held].iter())
             .try_fold(0u64, |sum, v| sum.checked_add(*v))
             .ok_or("payouts overflow")?;
         if total != LIMIT_ESCROW || judged != LIMIT_JUDGE_FEE {
@@ -394,8 +493,12 @@ impl Release {
         let legacy = legacy_size(&payer, &self.ixs);
         let v0 = v0_size(&payer, &self.ixs, &[])?;
         let tabled = v0_size(&payer, &self.ixs, std::slice::from_ref(&table))?;
-        let fee_before = self.env.balance(&self.fee_to)?;
-        let judge_before = self.env.balance(&self.judge_to)?;
+        let before = [
+            self.env.balance(&self.fee_to)?,
+            self.env.balance(&self.judge_to)?,
+            self.partner_balance()?,
+            self.holder_lamports(),
+        ];
         let key = self.payer.insecure_clone();
         let ixs = self.ixs.clone();
         let sent = if legacy <= PACKET_DATA_SIZE {
@@ -408,7 +511,7 @@ impl Release {
         let landed = match sent {
             Some((form, result)) => {
                 let meta = result.map_err(|e| format!("{:?} refused: {e:?}", self.shape))?;
-                self.conserved(fee_before, judge_before)?;
+                self.conserved(before)?;
                 Some((
                     form,
                     meta.compute_units_consumed.saturating_sub(self.bump_cost()),
@@ -432,7 +535,7 @@ pub fn measure_shape(program: Pubkey, shape: Shape) -> TestResult<Row> {
 
 pub fn render_rows(rows: &[Row]) -> String {
     let mut out = String::from(
-        "| release | recipients | committee | legacy B | v0 B | v0+ALT B | lands as | CU |\n|---|---|---|---|---|---|---|---|\n",
+        "| release | recipients | committee | accounts | legacy B | v0 B | v0+ALT B | lands as | CU |\n|---|---|---|---|---|---|---|---|---|\n",
     );
     for row in rows {
         let s = row.shape;
@@ -447,9 +550,10 @@ pub fn render_rows(rows: &[Row]) -> String {
             None => ("does not fit", "-".to_owned()),
         };
         out.push_str(&format!(
-            "| {} | {} | {committee} | {} | {} | {} | {form} | {cu} |\n",
+            "| {} | {} | {committee} | {} | {} | {} | {} | {form} | {cu} |\n",
             s.kind.name(),
             s.recipients,
+            if s.full { "full" } else { "minimal" },
             row.legacy,
             row.v0,
             row.tabled,

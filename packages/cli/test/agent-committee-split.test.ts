@@ -1,11 +1,10 @@
-import { type Address, generateKeyPairSigner, getAddressEncoder, getBase16Decoder, type KeyPairSigner, lamports, signBytes } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getBase16Decoder, type KeyPairSigner, signBytes } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import type { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { splitFee, splitN } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
-import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { COSIGN_NEEDED, NOT_A_MEMBER, SIGNS_AT_SEND, SINGLE_JUDGED, SPLIT_VOTE_NEXT, VOTE_CHANGED } from "../src/agent/wallet/committee-split.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { bytesOf, call, fresh, type Json, ok } from "./agent-wallet-kit.js";
@@ -13,8 +12,8 @@ import { announced, keyed } from "./announce.js";
 import { balance, funded, h, HOME, transport } from "./harness.js";
 import { approved, UNJUDGED } from "./approved.js";
 import { judgedBy } from "./receipt-kit.js";
+import { lookupTable } from "./lookup-table-kit.js";
 
-const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
 const WEIGHTS = [6_000, 4_000];
 const SHARES = splitN(splitFee(LAMPORTS_PER_SOL / 20n, 5).net, WEIGHTS);
 
@@ -27,16 +26,6 @@ const useKey = (signer: KeyPairSigner): void => {
 const signedOver = async (signer: KeyPairSigner, envelope: string) => getBase16Decoder().decode(new Uint8Array(await signBytes(signer.keyPair.privateKey, bytesOf(envelope))));
 
 const shareLines = (recipients: readonly { wallet: Address; weight: number }[]) => recipients.map((r, i) => `  ${r.wallet}: ${r.weight} bps -> ${formatAmount(SHARES[i] ?? 0n, 9)} of SOL`);
-
-function lookupTable(addresses: readonly Address[], table: Address): void {
-  const header = new Uint8Array(LOOKUP_TABLE_HEADER);
-  const view = new DataView(header.buffer);
-  view.setUint32(0, 1, true);
-  view.setBigUint64(4, 0xffff_ffff_ffff_ffffn, true);
-  header[20] = addresses.length;
-  const data = Uint8Array.from([...header, ...addresses.flatMap((address) => [...getAddressEncoder().encode(address)])]);
-  h.svm.setAccount({ address: table, data, executable: false, lamports: lamports(h.svm.minimumBalanceForRentExemption(BigInt(data.length))), programAddress: ADDRESS_LOOKUP_TABLE_PROGRAM, space: BigInt(data.length) });
-}
 
 describe("the wallet server's committee-judged split releases", () => {
   let client: Client;
@@ -125,7 +114,10 @@ describe("the wallet server's committee-judged split releases", () => {
     const base = { ...s.ballot, votes: [leadVote, peerVote], recipients };
     const preview = await ok(client, "wallet_committee_release", base);
     expect(preview["summary"]).toEqual(expect.arrayContaining([expect.stringMatching(/^Too large: /)]));
-    expect((await call(client, "wallet_committee_release", { ...base, approval: preview["approval"], send: true })).value).toMatchObject({ code: "ReleaseTooLarge" });
+    expect((await call(client, "wallet_committee_release", { ...base, approval: preview["approval"], send: true })).value).toMatchObject({
+      code: "ReleaseTooLarge",
+      hint: expect.stringMatching(/^this 2-co-author committee split builds a \d+-byte transaction, over the 1232-byte limit; whatever committee of up to 8 members .* fits 0 co-authors without a lookup table and 1 co-author with one/),
+    });
     expect(await paidTo(s.worker.address)).toBeLessThan(1n);
     const lookups = preview["lookup_accounts"] as Address[];
     expect(lookups).toContain(s.committee);

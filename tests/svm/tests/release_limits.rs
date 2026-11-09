@@ -8,60 +8,76 @@ use svm_tests::{
     PACKET_DATA_SIZE,
 };
 
-const SPLIT_PANEL: (usize, u8) = (3, 2);
-const SPLIT_COMMITTEE_FITS: usize = 1;
-const SPLIT_COMMITTEE_FITS_WITH_TABLE: usize = 3;
+const SPLIT_PANELS: [(usize, u8); 3] = [(3, 2), (5, 3), (MAX_MEMBERS, MAX_THRESHOLD)];
+const MINIMAL_SPLIT_FITS: usize = 2;
+const MINIMAL_SPLIT_FITS_WITH_TABLE: usize = 4;
+const MINIMAL_PANEL_SPLIT_FITS: usize = 1;
+const MINIMAL_PANEL_SPLIT_FITS_WITH_TABLE: usize = 3;
 const COMMITTEE_FITS_MEMBERS: usize = 5;
+const FULL_COMMITTEE_FITS_MEMBERS: usize = 2;
 
-fn cli_constant(name: &str) -> TestResult<usize> {
+fn cli_constant(file: &str, name: &str) -> TestResult<usize> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../packages/cli/src/agent/wallet/split.ts");
+        .join("../../packages/cli/src/agent/wallet")
+        .join(file);
     let source = std::fs::read_to_string(path)?;
     let prefix = format!("export const {name} = ");
     let value = source
         .lines()
         .find_map(|line| line.strip_prefix(prefix.as_str()))
         .and_then(|rest| rest.strip_suffix(';'))
-        .ok_or_else(|| format!("{name} is not a plain constant in split.ts"))?;
+        .ok_or_else(|| format!("{name} is not a plain constant in {file}"))?;
     Ok(value.parse()?)
-}
-
-fn shape(kind: ReleaseKind, recipients: usize, members: usize, threshold: u8) -> Shape {
-    Shape {
-        kind,
-        recipients,
-        members,
-        threshold,
-    }
 }
 
 fn measured_rows() -> TestResult<Vec<Row>> {
     let program = anchor_spl::token::ID;
-    let mut rows = vec![measure_shape(program, shape(ReleaseKind::Proof, 1, 0, 0))?];
+    let mut shapes = vec![Shape::new(ReleaseKind::Proof, 1, 0, 0)];
     for members in 1..=MAX_MEMBERS {
         let threshold = u8::try_from(members)?.min(MAX_THRESHOLD);
-        rows.push(measure_shape(
-            program,
-            shape(ReleaseKind::Committee, 1, members, threshold),
-        )?);
+        shapes.push(Shape::new(ReleaseKind::Committee, 1, members, threshold));
     }
     for n in 1..=MAX_SPLIT_RECIPIENTS {
-        rows.push(measure_shape(program, shape(ReleaseKind::Split, n, 0, 0))?);
+        shapes.push(Shape::new(ReleaseKind::Split, n, 0, 0));
     }
-    let (members, threshold) = SPLIT_PANEL;
-    for n in 1..=MAX_SPLIT_RECIPIENTS {
-        rows.push(measure_shape(
-            program,
-            shape(ReleaseKind::SplitCommittee, n, members, threshold),
-        )?);
+    for (members, threshold) in SPLIT_PANELS {
+        for n in 1..=MAX_SPLIT_RECIPIENTS {
+            shapes.push(Shape::new(
+                ReleaseKind::SplitCommittee,
+                n,
+                members,
+                threshold,
+            ));
+        }
+    }
+    let mut rows = Vec::new();
+    for shape in shapes {
+        rows.push(measure_shape(program, shape)?);
+        rows.push(measure_shape(program, shape.full())?);
     }
     Ok(rows)
 }
 
-fn largest(rows: &[Row], kind: ReleaseKind, fits: fn(&Row) -> bool) -> usize {
+fn largest(rows: &[Row], pick: impl Fn(&Shape) -> bool, fits: fn(&Row) -> bool) -> usize {
     rows.iter()
-        .filter(|r| r.shape.kind == kind && fits(r))
+        .filter(|r| pick(&r.shape) && fits(r))
         .map(|r| r.shape.recipients)
+        .max()
+        .unwrap_or(0)
+}
+
+fn split(full: bool) -> impl Fn(&Shape) -> bool {
+    move |s| s.kind == ReleaseKind::Split && s.full == full
+}
+
+fn panel(full: bool, members: usize) -> impl Fn(&Shape) -> bool {
+    move |s| s.kind == ReleaseKind::SplitCommittee && s.full == full && s.members == members
+}
+
+fn committee_members(rows: &[Row], full: bool) -> usize {
+    rows.iter()
+        .filter(|r| r.shape.kind == ReleaseKind::Committee && r.shape.full == full && r.fits_bare())
+        .map(|r| r.shape.members)
         .max()
         .unwrap_or(0)
 }
@@ -73,7 +89,7 @@ fn every_release_kind_is_measured_against_the_packet_limit_and_pins_the_cli_spli
     let table = render_rows(&rows);
     writeln!(
         std::io::stdout().lock(),
-        "release size and compute at the {PACKET_DATA_SIZE}-byte packet limit\n{table}"
+        "release size and compute at the {PACKET_DATA_SIZE}-byte packet limit, with the fewest and with every optional account (claims, stake, partner, mint cap)\n{table}"
     )?;
     for row in &rows {
         let fits = row.legacy <= PACKET_DATA_SIZE || row.fits_table();
@@ -88,56 +104,93 @@ fn every_release_kind_is_measured_against_the_packet_limit_and_pins_the_cli_spli
             );
         }
     }
-    for kind in [ReleaseKind::Split, ReleaseKind::SplitCommittee] {
-        let sizes: Vec<&Row> = rows.iter().filter(|r| r.shape.kind == kind).collect();
+    for pair in rows.chunks(2) {
+        let [minimal, full] = pair else {
+            return Err("rows come in pairs".into());
+        };
         assert!(
-            sizes
-                .windows(2)
-                .all(|w| matches!(w, [a, b] if a.tabled < b.tabled && a.v0 < b.v0)),
-            "{kind:?} grows with every co-author"
+            full.v0 > minimal.v0 && full.tabled >= minimal.tabled,
+            "{minimal:?} {full:?}"
         );
     }
+    let ordered = |pick: &dyn Fn(&Shape) -> bool| {
+        let sizes: Vec<&Row> = rows.iter().filter(|r| pick(&r.shape)).collect();
+        sizes
+            .windows(2)
+            .all(|w| matches!(w, [a, b] if a.tabled < b.tabled && a.v0 < b.v0))
+    };
+    for full in [false, true] {
+        assert!(ordered(&split(full)), "splits grow with every co-author");
+        for (members, _) in SPLIT_PANELS {
+            assert!(
+                ordered(&panel(full, members)),
+                "{members}-member splits grow"
+            );
+        }
+    }
     assert_eq!(
-        largest(&rows, ReleaseKind::Split, Row::fits_bare),
-        cli_constant("SPLIT_FITS")?,
-        "SPLIT_FITS matches the largest split without a lookup table\n{table}"
+        largest(&rows, split(true), Row::fits_bare),
+        cli_constant("split.ts", "SPLIT_FITS")?,
+        "SPLIT_FITS is the largest split that fits without a lookup table whatever accounts the job carries\n{table}"
     );
     assert_eq!(
-        largest(&rows, ReleaseKind::Split, Row::fits_table),
-        cli_constant("SPLIT_FITS_WITH_TABLE")?,
-        "SPLIT_FITS_WITH_TABLE matches the largest split with a lookup table\n{table}"
+        largest(&rows, split(true), Row::fits_table),
+        cli_constant("split.ts", "SPLIT_FITS_WITH_TABLE")?,
+        "SPLIT_FITS_WITH_TABLE is the largest split that fits with a lookup table whatever accounts the job carries\n{table}"
     );
     assert_eq!(
-        largest(&rows, ReleaseKind::Split, Row::fits_table),
+        largest(&rows, split(false), Row::fits_bare),
+        MINIMAL_SPLIT_FITS
+    );
+    assert_eq!(
+        largest(&rows, split(false), Row::fits_table),
+        MINIMAL_SPLIT_FITS_WITH_TABLE
+    );
+    assert_eq!(
+        largest(&rows, split(true), Row::fits_table),
         LANDABLE_SPLIT,
         "the split fuzz covers every split that can land\n{table}"
     );
-    assert_eq!(
-        largest(&rows, ReleaseKind::SplitCommittee, Row::fits_bare),
-        SPLIT_COMMITTEE_FITS,
-        "{table}"
-    );
-    assert_eq!(
-        largest(&rows, ReleaseKind::SplitCommittee, Row::fits_table),
-        SPLIT_COMMITTEE_FITS_WITH_TABLE,
-        "{table}"
-    );
-    let committees: Vec<&Row> = rows
-        .iter()
-        .filter(|r| r.shape.kind == ReleaseKind::Committee)
-        .collect();
-    assert_eq!(
-        committees
+    let worst = |fits: fn(&Row) -> bool| {
+        SPLIT_PANELS
             .iter()
-            .filter(|r| r.fits_bare())
-            .map(|r| r.shape.members)
-            .max(),
-        Some(COMMITTEE_FITS_MEMBERS),
+            .map(|(members, _)| largest(&rows, panel(true, *members), fits))
+            .min()
+            .unwrap_or(0)
+    };
+    assert_eq!(
+        worst(Row::fits_bare),
+        cli_constant("committee-split.ts", "COMMITTEE_SPLIT_FITS")?,
+        "COMMITTEE_SPLIT_FITS holds for every committee and every account set\n{table}"
+    );
+    assert_eq!(
+        worst(Row::fits_table),
+        cli_constant("committee-split.ts", "COMMITTEE_SPLIT_FITS_WITH_TABLE")?,
+        "COMMITTEE_SPLIT_FITS_WITH_TABLE holds for every committee and every account set\n{table}"
+    );
+    assert_eq!(
+        largest(&rows, panel(false, 3), Row::fits_bare),
+        MINIMAL_PANEL_SPLIT_FITS
+    );
+    assert_eq!(
+        largest(&rows, panel(false, 3), Row::fits_table),
+        MINIMAL_PANEL_SPLIT_FITS_WITH_TABLE
+    );
+    assert_eq!(
+        committee_members(&rows, false),
+        COMMITTEE_FITS_MEMBERS,
+        "{table}"
+    );
+    assert_eq!(
+        committee_members(&rows, true),
+        FULL_COMMITTEE_FITS_MEMBERS,
         "{table}"
     );
     assert!(
-        committees.iter().all(|r| r.fits_table()),
-        "every committee size releases one payee with a lookup table\n{table}"
+        rows.iter()
+            .filter(|r| r.shape.kind == ReleaseKind::Committee)
+            .all(Row::fits_table),
+        "every committee pays one payee once wallet_committee_release is given a lookup table\n{table}"
     );
     assert!(
         rows.iter()

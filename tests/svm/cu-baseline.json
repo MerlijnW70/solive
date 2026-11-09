@@ -25,12 +25,12 @@
   "update_economics": 3590,
   "revoke_mandate": 4502,
   "close_with_bounty": 14246,
-  "fill_attested_split": 58848,
-  "fill_attested_split_token_2022": 71419,
-  "fill_attested_committee": 39651,
-  "fill_attested_committee_token_2022": 45727,
-  "fill_attested_split_committee": 57862,
-  "fill_attested_split_committee_token_2022": 68363,
+  "fill_attested_split": 70991,
+  "fill_attested_split_token_2022": 85648,
+  "fill_attested_committee": 51787,
+  "fill_attested_committee_token_2022": 59907,
+  "fill_attested_split_committee": 69728,
+  "fill_attested_split_committee_token_2022": 82334,
   "announce_delivery": 27934,
   "announce_delivery_token_2022": 27934,
   "reject_delivery": 17100,
@@ -54,5 +54,7 @@
   "advance": 13724,
   "advance_token_2022": 13724,
   "settle_claims": 12039,
-  "settle_claims_token_2022": 12039
+  "settle_claims_token_2022": 12039,
+  "fill_attested_split_committee_five_members": 65128,
+  "fill_attested_split_committee_five_members_token_2022": 75531
 }

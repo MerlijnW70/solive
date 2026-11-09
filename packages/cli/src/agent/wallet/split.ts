@@ -44,10 +44,15 @@ export async function setupLine(ctx: AgentContext, count: number, tokenProgram: 
   return `Setup: creates ${count} token account(s), paid by ${device ? "the fee payer" : "this wallet"}: ${sol(rent)} of rent each, ${sol(rent * BigInt(count))} in all`;
 }
 
-export const SPLIT_FITS = 2;
+export const SPLIT_FITS = 1;
 export const SPLIT_FITS_WITH_TABLE = 4;
+const coauthors = (count: number): string => (count === 1 ? "1 co-author" : `${count} co-authors`);
+export const fitsHint = (bare: number, tabled: number, whatever: string, withTable: boolean): string =>
+  `whatever ${whatever}, a release at no priority fee fits ${coauthors(bare)} without a lookup table and ${coauthors(tabled)} with one${withTable ? ", so reduce recipients" : ", so pass lookup_table with the preview's lookup_accounts to fit more, or reduce recipients"}`;
+export const overLimit = (what: string, size: number, withTable: boolean): string =>
+  `${what} builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit${withTable ? " even with the lookup table" : ""}`;
 export const splitTooLarge = (size: number, recipients: number, withTable: boolean): string =>
-  `this ${recipients}-co-author split builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit${withTable ? " even with the lookup table" : ""}; a release at no priority fee fits ${SPLIT_FITS} co-authors without a lookup table and ${SPLIT_FITS_WITH_TABLE} with one${withTable ? ", so reduce recipients or pay the rest in a second release" : ", so pass lookup_table with the preview's lookup_accounts to fit more, or reduce recipients"}`;
+  `${overLimit(`this ${recipients}-co-author split`, size, withTable)}; ${fitsHint(SPLIT_FITS, SPLIT_FITS_WITH_TABLE, "claims, partner and mint cap accounts the escrow carries", withTable)}`;
 export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
 export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
 export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
@@ -123,10 +128,16 @@ export async function lookupTablesOf(ctx: AgentContext, table: Address | undefin
 export const sizeOf = async (ctx: AgentContext, instructions: Instruction[], payer: Address, tables: Record<Address, Address[]> | undefined): Promise<number> =>
   transactionSize(ctx.transport, await ctx.transport.budget(instructions, payer, tables), payer, tables);
 
-export async function fitted(ctx: AgentContext, instructions: Instruction[], payer: Address, tables: Record<Address, Address[]> | undefined, recipients: number): Promise<Instruction[]> {
+export async function fitted(
+  ctx: AgentContext,
+  instructions: Instruction[],
+  payer: Address,
+  tables: Record<Address, Address[]> | undefined,
+  tooLarge: (size: number) => string,
+): Promise<Instruction[]> {
   const size = await sizeOf(ctx, instructions, payer, tables);
   if (size > PACKET_DATA_SIZE) {
-    throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, recipients, tables !== undefined));
+    throw new AgentRefusal("ReleaseTooLarge", tooLarge(size));
   }
   return instructions;
 }
@@ -231,7 +242,7 @@ export const walletAttestSplit = define({
       const signatures = await coSignatures(signer, input.recipients, ballot.message);
       const tables = await lookupTablesOf(ctx, input.lookup_table);
       const sends = await capturedSends(ctx, (client) => client.settleSplit({ ...target, judge: signer, signatures, payer }));
-      const instructions = await fitted(ctx, sends.at(-1) ?? [], payer.address, tables, shares.length);
+      const instructions = await fitted(ctx, sends.at(-1) ?? [], payer.address, tables, (size) => splitTooLarge(size, shares.length, tables !== undefined));
       for (const accounts of sends.slice(0, -1)) {
         await execute(ctx.transport, preparedView(await prepare(ctx.transport, accounts, payer.address)), payer);
       }

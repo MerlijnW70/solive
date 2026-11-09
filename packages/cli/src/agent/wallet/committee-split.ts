@@ -30,11 +30,19 @@ import {
   notInSplit,
   paidOutput,
   paidShares,
+  fitsHint,
+  overLimit,
   setupLine,
   shareLines,
   sizeOf,
-  splitTooLarge,
 } from "./split.js";
+
+export const COMMITTEE_SPLIT_FITS = 0;
+export const COMMITTEE_SPLIT_FITS_WITH_TABLE = 1;
+export const committeeSplitTooLarge = (size: number, recipients: number, withTable: boolean): string =>
+  `${overLimit(`this ${recipients}-co-author committee split`, size, withTable)}; ${fitsHint(COMMITTEE_SPLIT_FITS, COMMITTEE_SPLIT_FITS_WITH_TABLE, "committee of up to 8 members and whatever claims, partner and mint cap accounts the escrow carries", withTable)}`;
+export const committeeTooLarge = (size: number, withTable: boolean): string =>
+  `${overLimit("this committee release", size, withTable)}; ${withTable ? "it cannot be sent" : "pass lookup_table with the preview's lookup_accounts to send it"}`;
 
 export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
 
@@ -210,7 +218,7 @@ export async function splitRelease(ctx: AgentContext, input: SplitReleaseArgs, s
       ...setup,
       ...(signFirst ? [SIGN_FIRST, `Signs: only the envelope on the Ledger, which shows digest ${hex(ballot.digest)}; approve on the device only if it shows the same`] : selfSigns ? [SIGNS_AT_SEND] : []),
       ...(setupFirst ? [SETUP_FIRST] : []),
-      ...(size > PACKET_DATA_SIZE ? [`Too large: ${splitTooLarge(size, shares.length, tables !== undefined)}`] : []),
+      ...(size > PACKET_DATA_SIZE ? [`Too large: ${committeeSplitTooLarge(size, shares.length, tables !== undefined)}`] : []),
     ],
   };
   if (signFirst) {
@@ -220,7 +228,7 @@ export async function splitRelease(ctx: AgentContext, input: SplitReleaseArgs, s
     return { ...view, sent: false, cosign: { wallet: signer.address, signature: hex(new Uint8Array(await signer.signBytes(ballot.message))) }, next: SIGN_FIRST };
   }
   if (input.send === true && !setupFirst) {
-    await fitted(ctx, plan?.instructions ?? estimate, signer.address, tables, shares.length);
+    await fitted(ctx, plan?.instructions ?? estimate, signer.address, tables, (bytes) => committeeSplitTooLarge(bytes, shares.length, tables !== undefined));
   }
   if (input.send === true && preview.setup.length > 0 && !device) {
     await ctx.transport.send(plan?.setup ?? preview.setup, signer);

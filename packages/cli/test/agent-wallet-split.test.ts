@@ -17,7 +17,7 @@ import {
 import { loadAnnouncement, loadConfig } from "@intent-engine/client/internal";
 import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { transactionSize } from "../src/agent/prepare.js";
-import { notInSplit, PACKET_DATA_SIZE, RELEASE_CHANGED, SPLIT_FITS, SPLIT_FITS_WITH_TABLE } from "../src/agent/wallet.js";
+import { notInSplit, PACKET_DATA_SIZE, RELEASE_CHANGED, SPLIT_FITS, SPLIT_FITS_WITH_TABLE, splitTooLarge } from "../src/agent/wallet.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { bytesOf, call, fresh, type Json, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
@@ -38,7 +38,7 @@ const lookupsOf = (wire: string): Address[] => {
   return "addressTableLookups" in message ? (message.addressTableLookups ?? []).map((lookup) => lookup.lookupTableAddress) : [];
 };
 
-async function releaseSize(recipients: number, withTable: boolean): Promise<number> {
+async function releaseSize(recipients: number, withTable: boolean, everyAccount = true): Promise<number> {
   const judge = await generateKeyPairSigner();
   const signers = await Promise.all(Array.from({ length: recipients }, () => generateKeyPairSigner()));
   const wallets = signers.map((s) => s.address);
@@ -55,6 +55,9 @@ async function releaseSize(recipients: number, withTable: boolean): Promise<numb
     weights,
     feeRecipient,
     judge: judge.address,
+    ...(everyAccount
+      ? { partner: (await generateKeyPairSigner()).address, claims: (await generateKeyPairSigner()).address, stakeTo: wallets[0], capped: 1n }
+      : {}),
     announcement: (await generateKeyPairSigner()).address,
     opening: { delivered: new Uint8Array(32), salt: new Uint8Array(16) },
     amountIn: LAMPORTS_PER_SOL,
@@ -180,7 +183,10 @@ describe("the wallet server's split releases", () => {
     expect(await ok(client, "wallet_attest_split", { ...UNJUDGED, owner, nonce, recipients: including, delivered_sha256: work })).toMatchObject({ sent: false, delivered_sha256: work });
   });
 
-  it("a two co-author split release fits without a lookup table and four fit with one", async () => {
+  it("whatever accounts the escrow carries one co-author fits without a lookup table and four fit with one, and a plain two co-author split still sends", async () => {
+    expect(splitTooLarge(1_320, 2, false)).toContain("fits 1 co-author without a lookup table and 4 co-authors with one");
+    expect(splitTooLarge(1_355, 5, true)).toMatch(/even with the lookup table; .*, so reduce recipients$/);
+    expect(await releaseSize(2, false, false)).toBeLessThanOrEqual(PACKET_DATA_SIZE);
     expect(await releaseSize(SPLIT_FITS, false)).toBeLessThanOrEqual(PACKET_DATA_SIZE);
     expect(await releaseSize(SPLIT_FITS + 1, false)).toBeGreaterThan(PACKET_DATA_SIZE);
     expect(await releaseSize(SPLIT_FITS_WITH_TABLE, true)).toBeLessThanOrEqual(PACKET_DATA_SIZE);

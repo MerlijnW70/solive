@@ -35,7 +35,7 @@ fn every_baseline_entry_is_a_positive_unit_count() -> TestResult {
     let table: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(cu_baseline_path())?)?;
     let entries = table.as_object().ok_or("baseline is not an object")?;
-    assert_eq!(entries.len(), 56);
+    assert_eq!(entries.len(), 58);
     for (name, value) in entries {
         assert!(value.as_u64().is_some_and(|v| v > 0), "{name}");
     }
