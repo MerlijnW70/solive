@@ -17,6 +17,7 @@ import { keyedProfile } from "./encryption-job.js";
 import { balance, creation, FEE_BPS, funded, h, NOW, runtime, transport, world } from "./harness.js";
 import { device, deviceKey, found, MESSAGE, messageThen, SIGN, transactionThen } from "./ledger-device.js";
 import { airdropped } from "./airdrop.js";
+import { lookupTable } from "./lookup-table-kit.js";
 import { UNJUDGED } from "./approved.js";
 import { judgedBy } from "./receipt-kit.js";
 
@@ -142,6 +143,58 @@ describe("a Ledger member's committee split over the wallet server", () => {
     const held = h.svm.getAccount(intent);
     expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
     expect([await paid(worker.address), await paid(key.address)]).toEqual(splitN(splitFees(PAY, FEE_BPS, 0, 0).net, WEIGHTS));
+  });
+
+  it("refuses before the setup a split release too large even without its setup, and sends both once a lookup table makes it fit", async () => {
+    const w = await world();
+    preset(NATIVE_MINT);
+    preset(DEVNET_TEST_MINT);
+    const key = await deviceKey();
+    airdropped(h.svm, key.address, lamports(10_000_000_000n));
+    const profile = await keyedProfile(key, KEY_FILE);
+    const worker: KeyPairSigner = await keyed();
+    const others = await Promise.all(Array.from({ length: 7 }, () => generateKeyPairSigner()));
+    const client0 = createClient({ url: "http://cluster", transport });
+    const { committee } = await client0.createCommittee({ members: sortMembers([key.address, ...others.map((o) => o.address)]), threshold: 1, feeWallet: key.address, payer: await funded() });
+    const params = { kind: Kind.AttestedResult, amountIn: PAY, minResult: 1n, maxResult: 1n, attestor: committee, specHash: new Uint8Array(32).fill(9), judgeFee: 0n } as const;
+    const { intent } = await client0.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
+    await announced(intent, worker, WORK);
+    h.engineLog = [creation(intent), profile.entry];
+    h.env[ENV_KEYPAIR] = PATH;
+    const ledger = device(key, [...found(LEVELS, key), ...messageThen(), ...transactionThen(), ...transactionThen()]);
+    const client = await served(ledger.open);
+    const recipients = [
+      { wallet: worker.address, weight: WEIGHTS[0] as number },
+      { wallet: key.address, weight: WEIGHTS[1] as number },
+    ];
+    const ballot = { owner: w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK, recipients };
+    const shown = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const voted = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shown["approval"], send: true });
+    const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown["envelope"])));
+    const signature = Buffer.from(await signBytes(worker.keyPair.privateKey, envelope)).toString("hex");
+    const release = { ...ballot, votes: [voted["vote"]], recipients: [{ ...recipients[0], signature }, recipients[1]] };
+    const paid = async (owner: Address) => balance(await findAssociatedTokenAddress({ owner, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }));
+
+    const preview = await ok(client, "wallet_committee_release", release);
+    expect(preview["summary"]).toEqual(expect.arrayContaining([expect.stringMatching(/^Too large: this 2-co-author committee split builds a \d+-byte transaction/)]));
+    expect(preview).not.toHaveProperty("message_hash");
+    const wires = h.wires.length;
+    expect(await refused(client, "wallet_committee_release", { ...release, approval: preview["approval"], send: true })).toMatchObject({ code: "ReleaseTooLarge" });
+    expect(h.wires.length).toBe(wires);
+    expect(await paid(worker.address)).toBe(-1n);
+    const table = (await generateKeyPairSigner()).address;
+    lookupTable(preview["lookup_accounts"] as Address[], table);
+    const tabled = { ...release, lookup_table: table };
+    const setupPreview = await ok(client, "wallet_committee_release", tabled);
+    expect(setupPreview["summary"]).toContain(SETUP_FIRST);
+    expect(setupPreview["summary"]).not.toEqual(expect.arrayContaining([expect.stringMatching(/^Too large: /)]));
+    expect(await ok(client, "wallet_committee_release", { ...tabled, approval: setupPreview["approval"], send: true })).toMatchObject({ sent: true, next: SETUP_FIRST });
+    const releasePreview = await ok(client, "wallet_committee_release", tabled);
+    expect(await ok(client, "wallet_committee_release", { ...tabled, approval: releasePreview["approval"], send: true })).toMatchObject({ sent: true });
+    ledger.store.ensureQueueEmpty();
+    const held = h.svm.getAccount(intent);
+    expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
+    expect(await paid(worker.address)).toBeGreaterThan(0n);
   });
 
   it("signs nothing in a preview when the Ledger releaser is a co-author that did not vote, then signs its share alone, the setup, and the release", async () => {

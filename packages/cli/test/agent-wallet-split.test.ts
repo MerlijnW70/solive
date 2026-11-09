@@ -129,7 +129,10 @@ describe("the wallet server's split releases", () => {
     const missing = signed.map((s) => ({ wallet: s.wallet, weight: s.weight }));
     expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients: missing, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "recipients.0.signature" }] });
     const absentTable = (await generateKeyPairSigner()).address;
-    expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients: signed, lookup_table: absentTable, approval: shown["approval"], send: true })).value).toMatchObject({ code: "NotFound" });
+    expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients: signed, lookup_table: absentTable, approval: shown["approval"], send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    const absent = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients, lookup_table: absentTable });
+    expect(absent["approval"]).not.toBe(shown["approval"]);
+    expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients: signed, lookup_table: absentTable, approval: absent["approval"], send: true })).value).toMatchObject({ code: "NotFound" });
     const done = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...base, recipients: signed, approval: shown["approval"], send: true });
     expect(done).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(await paidTo(coauthors[0]!.address)).toBe(payout[0]!);
@@ -230,9 +233,14 @@ describe("the wallet server's split releases", () => {
     const data = Uint8Array.from([...header, ...split.lookupAccounts.flatMap((address) => [...getAddressEncoder().encode(address)])]);
     h.svm.setAccount({ address: table, data, executable: false, lamports: lamports(h.svm.minimumBalanceForRentExemption(BigInt(data.length))), programAddress: ADDRESS_LOOKUP_TABLE_PROGRAM, space: BigInt(data.length) });
     expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...split.release })).value).toMatchObject({ code: "ReleaseTooLarge" });
-    h.packetLimit = true;
+    expect((await call(client, "wallet_attest_split", { ...UNJUDGED, ...split.release, lookup_table: table })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    const { approval: _bare, send: _send, ...terms } = split.release;
+    const tabled = await ok(client, "wallet_attest_split", { ...UNJUDGED, ...terms, lookup_table: table });
+    expect(tabled["approval"]).not.toBe(split.release.approval);
+    const other = (await generateKeyPairSigner()).address;
+    expect((await ok(client, "wallet_attest_split", { ...UNJUDGED, ...terms, lookup_table: other }))["approval"]).not.toBe(tabled["approval"]);
     h.simulated.length = 0;
-    expect(await ok(client, "wallet_attest_split", { ...UNJUDGED, ...split.release, lookup_table: table })).toMatchObject({ sent: true, delivered_sha256: work });
+    expect(await ok(client, "wallet_attest_split", { ...UNJUDGED, ...terms, lookup_table: table, approval: tabled["approval"], send: true })).toMatchObject({ sent: true, delivered_sha256: work });
     const releases = h.simulated.filter((wire) => lookupsOf(wire).length > 0);
     expect(releases.length).toBeGreaterThanOrEqual(1);
     expect(releases.every((wire) => lookupsOf(wire).every((address) => address === table))).toBe(true);

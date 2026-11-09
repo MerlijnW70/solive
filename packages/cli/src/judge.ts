@@ -286,6 +286,10 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
 }
 
+export const tooLargeRefused = (error: unknown): never => {
+  throw isSdkError(error, "not-settleable") && error.reason === "too-large" ? new JudgeRefused(`ReleaseTooLarge: ${error.message}`) : error;
+};
+
 type Release = { address: Address; announcement: Address; result: bigint; sha256: string; salt: string; feePayer: TransactionPartialSigner | undefined };
 
 function sendRelease(command: JudgeCommand, transport: Transport, signer: MessageSigner, signals: HeldSignals, release: Release): Promise<Signature> {
@@ -328,6 +332,7 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
     const target = { intent: { owner: command.owner, nonce: command.nonce }, announcement: release.announcement, opening: { sha256: release.sha256, salt: release.salt }, result: release.result };
     client.plan
       .settleProof({ ...target, judge, ...(release.feePayer === undefined ? {} : { payer: sender }) })
+      .catch(tooLargeRefused)
       .then(async (plan) => {
         if (plan.setup.length > 0) {
           await client.send(plan.setup, sender);

@@ -23,6 +23,7 @@ import {
   type FeeRole,
   loadConfig,
   mintOf,
+  PACKET_DATA_SIZE,
   releaseClaims,
   type ReceiveRefusal,
   type ReleasePreview,
@@ -49,6 +50,8 @@ import { checkInvited, InviteRefused } from "../../invites.js";
 import { confirmedRelease, DELIVERED_NEEDED, notAttestor } from "./delivery.js";
 import { ReceiptRefused } from "../../judge-receipt.js";
 import { type Authority, authorizeEscrow, boundApproval, OVERRIDE_INPUT, recorded, type Target } from "../../receipt-gate.js";
+import { execute } from "../../flows.js";
+import { attestTooLarge, fitted, packedRelease, type Parts, RELEASE_TAIL, SETUP_SEPARATE, STAND_IN, standIn } from "./release-size.js";
 
 export const RESULT_MEANS =
   "the plain count the attestor signs, between the escrow's min_result and max_result; it does not change the amount paid. On a proof escrow it records that the work passed the spec, and is 1 unless the escrow allows a range";
@@ -114,6 +117,9 @@ export function settleRefused(error: unknown): never {
   }
   if (isSdkError(error, "payee-moved")) {
     throw new InvalidInput([{ path: "delivered_sha256", message: PAYEE_MOVED }]);
+  }
+  if (isSdkError(error, "not-settleable") && error.reason === "too-large") {
+    throw new AgentRefusal("ReleaseTooLarge", error.message);
   }
   if (isSdkError(error, "not-settleable")) {
     throw new AgentRefusal("KindMismatch", error.message);
@@ -310,11 +316,15 @@ export const walletAttest = define({
     }
     const { amountIn, maxFeeBps, setup } = release;
     let message: Uint8Array;
-    let instructions: () => Promise<Instruction[]>;
+    let parts: (signs: boolean) => Promise<Parts>;
     if (proof !== undefined) {
       await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: proof.delivered, payees: [payTo], keypair: await walletOpeners(ctx) });
       message = (await createClient({ url: ctx.url ?? "", transport: ctx.transport }).proofBallot(proof.target).catch(settleRefused)).message;
-      instructions = () => capturedSettle(ctx, (client) => client.settleProof({ judge: signer, payer, ...proof.target }));
+      parts = async (signs) => {
+        const judge = signs ? signer : Object.freeze({ ...signer, signMessages: standIn(signer.address).signMessages });
+        const flat = await capturedSettle(ctx, (client) => client.settleProof({ judge, payer, ...proof.target }));
+        return { setup: flat.slice(0, -RELEASE_TAIL), release: flat.slice(-RELEASE_TAIL) };
+      };
     } else {
       const fields = { domain: Uint8Array.from(config.domain), intent, payee: payee.account, amountIn, result, filled: held.filled, revision: held.revision, maxFeeBps };
       message = await attestedFillMessage(signer.address, fields);
@@ -333,13 +343,25 @@ export const walletAttest = define({
         capped: held.capped,
       });
       const signed = message;
-      instructions = async () => [...setup, buildEd25519Instruction({ publicKey: signer.address, signature: await signer.signBytes(signed), message: signed }), settle];
+      parts = async (signs) => ({
+        setup,
+        release: [buildEd25519Instruction({ publicKey: signer.address, signature: signs ? await signer.signBytes(signed) : STAND_IN, message: signed }), settle],
+      });
     }
     const approval = authority === undefined ? approvalOf(message) : boundApproval(approvalOf(message), authority);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
-    const prepared = input.send === true ? preparedView(await prepare(ctx.transport, await instructions(), payer.address)) : undefined;
+    const shape = await packedRelease(ctx, payer.address, await parts(false), undefined, false);
+    let prepared;
+    if (input.send === true) {
+      const sends = await packedRelease(ctx, payer.address, await parts(true));
+      const instructions = await fitted(ctx, sends.instructions, payer.address, undefined, attestTooLarge);
+      if (sends.setup.length > 0) {
+        await execute(ctx.transport, preparedView(await prepare(ctx.transport, sends.setup, payer.address)), payer);
+      }
+      prepared = preparedView(await prepare(ctx.transport, instructions, payer.address));
+    }
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const paid = formatAmount(payee.amount, token.decimals);
     const paidBy = `${device ? "the fee payer" : "this wallet"}: ${setup.length === 0 ? "" : sol(await tokenAccountRent(ctx.transport, token.tokenProgram))} of rent`;
@@ -369,6 +391,8 @@ export const walletAttest = define({
         ...(created("protocol") ? [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`] : []),
         ...(created("partner") ? [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by ${paidBy}`] : []),
         ...(created("judge") ? [`Setup: creates this wallet's ${name} account for the judge fee, paid by ${paidBy}`] : []),
+        ...(shape.setup.length === 0 ? [] : [SETUP_SEPARATE]),
+        ...(shape.size > PACKET_DATA_SIZE ? [`Too large: ${attestTooLarge(shape.size)}`] : []),
       ],
       warnings: settlementWarnings(params),
       prepared,

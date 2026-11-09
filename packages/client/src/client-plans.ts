@@ -10,7 +10,10 @@ import { claimHeldPlan } from "./held-claim.js";
 import { collectPlan, requestCancelPlan } from "./fair-close.js";
 import { rejectPlans } from "./fair-reject.js";
 import type { Client, ClientContext, ClientPlans } from "./client-types.js";
-import { planOf, type Sends, submit, submitted } from "./plan.js";
+import { type Plan, planOf, type Sends, submit, submitted } from "./plan.js";
+import { PACKET_DATA_SIZE } from "./budget.js";
+import { NotSettleable } from "./client-errors.js";
+import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { BOOK_BATCH, batched, type ReclaimBook } from "./reclaim-books.js";
 import { feedbackInstructions } from "./reputation.js";
 
@@ -65,7 +68,17 @@ export type PlanWrites = Pick<
   | "collect"
 >;
 
-export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
+export const releaseTooLarge = (bytes: number): string =>
+  `builds a ${bytes}-byte release transaction, over the ${PACKET_DATA_SIZE}-byte packet limit; send it through an address lookup table holding its accounts; nothing was sent`;
+
+export function planWrites(send: Sends, plan: ClientPlans, bytes: ClientContext["bytes"]): PlanWrites {
+  const fitting = async <T extends Plan>(intent: IntentRef, planned: T, payer: Address): Promise<T> => {
+    const size = await bytes(planned.instructions, payer);
+    if (size > PACKET_DATA_SIZE) {
+      throw new NotSettleable(await intentAddress(intent), "too-large", releaseTooLarge(size));
+    }
+    return planned;
+  };
   return {
     createIntent: async (input) => {
       const planned = await plan.createIntent(input);
@@ -76,8 +89,14 @@ export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
     expire: async (cranker, intent) => submit(send, await plan.expire(cranker, intent), cranker),
     close: async (cranker, intent) => submit(send, await plan.close(cranker, intent), cranker),
     settleProof: async (input) => submit(send, await plan.settleProof(input), input.payer ?? input.judge),
-    settleCommittee: async (input) => submit(send, await plan.settleCommittee(input), input.payer ?? input.solver),
-    settleSplit: async (input) => submit(send, await plan.settleSplit(input), splitPayer(input)),
+    settleCommittee: async (input) => {
+      const by = input.payer ?? input.solver;
+      return submit(send, await fitting(input.intent, await plan.settleCommittee(input), by.address), by);
+    },
+    settleSplit: async (input) => {
+      const by = splitPayer(input);
+      return submit(send, await fitting(input.intent, await plan.settleSplit(input), by.address), by);
+    },
     claimHeld: async (input) => submit(send, await plan.claimHeld(input), input.payer ?? input.wallet),
     refute: async (input) => {
       const planned = await plan.refute(input);

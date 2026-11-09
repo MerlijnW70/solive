@@ -2,7 +2,7 @@ import { type Address, createDefaultRpcTransport, createSolanaRpc, createSolanaR
 import { InvalidInput, isSdkError } from "@intent-engine/core";
 import { readIntentAccounts } from "@intent-engine/core/internal";
 import { chainTime, loadConfig, loadUser, mintOf } from "./accounts.js";
-import { budgeted, simulated } from "./budget.js";
+import { budgeted, budgetShape, simulated, transactionBytes } from "./budget.js";
 import { nonceAfter } from "./client-create.js";
 import { clientPlans, planWrites } from "./client-plans.js";
 import { activityOf, escrowTermsOf } from "./client-activity.js";
@@ -133,6 +133,7 @@ export function createClient(options: ClientOptions): Client {
   const config = async () => (await loadConfig(transport)).config;
   const send = async (instructions: readonly Instruction[], signer: TransactionSigner) =>
     transport.send(await budgeted(transport, priority, instructions, signer.address), signer);
+  const bytes = async (instructions: readonly Instruction[], feePayer: Address) => transactionBytes(transport, budgetShape(priority, instructions), feePayer);
 
   const mints = new Map<Address, Promise<Mint>>();
   const mint = (address: Address) => {
@@ -146,7 +147,7 @@ export function createClient(options: ClientOptions): Client {
     return loading;
   };
 
-  const context = { transport, send, mint, config };
+  const context = { transport, send, bytes, mint, config };
   const plan = clientPlans(context);
   const { history, fillOf, balances } = clientReads(context);
   const proofBallot = proofBallotOf(context);
@@ -212,6 +213,6 @@ export function createClient(options: ClientOptions): Client {
     heldShares: (wallet, options) => heldSharesOf(transport, wallet, options),
     cancelState: (ref) => cancelState(transport, ref),
     rejectBallot,
-    ...planWrites(send, plan),
+    ...planWrites(send, plan, bytes),
   };
 }

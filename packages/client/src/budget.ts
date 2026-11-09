@@ -116,6 +116,24 @@ export async function budgeted(
   return [...instructions, computeUnitLimit(consumed === null ? MAX_COMPUTE_UNITS : headroom(consumed)), ...head];
 }
 
+export function budgetShape(priority: Priority, instructions: readonly Instruction[]): Instruction[] {
+  if (instructions.some((ix) => ix.programAddress === COMPUTE_BUDGET_ADDRESS)) {
+    return [...instructions];
+  }
+  const priced = priority === "auto" || priority > 0n;
+  return [...instructions, computeUnitLimit(MAX_COMPUTE_UNITS), ...(priced ? [computeUnitPrice(priority === "auto" ? AUTO_PRICE_CAP : priority)] : [])];
+}
+
+export type Packed = { setup: Instruction[]; instructions: Instruction[] };
+
+export async function packed(size: (instructions: readonly Instruction[]) => Promise<number>, setup: readonly Instruction[], release: readonly Instruction[]): Promise<Packed> {
+  const folded = [...setup, ...release];
+  if (setup.length === 0 || (await size(folded)) <= PACKET_DATA_SIZE) {
+    return { setup: [], instructions: folded };
+  }
+  return { setup: [...setup], instructions: [...release] };
+}
+
 export function withPriority(inner: Transport, priority: Priority): Transport {
   const budget = (instructions: readonly Instruction[], feePayer: Address, tables?: LookupTables) =>
     budgeted(inner, priority, instructions, feePayer, tables);

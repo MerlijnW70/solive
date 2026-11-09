@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import type { Address, Instruction } from "@solana/kit";
 import {
   attestedDeliveryFields,
   attestedDeliveryPreimage,
@@ -11,6 +11,7 @@ import {
   signEd25519Instruction,
   verifyCommitteeVote,
 } from "@intent-engine/core/internal";
+import { packed, PACKET_DATA_SIZE } from "./budget.js";
 import { loadCommittee, quorumOf } from "./client-committee.js";
 import { NotSettleable, VoteRejected } from "./client-errors.js";
 import type {
@@ -27,6 +28,9 @@ import { planRelease, type ReleaseTarget } from "./release-plan.js";
 
 const digestOf = async (bytes: Uint8Array): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()));
 
+export const proofTooLarge = (bytes: number): string =>
+  `builds a ${bytes}-byte release transaction, over the ${PACKET_DATA_SIZE}-byte packet limit even with its token account setup sent first in a transaction of its own; nothing was sent`;
+
 export function proofSettlement(context: ClientContext) {
   return async (input: SettleProofInput): Promise<Plan> => {
     const { judge } = input;
@@ -39,7 +43,13 @@ export function proofSettlement(context: ClientContext) {
     });
     const message = await attestedProofMessage(judge.address, plan.proof);
     const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: payer });
-    return planOf({ payer: payer.address, instructions: [...plan.setup, await signEd25519Instruction(judge, message), settle] });
+    const size = (instructions: readonly Instruction[]) => context.bytes(instructions, payer.address);
+    const parts = await packed(size, plan.setup, [await signEd25519Instruction(judge, message), settle]);
+    const bytes = await size(parts.instructions);
+    if (bytes > PACKET_DATA_SIZE) {
+      throw new NotSettleable(plan.intent, "too-large", proofTooLarge(bytes));
+    }
+    return planOf({ payer: payer.address, ...parts });
   };
 }
 

@@ -2,6 +2,7 @@ import { type Address, getBase16Decoder, getBase16Encoder, type Instruction } fr
 import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, settlementWarnings } from "@intent-engine/core/internal";
 import { decodeLookupTable } from "@intent-engine/solver";
+import { createClient } from "@intent-engine/client/node";
 import { type CoSignature, mintOf, PACKET_DATA_SIZE, type ReleasePreview, releaseReads, type SplitShare, splitPreview } from "@intent-engine/client/internal";
 import { execute } from "../../flows.js";
 import { TOKEN_NAMES } from "../../tokens.js";
@@ -14,13 +15,13 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
-import { prepare, transactionSize } from "../prepare.js";
+import { prepare } from "../prepare.js";
+import { fitted, sizeOf } from "./release-size.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners, type WalletSigner } from "./guard.js";
 import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
 import {
   approvalOf,
   attestedEscrow,
-  capturedSends,
   claimsOfRelease,
   DEVICE_RELEASE,
   feeFigures,
@@ -43,6 +44,8 @@ export async function setupLine(ctx: AgentContext, count: number, tokenProgram: 
   const rent = await tokenAccountRent(ctx.transport, tokenProgram);
   return `Setup: creates ${count} token account(s), paid by ${device ? "the fee payer" : "this wallet"}: ${sol(rent)} of rent each, ${sol(rent * BigInt(count))} in all`;
 }
+
+export { fitted, sizeOf } from "./release-size.js";
 
 export const SPLIT_FITS = 1;
 export const SPLIT_FITS_WITH_TABLE = 4;
@@ -123,23 +126,6 @@ export async function lookupTablesOf(ctx: AgentContext, table: Address | undefin
     throw new AgentRefusal("NotFound", `no lookup table ${table} on this cluster`);
   }
   return { [table]: decodeLookupTable(view.data) };
-}
-
-export const sizeOf = async (ctx: AgentContext, instructions: Instruction[], payer: Address, tables: Record<Address, Address[]> | undefined): Promise<number> =>
-  transactionSize(ctx.transport, await ctx.transport.budget(instructions, payer, tables), payer, tables);
-
-export async function fitted(
-  ctx: AgentContext,
-  instructions: Instruction[],
-  payer: Address,
-  tables: Record<Address, Address[]> | undefined,
-  tooLarge: (size: number) => string,
-): Promise<Instruction[]> {
-  const size = await sizeOf(ctx, instructions, payer, tables);
-  if (size > PACKET_DATA_SIZE) {
-    throw new AgentRefusal("ReleaseTooLarge", tooLarge(size));
-  }
-  return instructions;
 }
 
 export function lookupAccountsOf(settle: Instruction, tokenProgram: Address, payer: Address): Address[] {
@@ -232,7 +218,7 @@ export const walletAttestSplit = define({
     const { ballot, preview: release, settle } = await splitPreview(releaseReads(ctx.transport), target, payer).catch(settleRefused);
     const token = await mintOf(ctx.transport, held.inputMint);
     const digestHex = getBase16Decoder().decode(ballot.digest).toLowerCase();
-    const approval = boundApproval(approvalOf(ballot.message), authority);
+    const approval = boundApproval(approvalOf(input.lookup_table === undefined ? ballot.message : Uint8Array.from([...ballot.message, ...new TextEncoder().encode(input.lookup_table)])), authority);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
@@ -241,10 +227,10 @@ export const walletAttestSplit = define({
     if (input.send === true) {
       const signatures = await coSignatures(signer, input.recipients, ballot.message);
       const tables = await lookupTablesOf(ctx, input.lookup_table);
-      const sends = await capturedSends(ctx, (client) => client.settleSplit({ ...target, judge: signer, signatures, payer }));
-      const instructions = await fitted(ctx, sends.at(-1) ?? [], payer.address, tables, (size) => splitTooLarge(size, shares.length, tables !== undefined));
-      for (const accounts of sends.slice(0, -1)) {
-        await execute(ctx.transport, preparedView(await prepare(ctx.transport, accounts, payer.address)), payer);
+      const plan = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).plan.settleSplit({ ...target, judge: signer, signatures, payer }).catch(settleRefused);
+      const instructions = await fitted(ctx, plan.instructions, payer.address, tables, (size) => splitTooLarge(size, shares.length, tables !== undefined));
+      if (plan.setup.length > 0) {
+        await execute(ctx.transport, preparedView(await prepare(ctx.transport, plan.setup, payer.address)), payer);
       }
       prepared = preparedView(await prepare(ctx.transport, instructions, payer.address, tables));
     }

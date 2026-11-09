@@ -24,6 +24,7 @@ import { creation, funded, h, NOW, runtime, transport, world } from "./harness.j
 import { device, deviceKey, found, type Key, messageThen, SIGN, TransportError, transactionThen } from "./ledger-device.js";
 import { paddedTransport } from "./pad-budget.js";
 import { airdropped } from "./airdrop.js";
+import { attestTooLarge } from "../src/agent/wallet/release-size.js";
 import { UNJUDGED } from "./approved.js";
 
 type Json = Record<string, unknown>;
@@ -220,6 +221,19 @@ describe("a Ledger wallet's split release size", () => {
     expect(sent.value).toMatchObject({ sent: true });
     expect(h.wires).toHaveLength(2);
     expect(Buffer.from(h.wires.at(-1) as string, "base64")).toHaveLength(PACKET_DATA_SIZE);
+  });
+
+  it("refuses a wallet_attest release its budget pushes over the packet, before it sends the setup or anything else", async () => {
+    const e = await escrow();
+    const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
+    const client = await walletServer(paddedTransport({ size: 1_300 }, engineIn), ledger.open, e.payer);
+    const release = { ...UNJUDGED, owner: e.owner, nonce: "0", delivered_sha256: WORK };
+    const shown = await call(client, "wallet_attest", release);
+    expect(shown.error, JSON.stringify(shown.value)).toBe(false);
+    h.wires.length = 0;
+    const refused = await call(client, "wallet_attest", { ...release, approval: shown.value["approval"], send: true });
+    expect(refused).toMatchObject({ error: true, value: { code: "ReleaseTooLarge", hint: attestTooLarge(1_300) } });
+    expect(h.wires).toEqual([]);
   });
 
   it("refuses a release over the packet, naming the lookup table it was sent without", async () => {

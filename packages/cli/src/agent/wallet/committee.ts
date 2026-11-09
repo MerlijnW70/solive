@@ -20,6 +20,7 @@ import { DEVICE_DIGEST, invitedPayees, NEEDS_RECEIPT, RELEASE_CHANGED, settleRef
 import { boundApproval, recorded } from "../../receipt-gate.js";
 import { intentAt, mintOf, PACKET_DATA_SIZE } from "@intent-engine/client/internal";
 import { coauthor, fitted, lookupAccountsOf, lookupInput, lookupOutput, lookupTablesOf, share, sizeOf } from "./split.js";
+import { packedRelease } from "./release-size.js";
 import {
   type BallotArgs,
   committeeTooLarge,
@@ -27,6 +28,7 @@ import {
   memberOnly,
   NOT_A_MEMBER,
   releaseApproval,
+  SETUP_FIRST,
   SPLIT_RECIPIENTS,
   splitOutput,
   splitRelease,
@@ -202,18 +204,19 @@ export const walletCommitteeRelease = define({
       return settleRefused(error);
     }
     const device = signer.device !== undefined;
-    const setup = await setupLines(ctx, release.setup, signer.address, device);
+    const tables = await lookupTablesOf(ctx, input.lookup_table);
+    const sends = device
+      ? await packedRelease(ctx, signer.address, { setup: release.setup, release: release.instructions }, tables)
+      : { setup: release.setup, instructions: release.instructions, size: await sizeOf(ctx, release.instructions, signer.address, tables) };
+    const setupFirst = device && sends.setup.length > 0;
+    const { instructions, size } = sends;
+    const setup = await setupLines(ctx, release.setup, signer.address, device && !setupFirst);
     const approval = releaseApproval(ballot.digest, input.lookup_table === undefined ? setup : [...setup, input.lookup_table]);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
-    const tables = await lookupTablesOf(ctx, input.lookup_table);
-    const instructions = device ? [...release.setup, ...release.instructions] : release.instructions;
-    const size = await sizeOf(ctx, instructions, signer.address, tables);
     const tooLarge = (bytes: number) => committeeTooLarge(bytes, tables !== undefined);
-    if (input.send === true) {
-      await fitted(ctx, instructions, signer.address, tables, tooLarge);
-    }
+    const budgeted = input.send === true ? await fitted(ctx, instructions, signer.address, tables, tooLarge) : instructions;
     if (input.send === true && release.setup.length > 0 && !device) {
       await ctx.transport.send(release.setup, signer);
     }
@@ -221,7 +224,8 @@ export const walletCommitteeRelease = define({
     const held = await intentAt(ctx.transport, release.intent);
     const token = held === null ? null : await mintOf(ctx.transport, held.inputMint);
     const ready = size <= PACKET_DATA_SIZE;
-    const prepared = ready && (input.send === true || device) ? preparedView(await prepare(ctx.transport, instructions, signer.address, tables)) : undefined;
+    const piece = setupFirst ? release.setup : budgeted;
+    const prepared = ready && (input.send === true || device) ? preparedView(await prepare(ctx.transport, piece, signer.address, setupFirst ? undefined : tables)) : undefined;
     const view = {
       intent: release.intent,
       committee: release.committee.address,
@@ -237,13 +241,14 @@ export const walletCommitteeRelease = define({
         `Signed by: ${release.voters.length} of its members, ${release.voters.join(", ")}`,
         `Pays the fee: this server's wallet ${signer.address}`,
         ...setup,
+        ...(setupFirst ? [SETUP_FIRST] : []),
         ...(ready ? [] : [`Too large: ${tooLarge(size)}`]),
       ],
       prepared,
     };
     return sent(ctx, signer, view, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: `release sent; ${tool("wallet_feedback")} to rate if you own it`,
+      done: setupFirst ? SETUP_FIRST : `release sent; ${tool("wallet_feedback")} to rate if you own it`,
     });
   },
 });

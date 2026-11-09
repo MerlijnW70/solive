@@ -26,7 +26,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `WalletTokenNotAllowed` | no | the server was started with sell limits that do not name this token |
 | `WalletTradeLimit` | no | the trade sells more than the server's --wallet-per-trade limit for this token |
 | `ReleaseChanged` | no | what this call would sign differs from its preview, or no approval was given: a release, a vote, an escrow, an order or offer, a claim, a held-share claim, a committee, a profile or feedback changed; preview it again and show the user |
-| `ReleaseTooLarge` | no | this split has too many co-authors to fit in one transaction; pass a lookup_table or reduce recipients as the hint says |
+| `ReleaseTooLarge` | no | this release does not fit in one Solana transaction; the hint says whether a lookup_table, fewer recipients or nothing makes it fit |
 | `WalletBusy` | yes | another server using the same wallet holds its sale record for a moment; call again |
 | `WalletHourLimit` | yes | the wallet sold as much of this token in the last hour as the server's --wallet-per-hour limit allows; try later or sell less |
 | `AgentNotConfigured` | no | solive_agent_create was called on a server started without --agent |

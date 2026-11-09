@@ -227,14 +227,12 @@ export async function splitRelease(ctx: AgentContext, input: SplitReleaseArgs, s
     }
     return { ...view, sent: false, cosign: { wallet: signer.address, signature: hex(new Uint8Array(await signer.signBytes(ballot.message))) }, next: SIGN_FIRST };
   }
-  if (input.send === true && !setupFirst) {
-    await fitted(ctx, plan?.instructions ?? estimate, signer.address, tables, (bytes) => committeeSplitTooLarge(bytes, shares.length, tables !== undefined));
-  }
+  const budgeted = input.send === true ? await fitted(ctx, plan?.instructions ?? estimate, signer.address, tables, (bytes) => committeeSplitTooLarge(bytes, shares.length, tables !== undefined)) : plan?.instructions;
   if (input.send === true && preview.setup.length > 0 && !device) {
     await ctx.transport.send(plan?.setup ?? preview.setup, signer);
   }
-  const piece = setupFirst ? preview.setup : plan?.instructions;
-  const ready = setupFirst || size <= PACKET_DATA_SIZE;
+  const piece = setupFirst ? preview.setup : budgeted;
+  const ready = size <= PACKET_DATA_SIZE;
   const prepared = ready && piece !== undefined && (input.send === true || device) ? preparedView(await prepare(ctx.transport, piece, signer.address, setupFirst ? undefined : tables)) : undefined;
   return sent(ctx, signer, { ...view, prepared }, input.send, call, {
     preview: PREVIEW_APPROVAL_NEXT,

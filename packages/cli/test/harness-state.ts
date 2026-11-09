@@ -9,6 +9,7 @@ import {
   getBase58Decoder,
   getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
+  getTransactionEncoder,
   type Instruction,
   type Transaction,
   pipe,
@@ -32,7 +33,7 @@ export const enginePath =
 
 export const h = {
   keypairs: new Map<Address, Uint8Array>(),
-  svm: new LiteSVM(),
+  svm: limited(new LiteSVM()),
   genesis: getBase58Decoder().decode(DOMAIN),
   urls: [] as string[],
   watched: [] as Address[],
@@ -69,7 +70,7 @@ export const h = {
   requestedOf: [] as (Address | undefined)[],
   simulated: [] as string[],
   sendFails: null as { error: Error; landed: boolean; after?: number } | null,
-  packetLimit: false,
+  packetLimit: true,
   served: [] as McpServer[],
   airdropRefused: false,
   airdrops: [] as { address: Address; lamports: bigint }[],
@@ -88,6 +89,24 @@ export const harnessLookup: Lookup = async (host) => {
 
 export const HOME = mkdtempSync(join(tmpdir(), "home-"));
 export const PACKET_LIMIT = 1_232;
+
+export const tooLarge = (bytes: number): string =>
+  `base64 encoded solana_transaction::versioned::VersionedTransaction too large: ${bytes} bytes (max: encoded/raw ${PACKET_LIMIT})`;
+
+export function sendable(bytes: number): void {
+  if (h.packetLimit && bytes > PACKET_LIMIT) {
+    throw new Error(tooLarge(bytes));
+  }
+}
+
+export function limited(svm: LiteSVM): LiteSVM {
+  const raw = svm.sendTransaction.bind(svm);
+  svm.sendTransaction = (tx) => {
+    sendable(getTransactionEncoder().encode(tx).length);
+    return raw(tx);
+  };
+  return svm;
+}
 
 export function touch(tx: Transaction): void {
   for (const address of getCompiledTransactionMessageDecoder().decode(tx.messageBytes).staticAccounts) {

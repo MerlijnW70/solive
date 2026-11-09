@@ -11,7 +11,13 @@ import { walletGuard } from "../src/agent/wallet.js";
 import { parse } from "../src/args.js";
 import { runtime, transport } from "./harness.js";
 
-const filler = (length: number): Instruction => ({ programAddress: MEMO_PROGRAM_ADDRESS, data: new Uint8Array(length).fill(120) });
+const fillers = new WeakSet<Instruction>();
+
+const filler = (length: number): Instruction => {
+  const made = { programAddress: MEMO_PROGRAM_ADDRESS, data: new Uint8Array(length).fill(120) };
+  fillers.add(made);
+  return made;
+};
 
 export type Padding = { size: number | null };
 
@@ -21,7 +27,7 @@ export function paddedTransport(padding: Padding, when: (instructions: readonly 
     budget: async (instructions, feePayer, tables) => {
       const base = await transport.budget(instructions, feePayer, tables);
       const goal = padding.size;
-      if (goal === null || !when(instructions)) {
+      if (goal === null || !when(instructions) || instructions.some((ix) => fillers.has(ix))) {
         return base;
       }
       for (const extra of [0, 1]) {

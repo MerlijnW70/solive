@@ -111,6 +111,9 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
   const { feeAccount, relayed, split } = plan;
   let { prepared } = plan;
   const admitted = prepared.priorityLamports;
+  if (split && !(await relayFits(transport, relay, relayed))) {
+    throw new AgentRefusal("RelayTooLarge", specUrl === undefined ? RELAY_TOO_LARGE : SPEC_URL_TOO_LONG);
+  }
   if (split) {
     await paying(paid, transport.send(feeAccount.create, relay.signer));
     prepared = await prepare(transport, relayed, relay.signer.address);
@@ -177,8 +180,10 @@ async function planRelay(transport: Transport, relay: Relay, input: SignedTerms 
     ...published(relay.signer, specUrl),
   ];
   const now = await chainTime(transport);
-  const prepared = await prepare(transport, [...feeAccount.create, ...relayed], relay.signer.address);
-  const split = feeAccount.create.length !== 0 && !preparedFits(prepared);
+  const folded = [...feeAccount.create, ...relayed];
+  const oversize = !(await relayFits(transport, relay, folded));
+  const prepared = await prepare(transport, folded, relay.signer.address, undefined, !oversize);
+  const split = feeAccount.create.length !== 0 && oversize;
   const rate = await rentRate(transport);
   return {
     feeAccount,

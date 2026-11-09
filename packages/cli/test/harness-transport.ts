@@ -12,7 +12,7 @@ import type { Fetch } from "@intent-engine/solver";
 import { type EngineAccountFilter, type EngineTransaction, type Transport } from "@intent-engine/client";
 import { intentMatches, matchBytes } from "@intent-engine/client/internal";
 import { testSignature } from "@intent-engine/client/testing";
-import { h, PACKET_LIMIT, send, touch } from "./harness-state.js";
+import { h, send, sendable, touch } from "./harness-state.js";
 import { airdropped } from "./airdrop.js";
 
 const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): boolean =>
@@ -39,6 +39,7 @@ export const transport: Transport = {
   send: (ixs, payer) => send(payer, ixs),
   latestBlockhash: async () => ({ blockhash: h.svm.latestBlockhash() as Blockhash, lastValidBlockHeight: 0n }),
   submitWire: async (wire) => {
+    sendable(getBase64Encoder().encode(wire).length);
     h.submitted.push(wire);
     const tx = decodeWire(wire);
     if (h.dropSubmits) {
@@ -53,6 +54,7 @@ export const transport: Transport = {
     return getSignatureFromTransaction(tx);
   },
   sendWire: async (wire) => {
+    sendable(getBase64Encoder().encode(wire).length);
     const tx = decodeWire(wire);
     const fails = h.sendFails !== null && (h.sendFails.after ?? 0) > 0 ? null : h.sendFails;
     if (h.sendFails !== null && fails === null) {
@@ -78,10 +80,7 @@ export const transport: Transport = {
     return getSignatureFromTransaction(tx);
   },
   simulate: async (wire, watch = []) => {
-    const bytes = getBase64Encoder().encode(wire).length;
-    if (h.packetLimit && bytes > PACKET_LIMIT) {
-      throw new Error(`base64 encoded solana_transaction::versioned::VersionedTransaction too large: ${bytes} bytes (max: encoded/raw ${PACKET_LIMIT})`);
-    }
+    sendable(getBase64Encoder().encode(wire).length);
     h.simulated.push(wire);
     const tx = decodeWire(wire);
     const unsigned = Object.fromEntries(

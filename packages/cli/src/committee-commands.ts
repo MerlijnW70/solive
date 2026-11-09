@@ -48,8 +48,13 @@ export const MEMBER_WAIT = "the RPC node does not show every announcement yet; v
 
 export const COSIGN_FLAG = "pass each co-author's signature over the envelope committee vote prints with --cosign <wallet>:<128 hex>; a member's vote counts as its own";
 
+export const committeeTooLarge = (size: number, withTable: boolean): string =>
+  `ReleaseTooLarge: this committee release builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit; ${
+    withTable ? "even with the lookup table, so it cannot be sent" : "pass --lookup-table with an address lookup table holding the lookup_accounts this preview prints"
+  }; nothing was sent`;
+
 export const splitTooLarge = (size: number, withTable: boolean): string =>
-  `this split release builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit; ${
+  `ReleaseTooLarge: this split release builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit; ${
     withTable ? "even with the lookup table, so reduce recipients" : "pass --lookup-table with an address lookup table holding the lookup_accounts this preview prints"
   }; nothing was sent`;
 
@@ -334,7 +339,8 @@ async function splitReleaseCommand(command: ReleaseCommand, runtime: Runtime, tr
     await confirmOnBoth(transport, runtime.transport(command.confirmUrl), { intent: ballot.intent, attestor: committee.address, sha256: target.sha256, payees: wallets, keypair });
   }
   const tables = command.lookupTable === undefined ? undefined : await lookupTableAt(transport, command.lookupTable);
-  const size = await transactionSize(transport, await transport.budget(plan.instructions, solver.address, tables), solver.address, tables);
+  const budgeted = await transport.budget(plan.instructions, solver.address, tables);
+  const size = await transactionSize(transport, budgeted, solver.address, tables);
   const voters = quorumOf(committee, cast).map(({ member }) => member);
   const invoked = new Set<Address>([solver.address, settle.programAddress, tokenProgram]);
   const shown = {
@@ -359,13 +365,13 @@ async function splitReleaseCommand(command: ReleaseCommand, runtime: Runtime, tr
     return { ...shown, sent: false, next: splitTooLarge(size, tables !== undefined) };
   }
   if (plan.setup.length === 0) {
-    return sentWith(transport, plan.instructions, solver, tables, shown, command.yes);
+    return sentWith(transport, budgeted, solver, tables, shown, command.yes);
   }
   if (!command.yes) {
     return previewed(transport, plan.setup, solver, shown, false);
   }
   const prepared = await previewed(transport, plan.setup, solver, {}, true);
-  const sent = await sentWith(transport, plan.instructions, solver, tables, shown, true);
+  const sent = await sentWith(transport, budgeted, solver, tables, shown, true);
   return { ...sent, setup_signature: (prepared as { signature?: string }).signature };
 }
 
@@ -392,21 +398,43 @@ async function releaseCommand(command: ReleaseCommand, runtime: Runtime, transpo
     const confirmed = { intent: release.intent, attestor: release.committee.address, sha256: target.sha256, payees: [worker], keypair };
     await confirmOnBoth(transport, runtime.transport(command.confirmUrl), confirmed);
   }
+  const table = command.lookupTable;
+  const tables = table === undefined ? undefined : await lookupTableAt(transport, table);
+  const budgeted = await transport.budget(release.instructions, solver.address, tables);
+  const size = await transactionSize(transport, budgeted, solver.address, tables);
+  const held = await intentAt(transport, release.intent);
+  const settle = release.instructions.at(-1);
+  const invoked = new Set<Address>([solver.address, ...(settle === undefined ? [] : [settle.programAddress]), ...(held === null ? [] : [(await mintOf(transport, held.inputMint)).tokenProgram])]);
   const summary = [
     `Releases: proof escrow ${release.intent} to ${worker} (token account ${release.payee}), who made the announcement ${target.announcement}, with result ${target.result}`,
     `Signed by: ${release.voters.join(", ")}, ${release.voters.length} of committee ${release.committee.address}, which needs ${release.committee.threshold}`,
     `Pays the fee: ${solver.address}`,
+    ...(table === undefined ? [] : [`Looks up: accounts in the address lookup table ${table}`]),
+    ...(release.setup.length === 0 ? [] : ["Sets up first, in its own transaction: the token accounts the release pays into"]),
   ];
-  const shown = { intent: release.intent, committee: release.committee.address, announcement: target.announcement, signers: release.voters };
-  if (release.setup.length === 0) {
-    return previewed(transport, release.instructions, solver, { ...shown, summary }, command.yes);
+  const shown = {
+    intent: release.intent,
+    committee: release.committee.address,
+    announcement: target.announcement,
+    signers: release.voters,
+    ...(table === undefined ? {} : { lookup_table: table }),
+    lookup_accounts: [...new Set((settle?.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a)),
+    summary,
+  };
+  if (size > PACKET_DATA_SIZE) {
+    if (command.yes) {
+      throw new FlowRefused(committeeTooLarge(size, tables !== undefined));
+    }
+    return { ...shown, sent: false, next: committeeTooLarge(size, tables !== undefined) };
   }
-  const setupSummary = "Sets up first, in its own transaction: the token accounts the release pays into";
+  if (release.setup.length === 0) {
+    return sentWith(transport, budgeted, solver, tables, shown, command.yes);
+  }
   if (!command.yes) {
-    return previewed(transport, release.setup, solver, { ...shown, summary: [...summary, setupSummary] }, false);
+    return previewed(transport, release.setup, solver, shown, false);
   }
   const prepared = await previewed(transport, release.setup, solver, {}, true);
-  const sent = await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, setupSummary] }, true);
+  const sent = await sentWith(transport, budgeted, solver, tables, shown, true);
   return { ...sent, setup_signature: (prepared as { signature?: string }).signature };
 }
 

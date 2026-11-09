@@ -2,14 +2,15 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use anchor_lang::prelude::Pubkey;
 use solana_address_lookup_table_interface::instruction::deactivate_lookup_table;
+use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_message::AddressLookupTableAccount;
 use solana_signer::Signer;
 use solana_slot_hashes::SlotHashes;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    legacy_size, release_world, unsigned_size, v0_size, wire_size, Form, Release, ReleaseKind,
-    Shape, TestResult, PACKET_DATA_SIZE,
+    ed25519_ix, legacy_size, release_world, unsigned_size, v0_size, wire_size, Env, Form, Release,
+    ReleaseKind, Shape, TestResult, PACKET_DATA_SIZE,
 };
 
 fn team_split() -> TestResult<Release> {
@@ -150,5 +151,55 @@ fn a_deactivated_table_resolves_nothing_once_its_slot_ages_out() -> TestResult {
     let fresh = r.lookup()?;
     r.env.send_v0(&payer, &ixs, &[], &[fresh])?;
     assert_eq!(r.env.balance(&r.vault)?, 0);
+    Ok(())
+}
+
+const PROBE: usize = 900;
+
+fn sized(payer: &Keypair, bytes: usize, v0: bool) -> TestResult<Instruction> {
+    let size = |ix: &Instruction| -> TestResult<usize> {
+        let ixs = std::slice::from_ref(ix);
+        if v0 {
+            v0_size(&payer.pubkey(), ixs, &[])
+        } else {
+            Ok(legacy_size(&payer.pubkey(), ixs))
+        }
+    };
+    let base = size(&ed25519_ix(payer, &vec![7; PROBE]))?;
+    let length = PROBE
+        .checked_add(bytes)
+        .and_then(|n| n.checked_sub(base))
+        .ok_or("no message length gives that size")?;
+    let ix = ed25519_ix(payer, &vec![7; length]);
+    assert_eq!(size(&ix)?, bytes);
+    Ok(ix)
+}
+
+#[test]
+fn a_1232_byte_transaction_lands_and_a_1233_byte_one_fails_the_test_legacy_or_v0() -> TestResult {
+    let mut env = Env::new()?;
+    let payer = env.funded()?;
+    let over = sized(&payer, 1_233, false)?;
+    let sent = catch_unwind(AssertUnwindSafe(|| env.send(&payer, &[over], &[])));
+    let text = panic_text(
+        sent.err()
+            .ok_or("a 1233-byte transaction passed Env::send")?,
+    );
+    assert!(
+        text.contains(&format!(
+            "a 1233-byte transaction is over the {PACKET_DATA_SIZE}-byte packet limit"
+        )),
+        "{text}"
+    );
+    env.send(&payer, &[sized(&payer, 1_232, false)?], &[])?;
+    let over = sized(&payer, 1_233, true)?;
+    let sent = catch_unwind(AssertUnwindSafe(|| env.send_v0(&payer, &[over], &[], &[])));
+    assert!(sent.is_err(), "a 1233-byte v0 transaction passed send_v0");
+    let at = sized(&payer, 1_232, true)?;
+    assert_eq!(
+        wire_size(&env.v0_transaction(&payer, std::slice::from_ref(&at), &[], &[])?),
+        1_232
+    );
+    env.send_v0(&payer, &[at], &[], &[])?;
     Ok(())
 }

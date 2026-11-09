@@ -30,11 +30,11 @@ import type { FaucetFetch } from "../src/faucet.js";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { collectDropped } from "./collect.js";
-import { DOMAIN, enginePath, FEE_BPS, h, harnessLookup, HOME, NOW, saleBook, send } from "./harness-state.js";
+import { DOMAIN, enginePath, FEE_BPS, h, harnessLookup, HOME, limited, NOW, saleBook, send } from "./harness-state.js";
 import { fakeFetch, transport } from "./harness-transport.js";
 import { airdropped } from "./airdrop.js";
 
-export { DOMAIN, enginePath, ESCROW, FEE_BPS, h, harnessLookup, HOME, NOW, PACKET_LIMIT, PUBLIC_TEST_ADDRESS, saleBook, send } from "./harness-state.js";
+export { DOMAIN, enginePath, ESCROW, FEE_BPS, h, harnessLookup, HOME, NOW, limited, PACKET_LIMIT, PUBLIC_TEST_ADDRESS, saleBook, send, sendable, tooLarge } from "./harness-state.js";
 export { creation, fakeFetch, ownerSigned, transport, unlisting } from "./harness-transport.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
@@ -191,14 +191,14 @@ export function resetHarness(): void {
   h.firstSlot = 0n;
   h.through = null;
   h.sendFails = null;
-  h.packetLimit = false;
+  h.packetLimit = true;
   h.airdropRefused = false;
 }
 
 export async function boot(): Promise<KeyPairSigner> {
   resetHarness();
   collectDropped();
-  h.svm = new LiteSVM().withPrecompiles();
+  h.svm = limited(new LiteSVM().withPrecompiles());
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);
   const upgrader = await funded();
@@ -284,7 +284,7 @@ export async function world(): Promise<World> {
   resetHarness();
   collectDropped();
   const test = await createTestWorld({ start: NOW, fees: { ...ECONOMICS_UNSET, feeBps: FEE_BPS }, domain: DOMAIN, devnetMints: false, program: new Uint8Array(readFileSync(enginePath)) });
-  h.svm = test.svm;
+  h.svm = limited(test.svm);
   h.touched.add((await findConfigPda())[0]);
   const topUp = WALLET_LAMPORTS - parseAmount(TEST_WALLET_SOL, 9);
   for (const signer of [test.admin, test.feeRecipient]) {

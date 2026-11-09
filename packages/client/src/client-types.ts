@@ -267,6 +267,7 @@ export const WATCH_WAIT_SECONDS = 10;
 export type ClientContext = {
   transport: Transport;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
+  bytes(instructions: readonly Instruction[], feePayer: Address): Promise<number>;
   mint(address: Address): Promise<Mint>;
   config(): Promise<Config>;
 };

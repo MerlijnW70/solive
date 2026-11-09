@@ -6,6 +6,7 @@ import { type Client, createClient, InvalidInput, NotSettleable, VoteRejected } 
 import { budgeted, PACKET_DATA_SIZE, transactionBytes } from "../src/internal.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 import { announced, fundedSigner, LOCAL, nativeMint, sha, specHash, tokensOf } from "./work.js";
+import { sentWithTable } from "./table-kit.js";
 
 const WORK = sha("the split work");
 const PAY = 1_000_000n;
@@ -57,7 +58,12 @@ describe("a committee-judged split", () => {
     const votes = await Promise.all([third, first, third].map(vote(ballot.message)));
     const planned = await client.plan.settleSplit({ ...target, solver, votes, signatures });
     expect(await sizeOf(client, planned.instructions, solver.address)).toBeGreaterThan(PACKET_DATA_SIZE);
-    await client.settleSplit({ ...target, solver, votes, signatures });
+    await expect(client.settleSplit({ ...target, solver, votes, signatures })).rejects.toMatchObject({ code: "not-settleable", reason: "too-large", intent });
+    expect(await tokensOf(w, worker.address)).toBeNull();
+    if (planned.setup.length > 0) {
+      await client.send(planned.setup, solver);
+    }
+    await sentWithTable(w, planned.instructions, solver);
     const { net } = splitFees(PAY - JUDGE_FEE, FEE_BPS, 0, 0);
     expect([await tokensOf(w, worker.address), await tokensOf(w, coauthor.address)]).toEqual(splitN(net, WEIGHTS));
     expect(await tokensOf(w, feeWallet.address)).toBe(JUDGE_FEE);
@@ -114,7 +120,12 @@ describe("a committee-judged split", () => {
     const ballot = await client.splitBallot(target);
     const signatures = await Promise.all([worker].map(cosign(ballot.message)));
     const votes = await Promise.all([member, other].map(vote(ballot.message)));
-    await client.settleSplit({ ...target, solver, votes, signatures });
+    await expect(client.settleSplit({ ...target, solver, votes, signatures })).rejects.toMatchObject({ code: "not-settleable", reason: "too-large", intent });
+    const planned = await client.plan.settleSplit({ ...target, solver, votes, signatures });
+    if (planned.setup.length > 0) {
+      await client.send(planned.setup, solver);
+    }
+    await sentWithTable(w, planned.instructions, solver);
     const { net } = splitFees(PAY, FEE_BPS, 0, 0);
     expect([await tokensOf(w, worker.address), await tokensOf(w, member.address)]).toEqual(splitN(net, WEIGHTS));
   });

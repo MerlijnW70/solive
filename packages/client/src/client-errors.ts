@@ -15,6 +15,7 @@ export class NoFreeNonce extends SdkError {
 
 export type NotSettleableReason =
   | "wrong-judge"
+  | "too-large"
   | "committee-judged"
   | "not-a-committee"
   | "split-excludes-announcer"

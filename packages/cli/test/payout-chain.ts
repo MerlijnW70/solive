@@ -20,6 +20,7 @@ import {
 } from "@intent-engine/core/internal";
 import { createClient, type EngineTransaction } from "@intent-engine/client";
 import { createTestWorld, ECONOMICS_UNSET } from "@intent-engine/client/testing";
+import { limited } from "./harness-state.js";
 
 export const NOW = 1_700_000_000n;
 export const ESCROW = 400n;
@@ -38,7 +39,8 @@ export type PayoutChain = Awaited<ReturnType<typeof payoutChain>>;
 
 export async function payoutChain() {
   const test = await createTestWorld({ start: NOW, fees: { ...ECONOMICS_UNSET, feeBps: 5 }, domain: DOMAIN, devnetMints: false, program: new Uint8Array(readFileSync(enginePath)) });
-  const { svm, transport } = test;
+  const svm = limited(test.svm);
+  const { transport } = test;
   const client = createClient({ url: "http://127.0.0.1:8899", transport });
   const funded = async (): Promise<KeyPairSigner> => {
     const signer = await generateKeyPairSigner();
