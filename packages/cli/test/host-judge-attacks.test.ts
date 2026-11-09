@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HOST_CALL_MS, HOST_ENGINE, hostBackstopMs, hostDetail, judgeHost } from "../src/host-judge.js";
 import { type Cases, judgeViper, OUTPUT_BYTES, pinnedWasm } from "../src/viper.js";
-import { combine, engineOutcome, ranPastBudget } from "../src/verdict-model.js";
+import { combine, engineOutcome, spentBudget } from "../src/verdict-model.js";
 
 const cases = (list: Cases["cases"]): Cases => ({ steps: 1_000_000, heap: 1 << 24, seed: 1, clock: 0, cases: list });
 const module = (source: string) => new TextEncoder().encode(source);
@@ -55,7 +55,7 @@ describe("a delivery that tries to turn its own fail in the host engine into inf
 
   it("cannot do it by looping in a microtask after it answered: the microtask runs inside the call and uses its budget", async () => {
     const { judged, outcome: ruled } = await outcome("export default () => { Promise.resolve().then(() => { for (;;) {} }); return 5; };");
-    expect([ruled, judged.failures]).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(HOST_CALL_MS) }]]);
+    expect([ruled, judged.failures]).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: spentBudget(HOST_CALL_MS) }]]);
   }, hostBackstopMs(HOST_CALL_MS) + 20_000);
 
   it("cannot do it by trapping or locking the names the judge calls it through", async () => {

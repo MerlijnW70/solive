@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
-import { availableParallelism } from "node:os";
 import { describe, expect, it } from "vitest";
 import { judgeNode, NODE_ENGINE, nodeBackstopMs } from "../src/node-judge.js";
 import { KEEPER_OOM_SCORE } from "../src/node-runner.js";
 import { SANDBOX_IMAGE, SANDBOX_TMP } from "../src/sandbox.js";
-import { engineOutcome, ranPastBudget } from "../src/verdict-model.js";
+import { engineOutcome, ranPastBudget, spentBudget } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 import { DOCKER } from "./docker-switch.js";
 
@@ -46,7 +45,7 @@ describe("plain Node cases under the judge's --sandbox-cpus choice", () => {
       for (const source of loops) {
         const started = performance.now();
         const { node, outcome } = await judged(source, cpus, cases(budget));
-        expect([outcome, node.failures], `${cpus} ${source}`).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]]);
+        expect([outcome, node.failures], `${cpus} ${source}`).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: spentBudget(budget) }]]);
         expect(performance.now() - started, `${cpus} ${source}`).toBeLessThan(nodeBackstopMs(budget, cpus) + 30_000);
       }
     }
@@ -58,23 +57,9 @@ describe("plain Node cases under the judge's --sandbox-cpus choice", () => {
     expect([node.passed, node.failures]).toEqual([1, []]);
   });
 
-  it("never passes a correct case charged past its budget, and fails it unless other work kept the judge busy", SLOW, async () => {
+  it("fails a correct case charged past its budget on a quiet host, the same verdict an idle judge gives", SLOW, async () => {
     const { node, outcome } = await judged(SPIN_TO(1_400), "1", cases(1_000));
-    expect(["fail", "infra"]).toContain(outcome);
-    if (outcome === "fail") expect(node.failures).toEqual([{ case: 0, verdict: "stopped", detail: ranPastBudget(1_000) }]);
-    else expect(node.stop?.reason).toMatch(/of the judge's CPUs busy/);
-  });
-
-  it("leaves a correct case charged just past its budget no verdict while other work keeps every host CPU busy, never a fail", SLOW, async () => {
-    const hogs = Array.from({ length: availableParallelism() }, () => spawn(process.execPath, ["-e", "for (;;) {}"], { stdio: "ignore" }));
-    try {
-      await new Promise((done) => setTimeout(done, 1_000));
-      const { node, outcome } = await judged(SPIN_TO(1_400), "1", cases(1_000));
-      expect([outcome, node.failures]).toEqual(["infra", []]);
-      expect(node.stop?.reason).toMatch(/of the judge's CPUs busy/);
-    } finally {
-      for (const hog of hogs) hog.kill("SIGKILL");
-    }
+    expect([outcome, node.failures]).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(1_000) }]]);
   });
 
   it("charges CPU spent in children the kernel reaps itself, so such work neither passes over budget nor turns its fail into infra", SLOW, async () => {
@@ -87,7 +72,7 @@ describe("plain Node cases under the judge's --sandbox-cpus choice", () => {
     for (const cpus of ["1", "0.1"]) {
       for (const source of hiding) {
         const { node, outcome } = await judged(source, cpus, cases(budget));
-        expect([outcome, node.failures], `${cpus} ${source}`).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]]);
+        expect([outcome, node.failures], `${cpus} ${source}`).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: spentBudget(budget) }]]);
       }
     }
   });

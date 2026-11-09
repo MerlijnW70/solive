@@ -30,7 +30,7 @@ const replying = (replies: Reply[]) =>
     "    const reply = replies[seen - 2];",
     "    const framed = reply.verdict === undefined ? ['answer', 'number', String(reply.value)] : [reply.verdict, 'string', 'no capability'];",
     "    const out = reply.value === undefined && reply.verdict === undefined ? '' : Buffer.from('\\n' + token + JSON.stringify(framed) + token + '\\n').toString('base64');",
-    "    process.stdout.write(JSON.stringify({ token, out, code: reply.code, signal: reply.signal, timedOut: false, over: false, oomBefore: reply.before, oomAfter: reply.after, settled: reply.settled !== false, clock: { started: true, metered: reply.metered !== false, usedMs: 1, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null } }) + '\\n');",
+    "    process.stdout.write(JSON.stringify({ token, out, code: reply.code, signal: reply.signal, timedOut: false, over: false, oomBefore: reply.before, oomAfter: reply.after, settled: reply.settled !== false, clock: { started: true, metered: reply.metered !== false, usedMs: 1, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: null } }) + '\\n');",
     "  }",
     "});",
   ].join("\n");
@@ -48,7 +48,7 @@ const launcher = (filledFirst: boolean) =>
     "    at = rest.indexOf('\\n');",
     "    seen += 1;",
     `    if (seen === 1) { process.stdout.write(${JSON.stringify(NODE_READY)} + '\\n'); continue; }`,
-    `    if (seen === 2 && ${String(filledFirst)}) { const { token } = JSON.parse(line); process.stdout.write(JSON.stringify({ token, out: '', code: 1, signal: null, timedOut: false, over: false, oomBefore: { oom: 0, oomKill: 0 }, oomAfter: { oom: 1, oomKill: 1 }, clock: { started: true, metered: true, usedMs: 1, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null } }) + '\\n'); continue; }`,
+    `    if (seen === 2 && ${String(filledFirst)}) { const { token } = JSON.parse(line); process.stdout.write(JSON.stringify({ token, out: '', code: 1, signal: null, timedOut: false, over: false, oomBefore: { oom: 0, oomKill: 0 }, oomAfter: { oom: 1, oomKill: 1 }, clock: { started: true, metered: true, usedMs: 1, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: null } }) + '\\n'); continue; }`,
     "    process.exit(137);",
     "  }",
     "});",

@@ -20,6 +20,8 @@ export const UNPREPARED = "unprepared";
 
 export const SAME_UID = "the plain Node launcher runs under the uid its cases would run under, so a case could reach it, and no case was run";
 
+import { displacedShare } from "./verdict-model.js";
+
 export const NODE_LAUNCHER = `
 import { spawn, spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -80,17 +82,54 @@ const taskState = () => {
   }
   return disk ? "disk" : "idle";
 };
-const hostTicks = () => {
+const voluntary = (pid) => {
   try {
-    const lines = readFileSync("/proc/stat", "utf8").split("\\n");
-    const count = lines.filter((line) => /^cpu\\d/.test(line)).length;
-    const ticks = lines[0].trim().split(/\\s+/).slice(1).map(Number);
-    const busy = ticks[0] + ticks[1] + ticks[2] + ticks[5] + ticks[6] + ticks[7];
-    return count > 0 && Number.isFinite(busy) ? { busy, count } : null;
+    const found = /^voluntary_ctxt_switches:\\s+(\\d{1,20})$/m.exec(readFileSync("/proc/" + pid + "/task/" + pid + "/status", "utf8"));
+    return found === null ? null : Number(found[1]);
   } catch {
     return null;
   }
 };
+const quota = () => {
+  try {
+    const [max, period] = readFileSync(config.cpuMax, "utf8").trim().split(" ");
+    const cap = max === "max" ? 1 : Math.min(1, Number(max) / Number(period));
+    const periodMs = Number(period) / 1000;
+    return cap > 0 && periodMs > 0 ? { cap, periodMs } : null;
+  } catch {
+    return null;
+  }
+};
+const throttles = () => {
+  try {
+    const found = /^nr_throttled (\\d{1,20})$/m.exec(readFileSync(config.cpuStat, "utf8"));
+    return found === null ? null : Number(found[1]);
+  } catch {
+    return null;
+  }
+};
+const held = () => {
+  try {
+    const current = Number(readFileSync(config.memoryCurrent, "utf8").trim());
+    const fields = Object.fromEntries(readFileSync(config.memoryStat, "utf8").split("\\n").map((line) => line.split(" ")));
+    const value = current - (Number(fields.file) - Number(fields.shmem)) - Number(fields.slab_reclaimable);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+};
+const release = async (before) => {
+  if (before === null) return null;
+  const until = performance.now() + config.settleMs;
+  for (;;) {
+    const now = held();
+    if (now === null) return null;
+    if (now - before <= config.keptBytes) return 0;
+    if (performance.now() >= until) return now - before;
+    await new Promise((done) => setTimeout(done, 5));
+  }
+};
+const displacedShare = ${displacedShare};
 const charged = (clock) => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - config.caseMs);
 const settle = async () => {
   const until = performance.now() + config.settleMs;
@@ -146,7 +185,13 @@ const runCase = (token, json, zeros) =>
     let timedOut = false;
     let code = null;
     let signal = null;
-    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null };
+    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: null };
+    const stretches = [];
+    let bound = null;
+    let lastVol = null;
+    let lastRaw = null;
+    let lastAt = 0;
+    let throttledFrom = null;
     let from = null;
     let last = 0;
     let lastState = "run";
@@ -165,6 +210,7 @@ const runCase = (token, json, zeros) =>
       const now = performance.now();
       const state = final ? lastState : taskState();
       const cpu = usage();
+      const at = performance.now();
       if (state === null || cpu === null) {
         if (final) unread = true;
         else if (now - last >= config.missMs) clock.metered = false;
@@ -175,8 +221,19 @@ const runCase = (token, json, zeros) =>
       last = now;
       lastState = state;
       clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
-      const host = final && cpu !== null && from.host !== null ? hostTicks() : null;
-      if (host !== null && now > from.at) clock.otherShare = Math.max(0, (host.busy - from.host.busy) * config.tickMs - (cpu - from.cpu) / 1000) / ((now - from.at) * host.count);
+      if (final) return;
+      const vol = voluntary(child.pid);
+      if (vol !== null && vol === lastVol && lastRaw !== null) {
+        bound ??= { spanMs: 0, usedMs: 0 };
+        bound.spanMs += at - lastAt;
+        bound.usedMs += (cpu - lastRaw) / 1000;
+      } else if (bound !== null) {
+        stretches.push(bound);
+        bound = null;
+      }
+      lastVol = vol;
+      lastRaw = cpu;
+      lastAt = at;
     };
     const tick = () => {
       sampler = setTimeout(() => {
@@ -189,8 +246,12 @@ const runCase = (token, json, zeros) =>
     child.stdio[${STARTED_FD}].once("data", () => {
       const cpu = usage();
       if (cpu === null) clock.metered = false;
-      from = { cpu: cpu ?? 0, own: own(), host: hostTicks(), at: performance.now() };
+      lastAt = performance.now();
+      from = { cpu: cpu ?? 0, own: own() };
       last = performance.now();
+      lastVol = voluntary(child.pid);
+      lastRaw = cpu;
+      throttledFrom = throttles();
       clock.started = true;
       if (!exited) tick();
     });
@@ -224,12 +285,25 @@ const runCase = (token, json, zeros) =>
       sweep();
       done({ token, out: "", code: null, signal: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });
+    const displacement = async () => {
+      if (bound !== null) stretches.push(bound);
+      bound = null;
+      const limits = quota();
+      if (limits === null) return 0;
+      const share = displacedShare(stretches, limits.cap, 0, limits.periodMs);
+      if (share < config.displacedLimit) return share;
+      await new Promise((wait) => setTimeout(wait, limits.periodMs + config.sampleMs));
+      const after = throttles();
+      if (after === null || throttledFrom === null) return 0;
+      return after === throttledFrom ? share : displacedShare(stretches, limits.cap, limits.cap * limits.periodMs, limits.periodMs);
+    };
     child.once("close", async () => {
       if (unread && base !== null) {
         const cpu = await retried(usage);
         if (cpu === null) clock.metered = false;
         else clock.usedMs = Math.max(clock.usedMs, (cpu - base.cpu - (own() - base.own)) / 1000);
       }
+      clock.displaced = await displacement();
       done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, signal, timedOut, over, clock });
     });
   });
@@ -262,10 +336,12 @@ for await (const line of lines) {
     continue;
   }
   const oomBefore = await retried(memoryEvents);
+  const heldBefore = await retried(held);
   const result = await runCase(message.token, message.json, message.zeros);
   const settled = await settle();
+  const kept = await release(heldBefore);
   const oomAfter = await retried(memoryEvents);
-  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter, settled }) + "\\n");
+  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter, settled, kept }) + "\\n");
 }
 `;
 

@@ -3,12 +3,12 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { judgeRoot, removeCopy } from "./artifact.js";
-import { CPU_STAT, endedState, MEMORY_EVENTS, MEMORY_PROCS, removeContainer } from "./check-process.js";
+import { CPU_MAX, CPU_STAT, endedState, MEMORY_CURRENT, MEMORY_EVENTS, MEMORY_PROCS, MEMORY_STAT, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { CASE_OOM_SCORE, NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED, NODE_UNLOCKED, NODE_UNMETERED, NODE_UNPROBED, UNPREPARED } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { type CaseClock, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, ENGINE_FAULT, faultOf, type Limits, type MemoryRise, type Outcome, pinnedLauncherEnd, ranPastBudget, type Stop, starvedCase, type Timing } from "./verdict-model.js";
+import { type CaseClock, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, DISPLACED_LIMIT, ENGINE_FAULT, failedOf, faultOf, type Limits, type MemoryRise, type Outcome, pinnedLauncherEnd, type Stop, starvedCase, stoppedDetail, type Timing } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
@@ -17,9 +17,9 @@ export const NODE_RUNNER = "runner";
 export const NODE_CASE_MS = 5_000;
 export const NODE_SAMPLE_MS = 10;
 export const NODE_BOOT_MS = 2_000;
-export const TICK_MS = 10;
 export const NODE_SETTLE_MS = 2_000;
 export const NODE_MISS_MS = 1_000;
+export const NODE_KEPT_BYTES = 8 * 1024 * 1024;
 export const NODE_HEAP_FACTOR = 1;
 export const NODE_LAUNCHER_USER = "0:0";
 export const NODE_CAPABILITIES = ["SETUID", "SETGID", "KILL", "SYS_RESOURCE"] as const;
@@ -39,6 +39,8 @@ export const nodeBackstopMs = (budgetMs: number, cpus: string): number => {
   const killMs = budgetMs * CONTENTION_FACTOR;
   return Math.ceil(NODE_BOOT_MS / share + 2 * killMs * (2 + 1 / share));
 };
+
+export const nodeWatchMs = (backstopMs: number): number => 2 * backstopMs + 3 * NODE_SETTLE_MS;
 
 export const moduleName = (name: string): string => (name.endsWith(".mjs") ? name : `${name.replace(/\.[^.]*$/, "") || "delivery"}.mjs`);
 
@@ -93,7 +95,7 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
   ];
 }
 
-type Answer = { token: string; out: string; code: number | null; signal?: string | null; timedOut: boolean; over: boolean; failed?: string; oomBefore?: unknown; oomAfter?: unknown; settled?: unknown; clock?: unknown };
+type Answer = { token: string; out: string; code: number | null; signal?: string | null; timedOut: boolean; over: boolean; failed?: string; oomBefore?: unknown; oomAfter?: unknown; settled?: unknown; clock?: unknown; kept?: unknown };
 
 const STOPPERS: readonly unknown[] = [null, "budget", "backstop"];
 
@@ -101,13 +103,13 @@ const spanOf = (value: unknown): number | null => (typeof value === "number" && 
 
 export function clockOf(value: unknown): (CaseClock & { metered: boolean }) | null {
   if (value === null || typeof value !== "object") return null;
-  const { started, metered, usedMs, idleMs, ioMs, otherShare, stoppedBy } = value as Record<string, unknown>;
+  const { started, metered, usedMs, idleMs, ioMs, displaced, stoppedBy } = value as Record<string, unknown>;
   const used = spanOf(usedMs);
   const idle = spanOf(idleMs);
   const io = spanOf(ioMs);
-  const other = spanOf(otherShare);
-  if (typeof started !== "boolean" || typeof metered !== "boolean" || used === null || idle === null || io === null || other === null || !STOPPERS.includes(stoppedBy)) return null;
-  return { started, metered, usedMs: used, idleMs: idle, ioMs: io, otherShare: other, stoppedBy: stoppedBy as CaseClock["stoppedBy"] };
+  const share = spanOf(displaced);
+  if (typeof started !== "boolean" || typeof metered !== "boolean" || used === null || idle === null || io === null || share === null || share > 1 || !STOPPERS.includes(stoppedBy)) return null;
+  return { started, metered, usedMs: used, idleMs: idle, ioMs: io, displaced: share, stoppedBy: stoppedBy as CaseClock["stoppedBy"] };
 }
 
 const countOf = (value: unknown): number | null => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
@@ -145,6 +147,14 @@ export const memoryUncounted = (memory: string): string =>
 export const memoryUnlocked = (memory: string): string =>
   `the spec's judge-cases block pins node_memory ${memory}, and in this host's containers a plain Node case could lower its out-of-memory score below ${CASE_OOM_SCORE}, so the kernel could kill the launcher instead of the case and a case killed for memory could not fail as the pin says; judge it on a host whose Docker runs as root; no plain Node case was run and nothing was paid`;
 
+export const leftMemory = (bytes: number): string =>
+  `the case left ${Math.ceil(bytes / 2 ** 20)} MiB of memory charged to its container after every process of it had ended, such as a file parked in a socket in flight, which would leave the next case too little memory`;
+
+export const LEFT_MEMORY_STOP = "a case left memory charged to the plain Node container after it ended, so no case was run after it";
+
+export const launcherSilent = (watchMs: number): string =>
+  `the plain Node launcher did not answer a case within ${watchMs} ms, past the case's own backstop and settling time, so whether the case kept its budget is unknown, and this is no verdict on the work`;
+
 export const NODE_DEADLINE = "the judgement's --timeout ran out before the plain Node engine finished every case";
 
 export const nodeUnmetered = `the plain Node launcher cannot read its container's CPU time in ${CPU_STAT}, as a cgroup v2 host gives it, or its cases' processes in /proc, so a case's budget could be measured only on the judge's wall clock, which the judge's CPU share and load decide; judge it on a cgroup v2 host; no plain Node case was run and nothing was paid`;
@@ -166,7 +176,7 @@ function valueOf(kind: unknown, value: unknown): { ok: true; value: Primitive } 
 
 export function caseVerdict(answer: Answer, token: string, expected: Primitive, timing: Timing, budgetMs: number): CaseResult {
   if (answer.over) return { verdict: "crashed", detail: `the case wrote more than ${OUTPUT_BYTES} bytes` };
-  if (timing === "over") return { verdict: "stopped", detail: ranPastBudget(budgetMs) };
+  if (timing === "over" || timing === "spent") return { verdict: "stopped", detail: stoppedDetail(timing, budgetMs) };
   const parts = Buffer.from(answer.out, "base64").toString("utf8").split(token);
   if (parts.length !== 3) {
     return { verdict: "crashed", detail: parts.length < 3 ? "the case wrote no answer framed by its token" : "the case wrote more than one answer framed by its token" };
@@ -214,6 +224,7 @@ type Conversed = { results: CaseResult[]; stop?: Stop; refused?: string };
 function converse(args: readonly string[], name: string, staged: Staged, cases: Cases, seed: number, limits: Limits, cpus: string): Promise<Conversed> {
   const budgetMs = nodeBudgetMs(cases);
   const backstopMs = nodeBackstopMs(budgetMs, cpus);
+  const watchMs = nodeWatchMs(backstopMs);
   return new Promise((done) => {
     const env = dockerEnv(process.env);
     const child = spawn("docker", args, { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -226,6 +237,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     let unsettled = false;
     let ready = false;
     let refused: string | undefined;
+    let watch: NodeJS.Timeout | undefined;
     const left = () => cases.cases.length - results.length;
     const kill = (why: Stop) => {
       ended ??= why;
@@ -255,6 +267,8 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         return;
       }
       token = randomBytes(32).toString("hex");
+      clearTimeout(watch);
+      watch = setTimeout(() => kill(faultOf(launcherSilent(watchMs), left())), watchMs);
       send({ token, ...wireArgs(cases.cases[results.length]?.args ?? []) });
     };
     const answered = (line: string) => {
@@ -289,6 +303,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         kill(faultOf(`${ENGINE} could not start a case: ${answer.failed.slice(0, 256)}`, left()));
         return;
       }
+      clearTimeout(watch);
       const sent = token;
       token = "";
       settle(answer, sent);
@@ -313,6 +328,11 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         kill(faultOf(memory?.outcome === "infra" ? memory.reason : CASE_UNMETERED, left()));
         return;
       }
+      if (typeof answer.kept === "number" && Number.isFinite(answer.kept) && answer.kept > 0) {
+        results.push({ verdict: "crashed", detail: leftMemory(answer.kept) });
+        kill(failedOf(LEFT_MEMORY_STOP, left()));
+        return;
+      }
       const timing = caseTiming(clock, budgetMs);
       if (!answer.over && timing === "starved") {
         kill(faultOf(starvedCase(ENGINE, budgetMs, backstopMs), left()));
@@ -320,7 +340,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       }
       const verdict = caseVerdict(answer, sent, cases.cases[results.length]?.expected ?? null, timing === "band" ? "within" : timing, budgetMs);
       if (timing === "band" && verdict.verdict === "pass") {
-        kill(faultOf(contendedCase(ENGINE, budgetMs, clock.otherShare), left()));
+        kill(faultOf(contendedCase(ENGINE, budgetMs, clock.displaced), left()));
         return;
       }
       const memory = memoryOf(answer, verdict.verdict === "pass");
@@ -362,6 +382,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
     child.stdin.on("error", () => undefined);
     const finish = (exitCode: number | null) => {
       clearTimeout(timer);
+      clearTimeout(watch);
       void killing.finally(async () => {
         for (const [signal, handler] of handlers) process.removeListener(signal, handler);
         const stop = left() === 0 ? undefined : (ended ?? (await ranOut(exitCode)));
@@ -374,7 +395,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, tickMs: TICK_MS, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, displacedLimit: DISPLACED_LIMIT, cpuMax: CPU_MAX, memoryCurrent: MEMORY_CURRENT, memoryStat: MEMORY_STAT, keptBytes: NODE_KEPT_BYTES, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 

@@ -271,7 +271,7 @@ A pinned limit is part of the bar. A check still running at the pinned `timeout`
 
 A `timeout` counts the container's setup too. The judge cannot see when the check itself began inside Docker, so it counts a run from the last time it saw the container created and not yet started, and a run is inside `timeout` only if it ended sooner than that. Pin `timeout` with headroom over what the check needs: a check that ends near the limit ends as infra, not as a pass.
 
-The pinned `timeout` counts wall-clock time, not CPU time, so other load on the judge's machine can push a slow check past it, and that is a fail. Plain Node and host engine budgets count CPU time instead. Pin `timeout` with room for a busy judge.
+The pinned `timeout` deliberately counts wall-clock time, not CPU time, so other load on the judge's machine can push a slow check past it, and that is a fail. Plain Node and host engine budgets count CPU time instead. Pin `timeout` with room for a busy judge.
 
 `judge` refuses a spec whose block has an unknown or repeated field, a bad value, a second `judge-run` block, a `judge-cases` block beside it, or a fence that names `judge-run` or `judge-cases` anywhere but on a plain top-level line, such as indented, behind `>` or a list marker, with `~~~`, or inside another fenced block.
 
@@ -315,7 +315,9 @@ A memory kill under the pin fails the case only when the container reached the p
 
 Each case has a budget of CPU time plus the time it waits by its own choice: `HOST_CALL_MS` (2000 ms) per call in the host engine, in `packages/cli/src/host-judge.ts`, and `NODE_CASE_MS` (5000 ms) per plain Node case from the moment it loads the delivery, in `packages/cli/src/node-judge.ts`. A case that uses its budget fails as `stopped`. The judge's CPU share and load do not count against it.
 
-A case is stopped once it used twice its budget. One that answers rightly after using its budget but less than twice it fails, unless other work kept at least a quarter of the judge's CPUs busy, `OTHER_BUSY_LIMIT`, since that load raises the CPU time the same work costs; then it is infra.
+A case is stopped once it used twice its budget. One that answers rightly after using its budget but less than twice it fails, as on an idle judge, unless other work kept the case itself off its CPU for at least a quarter of the time it was ready to run, `DISPLACED_LIMIT`; then it is infra.
+
+Load that leaves the case its CPU does not count, though busy neighbours of its core can raise the CPU time the same work costs by up to a third.
 
 Each engine keeps a wall-clock backstop well past the budget, `hostBackstopMs` and `nodeBackstopMs`. A case the backstop stops before it used its budget is infra, since the judge's machine kept it from the CPU, and saves no fail receipt.
 

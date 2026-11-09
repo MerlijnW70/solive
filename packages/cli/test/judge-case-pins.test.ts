@@ -8,7 +8,7 @@ import { runProblem, runRead } from "../src/judge-run.js";
 import { clockOf, NODE_BOOT_MS, NODE_CASE_MS, nodeBackstopMs } from "../src/node-judge.js";
 import { nodeCpusDiffers, nodeMemoryDiffers, runPlan } from "../src/run-plan.js";
 import { SANDBOX_IMAGE, SANDBOX_TMP, type Sandbox } from "../src/sandbox.js";
-import { caseTiming, chargedMs, CONTENTION_FACTOR, OTHER_BUSY_LIMIT } from "../src/verdict-model.js";
+import { caseTiming, chargedMs, CONTENTION_FACTOR, DISPLACED_LIMIT } from "../src/verdict-model.js";
 import { CASE_MS_MAX, CASE_MS_MIN, CASE_MS_RULE, casesOf, NODE_CPUS_RULE } from "../src/viper.js";
 
 const CASES = '"cases": [{"args": ["a b"], "expected": 2}]';
@@ -54,31 +54,31 @@ describe("the case_ms and node_cpus pins of a judge-cases block", () => {
 describe("the timing rule every engine's budget follows", () => {
   it("fails a case that used its budget of CPU and waiting time, whoever stopped it", () => {
     for (const stoppedBy of [null, "budget", "backstop"] as const) {
-      expect(caseTiming({ started: true, usedMs: 400, idleMs: 100, ioMs: 0, otherShare: 0, stoppedBy }, 500), String(stoppedBy)).toBe("over");
-      expect(caseTiming({ started: true, usedMs: 0, idleMs: 500, ioMs: 0, otherShare: 0, stoppedBy }, 500), String(stoppedBy)).toBe("over");
+      expect(caseTiming({ started: true, usedMs: 400, idleMs: 100, ioMs: 0, displaced: 0, stoppedBy }, 500), String(stoppedBy)).toBe("over");
+      expect(caseTiming({ started: true, usedMs: 0, idleMs: 500, ioMs: 0, displaced: 0, stoppedBy }, 500), String(stoppedBy)).toBe("over");
     }
   });
 
   it("makes a judge's stop before the budget was used infra, and leaves a case that ended within it to its answer", () => {
-    expect(caseTiming({ started: true, usedMs: 499, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
-    expect(caseTiming({ started: false, usedMs: 0, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
-    expect(caseTiming({ started: false, usedMs: 900, idleMs: 900, ioMs: 0, otherShare: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
-    expect(caseTiming({ started: true, usedMs: 499, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null }, 500)).toBe("within");
-    expect(caseTiming({ started: false, usedMs: 0, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null }, 500)).toBe("within");
+    expect(caseTiming({ started: true, usedMs: 499, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
+    expect(caseTiming({ started: false, usedMs: 0, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
+    expect(caseTiming({ started: false, usedMs: 900, idleMs: 900, ioMs: 0, displaced: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
+    expect(caseTiming({ started: true, usedMs: 499, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: null }, 500)).toBe("within");
+    expect(caseTiming({ started: false, usedMs: 0, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: null }, 500)).toBe("within");
   });
 
   it("charges time a case's processes wait on the disk only past one budget of it, so the judge's disk load is free and parking there is not", () => {
-    expect(caseTiming({ started: true, usedMs: 0, idleMs: 0, ioMs: 500, otherShare: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
-    expect(caseTiming({ started: true, usedMs: 0, idleMs: 0, ioMs: 999, otherShare: 0, stoppedBy: null }, 500)).toBe("within");
-    expect(caseTiming({ started: true, usedMs: 0, idleMs: 0, ioMs: 1000, otherShare: 0, stoppedBy: null }, 500)).toBe("over");
-    expect(caseTiming({ started: true, usedMs: 200, idleMs: 100, ioMs: 700, otherShare: 0, stoppedBy: null }, 500)).toBe("over");
-    expect(chargedMs({ started: true, usedMs: 200, idleMs: 100, ioMs: 400, otherShare: 0, stoppedBy: null }, 500)).toBe(300);
+    expect(caseTiming({ started: true, usedMs: 0, idleMs: 0, ioMs: 500, displaced: 0, stoppedBy: "backstop" }, 500)).toBe("starved");
+    expect(caseTiming({ started: true, usedMs: 0, idleMs: 0, ioMs: 999, displaced: 0, stoppedBy: null }, 500)).toBe("within");
+    expect(caseTiming({ started: true, usedMs: 0, idleMs: 0, ioMs: 1000, displaced: 0, stoppedBy: null }, 500)).toBe("over");
+    expect(caseTiming({ started: true, usedMs: 200, idleMs: 100, ioMs: 700, displaced: 0, stoppedBy: null }, 500)).toBe("over");
+    expect(chargedMs({ started: true, usedMs: 200, idleMs: 100, ioMs: 400, displaced: 0, stoppedBy: null }, 500)).toBe(300);
   });
 
-  it("leaves a case charged past its budget, but under twice it, no verdict only while other work kept the judge's CPUs busy", () => {
-    const at = (usedMs: number, otherShare: number) => caseTiming({ started: true, usedMs, idleMs: 0, ioMs: 0, otherShare, stoppedBy: null }, 500);
-    expect([at(499, 1), at(500, OTHER_BUSY_LIMIT), at(999, 0.9)]).toEqual(["within", "band", "band"]);
-    expect([at(500, OTHER_BUSY_LIMIT - 0.01), at(999, 0), at(500 * CONTENTION_FACTOR, 1)]).toEqual(["over", "over", "over"]);
+  it("leaves a case charged past its budget, but under twice it, no verdict only while other work kept it off its CPU", () => {
+    const at = (usedMs: number, displaced: number) => caseTiming({ started: true, usedMs, idleMs: 0, ioMs: 0, displaced, stoppedBy: null }, 500);
+    expect([at(499, 1), at(500, DISPLACED_LIMIT), at(999, 0.9)]).toEqual(["within", "band", "band"]);
+    expect([at(500, DISPLACED_LIMIT - 0.01), at(999, 0), at(500 * CONTENTION_FACTOR, 1)]).toEqual(["over", "over", "spent"]);
   });
 
   it("gives plain Node a backstop past what a case's own processes can stall it, at any CPU share", () => {
@@ -94,8 +94,8 @@ describe("the timing rule every engine's budget follows", () => {
   });
 
   it("reads the launcher's clock only in its own form", () => {
-    expect(clockOf({ started: true, metered: true, usedMs: 1, idleMs: 2, ioMs: 0, otherShare: 0, stoppedBy: "budget" })).toEqual({ started: true, metered: true, usedMs: 1, idleMs: 2, ioMs: 0, otherShare: 0, stoppedBy: "budget" });
-    for (const bad of [null, {}, { started: true, metered: true, usedMs: -1, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null }, { started: true, metered: true, usedMs: 1, idleMs: Number.NaN, ioMs: 0, otherShare: 0, stoppedBy: null }, { started: true, metered: true, usedMs: 1, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: "work" }]) {
+    expect(clockOf({ started: true, metered: true, usedMs: 1, idleMs: 2, ioMs: 0, displaced: 0, stoppedBy: "budget" })).toEqual({ started: true, metered: true, usedMs: 1, idleMs: 2, ioMs: 0, displaced: 0, stoppedBy: "budget" });
+    for (const bad of [null, {}, { started: true, metered: true, usedMs: -1, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: null }, { started: true, metered: true, usedMs: 1, idleMs: Number.NaN, ioMs: 0, displaced: 0, stoppedBy: null }, { started: true, metered: true, usedMs: 1, idleMs: 0, ioMs: 0, displaced: 0, stoppedBy: "work" }]) {
       expect(clockOf(bad), JSON.stringify(bad)).toBeNull();
     }
   });

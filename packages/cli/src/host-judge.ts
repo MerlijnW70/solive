@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { caseTiming, contendedCase, deadlineOf, failedOf, faultOf, ranPastBudget, type Stop, starvedCase } from "./verdict-model.js";
+import { readFile } from "node:fs/promises";
+import { caseTiming, contendedCase, deadlineOf, DISPLACED_LIMIT, failedOf, faultOf, ranPastBudget, type Stop, starvedCase, stoppedDetail } from "./verdict-model.js";
 import { type CaseResult, type Cases, deadlineMissed, DIAGNOSTIC_BYTES, moduleText, OUTPUT_BYTES, permissionFlag, type Primitive, runOf, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const HOST_ENGINE = "node-vm";
@@ -18,14 +19,13 @@ export const hostBackstopMs = (budgetMs: number): number => budgetMs * HOST_BACK
 
 export type HostJudged = { engine: typeof HOST_ENGINE } & Tallied;
 export type WireArgs = { json: string; zeros: number[] };
-export type HostAnswer = CaseResult & { usedMs: number; otherShare: number };
+export type HostAnswer = CaseResult & { usedMs: number; displaced: number };
 
 export const wireArgs = (args: readonly Primitive[]): WireArgs => ({ json: JSON.stringify(args), zeros: args.flatMap((arg, at) => (Object.is(arg, -0) ? [at] : [])) });
 
 export const HOST_RUNNER = `
 import vm from "node:vm";
 import { writeSync } from "node:fs";
-import { cpus } from "node:os";
 import { types } from "node:util";
 process.on("unhandledRejection", () => undefined);
 const chunks = [];
@@ -37,14 +37,11 @@ const used = (from) => {
   const at = cpuNow(from);
   return (at.user + at.system) / 1000;
 };
-const hostBusy = () => {
-  const all = cpus();
-  return { busy: all.reduce((sum, one) => sum + one.times.user + one.times.nice + one.times.sys + one.times.irq, 0), count: all.length, at: performance.now() };
-};
+const hostBusy = () => ({ faults: process.resourceUsage().majorPageFault, at: performance.now() });
 const others = (host, usedMs) => {
   const now = hostBusy();
   const wall = now.at - host.at;
-  return wall > 0 && now.count > 0 ? Math.max(0, now.busy - host.busy - usedMs) / (wall * now.count) : 0;
+  return now.faults === host.faults && wall > 0 ? Math.min(1, Math.max(0, wall - usedMs) / wall) : 0;
 };
 const write = (results) => {
   const bytes = Buffer.from(JSON.stringify(results), "utf8");
@@ -59,7 +56,7 @@ const write = (results) => {
   return true;
 };
 const out = (results) => process.exit(write(results) ? 0 : 70);
-const all = (verdict, detail, usedMs, otherShare) => out(cases.map(() => (detail === undefined ? { verdict, usedMs, otherShare } : { verdict, detail, usedMs, otherShare })));
+const all = (verdict, detail, usedMs, displaced) => out(cases.map(() => (detail === undefined ? { verdict, usedMs, displaced } : { verdict, detail, usedMs, displaced })));
 const context = vm.createContext(vm.constants.DONT_CONTEXTIFY, { codeGeneration: { strings: false, wasm: false }, microtaskMode: "afterEvaluate" });
 if (vm.runInContext("Reflect.deleteProperty(Atomics, 'wait') && typeof Atomics.wait === 'undefined'", context) !== true) process.exit(${UNBLOCKABLE_EXIT});
 const put = (name, value) => {
@@ -144,7 +141,7 @@ for (const c of cases) {
   const host = hostBusy();
   const result = judgeOne(c);
   const usedMs = used(from);
-  results.push({ ...result, usedMs, otherShare: others(host, usedMs) });
+  results.push({ ...result, usedMs, displaced: others(host, usedMs) });
   if (result.verdict === "stopped" || usedMs >= budgetMs) break;
 }
 out(results);
@@ -205,28 +202,62 @@ const readable = (result: unknown): result is HostAnswer =>
   HOST_VERDICTS.includes((result as { verdict?: unknown }).verdict as string) &&
   typeof (result as { usedMs?: unknown }).usedMs === "number" &&
   Number.isFinite((result as { usedMs: number }).usedMs) &&
-  typeof (result as { otherShare?: unknown }).otherShare === "number" &&
-  Number.isFinite((result as { otherShare: number }).otherShare);
+  typeof (result as { displaced?: unknown }).displaced === "number" &&
+  Number.isFinite((result as { displaced: number }).displaced);
 
 export function hostTally(answers: readonly HostAnswer[], total: number, budgetMs: number): HostJudged {
   const backstopMs = hostBackstopMs(budgetMs);
   const results: CaseResult[] = [];
   for (const [index, answer] of answers.entries()) {
-    const timing = caseTiming({ started: true, usedMs: answer.usedMs, idleMs: 0, ioMs: 0, otherShare: answer.otherShare, stoppedBy: answer.verdict === "stopped" ? "backstop" : null }, budgetMs);
+    const timing = caseTiming({ started: true, usedMs: answer.usedMs, idleMs: 0, ioMs: 0, displaced: answer.displaced, stoppedBy: answer.verdict === "stopped" ? "backstop" : null }, budgetMs);
     if (timing === "starved") {
       return { engine: HOST_ENGINE, ...tallied(results, total, faultOf(starvedCase(HOST, budgetMs, backstopMs), total - index)) };
     }
     const result: CaseResult = answer.detail === undefined ? { verdict: answer.verdict } : { verdict: answer.verdict, detail: answer.detail };
     if (timing === "band" && result.verdict === "pass") {
-      return { engine: HOST_ENGINE, ...tallied(results, total, faultOf(contendedCase(HOST, budgetMs, answer.otherShare), total - index)) };
+      return { engine: HOST_ENGINE, ...tallied(results, total, faultOf(contendedCase(HOST, budgetMs, answer.displaced), total - index)) };
     }
-    results.push(timing === "over" || (timing === "band" && result.verdict === "stopped") ? { verdict: "stopped", detail: ranPastBudget(budgetMs) } : result);
-    if ((timing === "over" || timing === "band") && index + 1 < total) {
+    results.push(timing === "over" || timing === "spent" ? { verdict: "stopped", detail: stoppedDetail(timing, budgetMs) } : timing === "band" && result.verdict === "stopped" ? { verdict: "stopped", detail: ranPastBudget(budgetMs) } : result);
+    if ((timing === "over" || timing === "spent" || timing === "band") && index + 1 < total) {
       return { engine: HOST_ENGINE, ...tallied(results, total, failedOf(hostAfterFail(index), total - index - 1)) };
     }
   }
   return results.length === total ? { engine: HOST_ENGINE, ...tallied(results) } : stoppedHost(total, faultOf(`${HOST} judged a different number of cases`, total));
 }
+
+export type Throttles = { count: number; periodMs: number };
+
+const CGROUP_ROOT = "/sys/fs/cgroup";
+
+export async function cgroupThrottles(pid: number | "self" = "self"): Promise<Throttles | null> {
+  try {
+    const line = (await readFile(`/proc/${pid}/cgroup`, "utf8")).split("\n").find((entry) => entry.startsWith("0::/"));
+    if (line === undefined) return null;
+    const parts = line.slice(3).split("/").filter((part) => part !== "");
+    let count = 0;
+    let periodMs = 0;
+    for (let depth = parts.length; depth >= 0; depth -= 1) {
+      const directory = [CGROUP_ROOT, ...parts.slice(0, depth)].join("/");
+      const stat = await readFile(`${directory}/cpu.stat`, "utf8").catch(() => null);
+      if (stat === null) {
+        if (depth === parts.length) return null;
+        continue;
+      }
+      const found = /^nr_throttled (\d{1,20})$/m.exec(stat);
+      if (found !== null) count += Number(found[1]);
+      const max = await readFile(`${directory}/cpu.max`, "utf8").catch(() => null);
+      const period = max === null ? Number.NaN : Number(max.trim().split(" ")[1]) / 1000;
+      if (period > periodMs) periodMs = period;
+    }
+    return { count, periodMs };
+  } catch {
+    return null;
+  }
+}
+
+export const unthrottled = (before: Throttles | null, after: Throttles | null): boolean => before !== null && after !== null && before.count === after.count;
+
+const SAMPLE_SLACK_MS = 10;
 
 export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds: number, seed: number = runOf(cases).seed): Promise<HostJudged> {
   const text = moduleText(source);
@@ -234,6 +265,7 @@ export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds
   if (timeoutSeconds <= 0) return stoppedHost(total, deadlineOf(deadlineMissed(HOST, timeoutSeconds), total));
   const budgetMs = hostBudgetMs(cases);
   const input = JSON.stringify({ source: text, cases: cases.cases.map((c) => ({ ...wireArgs(c.args), expected: c.expected })), budgetMs, backstopMs: hostBackstopMs(budgetMs), detail: hostDetail(total) });
+  const before = await cgroupThrottles();
   const ran = await runHost(input, timeoutSeconds, seed);
   if (ran.timedOut) return stoppedHost(total, deadlineOf(deadlineMissed(HOST, timeoutSeconds), total));
   if (ran.exitCode !== 0) {
@@ -251,5 +283,10 @@ export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds
   if (!results.every(readable)) {
     return stoppedHost(total, faultOf(`${HOST} answered a verdict it does not have`, total));
   }
-  return hostTally(results, total, budgetMs);
+  const answers = results as HostAnswer[];
+  if (answers.some((answer) => answer.displaced >= DISPLACED_LIMIT)) {
+    await new Promise((wait) => setTimeout(wait, (before?.periodMs ?? 0) + SAMPLE_SLACK_MS));
+  }
+  const open = unthrottled(before, await cgroupThrottles());
+  return hostTally(open ? answers : answers.map((answer) => ({ ...answer, displaced: 0 })), total, budgetMs);
 }
