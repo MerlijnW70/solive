@@ -404,20 +404,30 @@ The issue faucet's budget is one chain of numbers. `scripts/faucet.sh` sends 0.5
 
 The issue faucet finds requests by one rule, kept in `scripts/faucet.sh` and `.github/workflows/faucet.yml` as the same two commands: open issues titled exactly `Devnet SOL` that lack the `faucet` label, and open issues with the `faucet` label that lack `faucet-sent`. When devnet cannot be reached for an address, the script leaves the request open and comments `Retry after:` with a time 3 hours ahead; every run before that time skips the request. Only comments by `github-actions` count. After 8 such tries, 24 hours in all, the script closes the request and asks for a new one.
 
-The issue faucet pays each request at most once. It signs the transfer offline with a fresh blockhash, comments the signature and the blockhash's last valid block height on the request, labels it `faucet-pending`, and only then sends. When the send gives no clear answer, the request stays open with that label and comment. The script creates the `faucet-pending` label the first time it needs it.
+The issue faucet pays each request at most once. It signs the transfer offline with a fresh blockhash and the memo `faucet request <number>`, then comments the signature, the slot it signed after and the blockhash's last valid block height. Only the run whose comment is the first new one goes on: it labels the request `faucet-pending`, comments that the transaction is on its way, and sends. The script creates the label the first time it needs it.
 
-Each run first checks the pending requests by their commented signatures. A confirmed transaction closes the request as sent. A signature the chain does not know can never land once the finalized block height is 150 past its last valid height; the script then removes the label and signs a new transfer, and after 3 such transfers it refuses the request. Any other answer, or none from devnet, leaves the request for a later run.
+Each run first resolves every request labelled `faucet-pending`, open or closed. Only a `finalized` status without error counts as landed; the script then answers once with the signature and closes the request. A null status proves nothing, since a node without history, or with its long-term storage failing, answers null too.
 
-Two runs never both send for one request. After its comment, a run waits `FAUCET_SETTLE` seconds, 5 by default, and sends only when its comment is the first new transfer comment on the request. The daily cap counts requests closed as `faucet-sent` in the last day plus open requests labelled `faucet-sent` or `faucet-pending`, and a run that pushes the count past the cap withdraws its label and sends nothing.
+A transfer counts as never landed only on positive evidence. The finalized block height must be more than 150 past its last valid height. And the faucet wallet's history from `getSignaturesForAddress`, read at that finalized slot as `minContextSlot`, must reach back to an older transaction than the slot the transfer was signed after, without the signature. The wallet's own funding is always older, so a full history always reaches back.
+
+An error, an empty or short history, or a node behind that slot leaves the request pending. The script then retries; after 3 sent transfers that never landed it refuses. Records of runs that stepped aside do not count as tries. When the author closed the request, the script comments that nothing was sent and stops.
+
+Before each new transfer, and for a pending request whose record comment is gone, the script reads the wallet's history back to the request's creation and looks for a landed transfer with the request's memo. A landed one is answered instead of sent again. A pending label without a record and without such a transfer stays pending until a maintainer checks it and removes the label.
+
+The faucet assumes its RPC node is honest, keeps the wallet's history back to the oldest pending transfer, and reports storage errors as errors. The public devnet node does. It also assumes one run at a time. `.github/workflows/faucet.yml` holds the `faucet` concurrency group, and the script refuses to start without it or without `GITHUB_RUN_ID`. It also defers while `gh run list` shows another faucet run in progress.
+
+The daily cap counts requests closed as `faucet-sent` in the last day, open `faucet-sent` requests and every `faucet-pending` request. A run that pushes the count past the cap withdraws its label and sends nothing. These lists read up to 1000 issues, and only the faucet sets these labels.
 
 `scripts/faucet.sh` exits with one code per run. Any code but 0 fails the workflow run, and GitHub emails the owner. Code 1 wins over code 3.
 
 | Exit | Meaning |
 | --- | --- |
 | 0 | Every open request was answered, parked until its retry time, or needed nothing. |
-| 1 | A request hit an unexpected error, such as a failed `gh` or `solana` command; the script sent nothing more for that request in this run. |
-| 2 | The script refused to start: `FAUCET_KEYPAIR` is empty, or `FAUCET_URL`, `FAUCET_NOW` or `FAUCET_SETTLE` is malformed. It read and sent nothing. |
-| 3 | A request stays `faucet-pending` because its transfer has not landed or expired yet, or a run stepped aside for another; a later run decides it. |
+| 1 | A `gh`, `solana` or `curl` command failed where the script cannot go on, or the run was stopped by SIGTERM or SIGINT. The script sent nothing more for the request it was on. |
+| 2 | The script refused to start: `FAUCET_KEYPAIR` or `GITHUB_RUN_ID` is empty, `FAUCET_URL`, `FAUCET_NOW`, `FAUCET_SETTLE` or `FAUCET_FINALIZE` is malformed, or the workflow lacks the `faucet` concurrency group. It read and sent nothing. |
+| 3 | Another faucet run is in progress, a request stays `faucet-pending` until devnet proves its transfer landed or never can, or a run stepped aside for another. A later run decides it. |
+
+A run killed by SIGKILL ends with 137 and loses nothing: the next run resolves its records.
 
 Run it weekly with `/etc/systemd/system/solive-faucet-topup.service`:
 

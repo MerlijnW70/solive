@@ -26,16 +26,18 @@ echo "gh $*" >> "$STUB_LOG"
 case "$1 $2" in
   "api users/"*) echo "$STUB_CREATED" ;;
   "label create") ;;
+  "run list") echo "$GITHUB_RUN_ID" ;;
   "issue comment") node -e 'require("node:fs").appendFileSync(process.argv[1], JSON.stringify({ author: { login: "github-actions" }, body: process.argv[2] }) + "\\n")' "$STUB_ISSUES/$3/comments" "$5" ;;
   "issue view")
-    if [[ "$*" == *"--json comments"* ]]; then node -e 'const lines = require("node:fs").readFileSync(process.argv[1], "utf8").split("\\n").filter(Boolean); console.log(JSON.stringify({ comments: lines.map((l) => JSON.parse(l)), labels: [] }))' "$STUB_ISSUES/$3/comments"
+    if [[ "$*" == *"--json comments"* ]]; then node -e 'const lines = require("node:fs").readFileSync(process.argv[1], "utf8").split("\\n").filter(Boolean); console.log(JSON.stringify({ comments: lines.map((l) => JSON.parse(l)), labels: [], state: "OPEN", createdAt: "2026-10-10T00:00:00Z" }))' "$STUB_ISSUES/$3/comments"
     elif [[ "$*" == *"--json body"* ]]; then cat "$STUB_ISSUES/$3/body"; else cat "$STUB_ISSUES/$3/author"; fi ;;
   "issue list")
-    if [[ "$*" == *"--search"* ]]; then cat "$STUB_ISSUES/untagged"
+    if [[ "$*" == *"--label faucet-sent --state closed"* ]]; then echo $((STUB_SENT + $(grep -c -- "--add-label faucet-sent" "$STUB_LOG")))
+    elif [[ "$*" == *"--search"* ]]; then cat "$STUB_ISSUES/untagged"
+    elif [[ "$*" == *"--label faucet-pending"* && "$*" == *"--jq length"* ]]; then echo 0
     elif [[ "$*" == *"--label faucet-pending"* ]]; then :
-    elif [[ "$*" == *"--json labels "* ]]; then echo 0
+    elif [[ "$*" == *"--label faucet-sent --state open"* ]]; then echo 0
     elif [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"
-    elif [[ "$*" == *faucet-sent* ]]; then echo $((STUB_SENT + $(grep -c -- "--add-label faucet-sent" "$STUB_LOG")))
     else echo "$STUB_EARLIER"; fi ;;
 esac
 `;
@@ -47,6 +49,7 @@ case "$1" in
     if [ "$2" = "--keypair" ]; then echo "$STUB_LEFT lamports"; exit 0; fi
     if [ "$2" = "$STUB_INVALID" ]; then exit 1; fi
     echo "$STUB_HELD lamports" ;;
+  address) echo "$STUB_PAYER" ;;
   block-height) echo 1000 ;;
   confirm) echo '{"confirmationStatus":"finalized"}' ;;
   transfer)
@@ -57,7 +60,8 @@ esac
 
 const CURL = `#!/usr/bin/env bash
 echo "curl $*" >> "$STUB_LOG"
-echo '{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":{"blockhash":"${BLOCKHASH}","lastValidBlockHeight":1150}},"id":1}'
+if [[ "$*" == *getSignaturesForAddress* ]]; then echo '{"jsonrpc":"2.0","result":[{"signature":"${"F".repeat(64)}","slot":1,"blockTime":0,"memo":null,"err":null}],"id":1}'
+else echo '{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":{"blockhash":"${BLOCKHASH}","lastValidBlockHeight":1150}},"id":1}'; fi
 `;
 
 type Stub = { created: string; earlier: number; sent: number; held: number; left: number; invalid: string };
@@ -104,6 +108,8 @@ function requests(issues: Issue[], stub: Partial<Stub> = {}) {
       FAUCET_KEYPAIR: join(dir, "faucet.json"),
       FAUCET_NOW: String(NOW),
       FAUCET_SETTLE: "0",
+      FAUCET_FINALIZE: "0",
+      GITHUB_RUN_ID: "1",
       STUB_LOG: log,
       STUB_PAYER: PAYER,
       STUB_ISSUES: store,
@@ -161,7 +167,7 @@ describe("the devnet faucet", { timeout: 240_000 }, () => {
       `gh issue list --author a-user --label faucet --state all --limit 100 --json number,createdAt --jq [.[] | select(.number < 7 and .createdAt >= "${dayAgo}")] | length`,
     );
     expect(calls).toContain(
-      `gh issue list --label faucet-sent --state closed --limit 200 --json closedAt --jq [.[] | select(.closedAt >= "${dayAgo}")] | length`,
+      `gh issue list --label faucet-sent --state closed --limit 1000 --json closedAt --jq [.[] | select(.closedAt >= "${dayAgo}")] | length`,
     );
   });
 
@@ -237,7 +243,7 @@ describe("the devnet faucet", { timeout: 240_000 }, () => {
     expect(calls.filter((c) => c.startsWith("gh issue list --label faucet --state open"))).toEqual([
       `gh issue list --label faucet --state open --limit 100 --json number,labels --jq .[] | select(all(.labels[]; .name != "faucet-sent")) | .number`,
     ]);
-    expect(calls.filter((c) => c.startsWith("gh issue comment") && !c.includes(" --body Sending ")).map((c) => c.split(" ")[3])).toEqual(["7", "8", "9"]);
+    expect(calls.filter((c) => c.startsWith("gh issue comment") && !c.includes(" --body Sending ") && !c.endsWith(" is on its way.")).map((c) => c.split(" ")[3])).toEqual(["7", "8", "9"]);
     expect(sent(calls)).toHaveLength(2);
     expect(sent(calls)[0]).toContain(ADDRESS);
     expect(sent(calls)[1]).toContain(OTHER);
@@ -257,7 +263,7 @@ describe("the devnet faucet", { timeout: 240_000 }, () => {
   it("answers nothing when no request is open", () => {
     const { out, calls } = requests([]);
     expect(out).toBe("");
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(4);
   });
 
   it("serves a Devnet SOL request filed without the form, though the label search does not list it yet", () => {
@@ -268,7 +274,7 @@ describe("the devnet faucet", { timeout: 240_000 }, () => {
 
   it("labels a Devnet SOL request filed without the form, then serves it", () => {
     const { calls } = requests([{ number: 7, body: ADDRESS, untagged: true }]);
-    expect(calls[0]).toBe(`gh issue list --state open --limit 100 --search in:title "Devnet SOL" -label:faucet --json number,title --jq .[] | select(.title == "Devnet SOL") | .number`);
+    expect(calls[1]).toBe(`gh issue list --state open --limit 100 --search in:title "Devnet SOL" -label:faucet --json number,title --jq .[] | select(.title == "Devnet SOL") | .number`);
     expect(calls).toContain("gh issue edit 7 --add-label faucet");
     expect(calls.indexOf("gh issue edit 7 --add-label faucet")).toBeLessThan(calls.findIndex((c) => c.startsWith("gh issue list --label faucet --state open")));
     expect(sent(calls)).toHaveLength(1);

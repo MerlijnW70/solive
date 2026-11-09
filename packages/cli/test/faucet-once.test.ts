@@ -1,18 +1,12 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DAY, HOUR, NOW, request, SCRIPT, world } from "./faucet-world.js";
+import { answers, DAY, HOUR, NOW, record, records, request, SCRIPT, world } from "./faucet-world.js";
 
 const ADDRESS = "4JUfAhAtwAccPT4T8cmsxQBpBwNiaUJgwWt5c5bsvKAo";
 const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
 const SOL = 1_000_000_000;
 const FOREIGN = "5".repeat(64);
-const record = (address: string, sig: string, last: number) =>
-  `Sending 0.5 devnet SOL to \`${address}\` in transaction ${sig}, valid until block height ${last}. The faucet checks this transaction before it sends again.`;
-const bodies = (faucet: ReturnType<typeof world>, number: number, start: string) =>
-  (faucet.issue(number)?.comments ?? []).filter((c) => c.author === "github-actions" && c.body.startsWith(start)).map((c) => c.body);
-const answers = (faucet: ReturnType<typeof world>, number: number) => bodies(faucet, number, "Sent ");
-const records = (faucet: ReturnType<typeof world>, number: number) => bodies(faucet, number, "Sending ");
 const until = async (check: () => boolean) => {
   const end = Date.now() + 60_000;
   while (!check()) {
@@ -29,7 +23,7 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
     expect(faucet.landed()).toHaveLength(1);
     expect(faucet.issue(7)?.state).toBe("open");
     expect(faucet.issue(7)?.labels).toContain("faucet-pending");
-    expect(records(faucet, 7)).toEqual([record(ADDRESS, faucet.landed()[0]?.sig ?? "", 2 * NOW + 150)]);
+    expect(records(faucet, 7)).toEqual([record(ADDRESS, faucet.landed()[0]?.sig ?? "", 2 * NOW, 2 * NOW + 150)]);
     expect(answers(faucet, 7)).toEqual([]);
     const second = faucet.run(NOW + HOUR);
     expect(second.code).toBe(0);
@@ -81,7 +75,7 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
   it("counts pending sends toward the daily cap", () => {
     const closedAt = new Date((NOW - HOUR) * 1000).toISOString().replace(".000", "");
     const done = Array.from({ length: 49 }, (_, at) => request(100 + at, OTHER, { labels: ["faucet", "faucet-sent"], state: "closed" as const, closedAt }));
-    const pending = request(200, OTHER, { labels: ["faucet", "faucet-pending"], comments: [{ author: "github-actions", body: record(OTHER, FOREIGN, 2 * NOW + 150) }] });
+    const pending = request(200, OTHER, { labels: ["faucet", "faucet-pending"], comments: [{ author: "github-actions", body: record(OTHER, FOREIGN, 2 * NOW, 2 * NOW + 150) }] });
     const faucet = world([...done, pending, request(201, ADDRESS)]);
     const run = faucet.run(NOW);
     expect(run.code).toBe(3);
@@ -95,7 +89,7 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
   it("resolves pending requests before it serves new ones, so an expired transfer stops counting toward the cap", () => {
     const closedAt = new Date((NOW - HOUR) * 1000).toISOString().replace(".000", "");
     const done = Array.from({ length: 49 }, (_, at) => request(100 + at, OTHER, { labels: ["faucet", "faucet-sent"], state: "closed" as const, closedAt }));
-    const expired = request(300, OTHER, { labels: ["faucet", "faucet-pending"], comments: [{ author: "github-actions", body: record(OTHER, FOREIGN, 2 * NOW - 1000) }] });
+    const expired = request(300, OTHER, { labels: ["faucet", "faucet-pending"], comments: [{ author: "github-actions", body: record(OTHER, FOREIGN, 2 * NOW - 1200, 2 * NOW - 1000) }] });
     const faucet = world([...done, request(299, ADDRESS), expired]);
     expect(faucet.run(NOW).code).toBe(0);
     expect(faucet.landed().map((each) => each.to)).toEqual([ADDRESS]);
@@ -205,14 +199,14 @@ describe("the issue faucet pays each request at most once", { timeout: 240_000 }
   });
 
   it("ignores a transfer record that anyone but the faucet posts", () => {
-    const faucet = world([request(7, ADDRESS, { comments: [{ author: "mallory", body: record(ADDRESS, FOREIGN, 2 * NOW + 150) }] })]);
+    const faucet = world([request(7, ADDRESS, { comments: [{ author: "mallory", body: record(ADDRESS, FOREIGN, 2 * NOW, 2 * NOW + 150) }] })]);
     expect(faucet.run(NOW).code).toBe(0);
     expect(faucet.landed()).toHaveLength(1);
   });
 
   it("refuses a configuration it cannot run with exit 2, before it reads any request", () => {
     const faucet = world([request(7, ADDRESS)]);
-    for (const extra of [{ FAUCET_KEYPAIR: "" }, { FAUCET_URL: "mainnet-beta" }, { FAUCET_URL: "ftp://x" }, { FAUCET_SETTLE: "-1" }, { FAUCET_NOW: "soon" }]) {
+    for (const extra of [{ FAUCET_KEYPAIR: "" }, { FAUCET_URL: "mainnet-beta" }, { FAUCET_URL: "ftp://x" }, { FAUCET_SETTLE: "-1" }, { FAUCET_FINALIZE: "x" }, { GITHUB_RUN_ID: "" }, { FAUCET_NOW: "soon" }]) {
       const run = faucet.run(NOW, extra);
       expect(run.code).toBe(2);
       expect(run.err.startsWith("refusing: ")).toBe(true);

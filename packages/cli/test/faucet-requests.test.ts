@@ -44,12 +44,12 @@ const issue = (number: number, title: string, labels: string[], more: Partial<Is
   ...more,
 });
 
-const commandsOf = (text: string) => [...text.matchAll(/^\s*(untagged|waiting)=\$\((gh issue list .*)\)$/gm)].map((m) => `${m[1]}=${m[2]}`);
+const commandsOf = (text: string) => [...text.matchAll(/^\s*(untagged|waiting|pending)=\$\((gh issue list .*)\)$/gm)].map((m) => `${m[1]}=${m[2]}`);
 
 describe("the issue faucet finds requests by one rule", { timeout: 240_000 }, () => {
-  it("uses the same two commands in the workflow as in the script", () => {
+  it("uses the same three commands in the workflow as in the script", () => {
     const commands = commandsOf(SCRIPT_TEXT);
-    expect(commands).toHaveLength(2);
+    expect(commands).toHaveLength(3);
     expect(commandsOf(WORKFLOW_TEXT)).toEqual(commands);
   });
 
