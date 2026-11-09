@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { HOST_CALL_MS, HOST_ENGINE, hostArgs, hostBackstopMs, hostDetail, judgeHost, hostTally, wireArgs } from "../src/host-judge.js";
-import { engineOutcome, ranPastBudget } from "../src/verdict-model.js";
+import { engineOutcome, failedCases, ranPastBudget } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 
 const POSIX = { skip: process.platform === "win32", timeout: 180_000 } as const;
@@ -80,10 +80,25 @@ describe("the host engine's budget is CPU time, not the judge's wall clock", () 
     expect([engineOutcome(HOST_ENGINE, blocking).outcome, blocking.failures[0]?.verdict]).toEqual(["fail", "threw"]);
   });
 
+  it("leaves a call that answered rightly past its budget, but under twice it, no verdict only while other work kept the CPUs busy", () => {
+    const busy = { usedMs: HOST_CALL_MS * 1.5, otherShare: 0.5 };
+    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "pass", ...busy }], 1, HOST_CALL_MS)).outcome).toBe("infra");
+    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "wrong", detail: 5, ...busy }], 1, HOST_CALL_MS))).toEqual({ outcome: "fail", reason: failedCases(HOST_ENGINE, 1, 1) });
+    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "pass", usedMs: HOST_CALL_MS * 1.5, otherShare: 0 }], 1, HOST_CALL_MS)).outcome).toBe("fail");
+    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "pass", usedMs: HOST_CALL_MS * 2, otherShare: 1 }], 1, HOST_CALL_MS)).outcome).toBe("fail");
+  });
+
+  it("runs microtasks a delivery queues inside the call that queued them, so a loop there is a stopped case, never a deadline", async () => {
+    for (const source of ["Promise.resolve().then(() => { for (;;) {} }); export default (x) => x * 2;", "export default (x) => { Promise.resolve().then(() => { for (;;) {} }); return x * 2; };"]) {
+      const judged = await judgeHost(bytes(source), cases(200), 60);
+      expect([engineOutcome(HOST_ENGINE, judged).outcome, judged.failures[0]?.verdict], source).toEqual(["fail", "stopped"]);
+    }
+  }, 120_000);
+
   it("charges CPU used past the budget as a fail even when the call answered", () => {
-    expect(hostTally([{ verdict: "pass", usedMs: HOST_CALL_MS }], 1, HOST_CALL_MS)).toMatchObject({ passed: 0, failures: [{ case: 0, verdict: "stopped" }] });
-    expect(hostTally([{ verdict: "pass", usedMs: HOST_CALL_MS - 1 }], 1, HOST_CALL_MS)).toMatchObject({ passed: 1, failures: [] });
-    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "stopped", usedMs: HOST_CALL_MS - 1 }], 1, HOST_CALL_MS)).outcome).toBe("infra");
-    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "stopped", usedMs: HOST_CALL_MS }], 1, HOST_CALL_MS)).outcome).toBe("fail");
+    expect(hostTally([{ verdict: "pass", usedMs: HOST_CALL_MS, otherShare: 0 }], 1, HOST_CALL_MS)).toMatchObject({ passed: 0, failures: [{ case: 0, verdict: "stopped" }] });
+    expect(hostTally([{ verdict: "pass", usedMs: HOST_CALL_MS - 1, otherShare: 0 }], 1, HOST_CALL_MS)).toMatchObject({ passed: 1, failures: [] });
+    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "stopped", usedMs: HOST_CALL_MS - 1, otherShare: 0 }], 1, HOST_CALL_MS)).outcome).toBe("infra");
+    expect(engineOutcome(HOST_ENGINE, hostTally([{ verdict: "stopped", usedMs: HOST_CALL_MS, otherShare: 0 }], 1, HOST_CALL_MS)).outcome).toBe("fail");
   });
 });

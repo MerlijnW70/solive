@@ -37,20 +37,31 @@ export const deadlineOf = (reason: string, unfinished: number): Stop => ({ cause
 
 export const failedOf = (reason: string, unfinished: number): Stop => ({ cause: "failed", reason, unfinished });
 
-export type CaseClock = { started: boolean; usedMs: number; idleMs: number; ioMs: number; stoppedBy: "budget" | "backstop" | null };
+export type CaseClock = { started: boolean; usedMs: number; idleMs: number; ioMs: number; otherShare: number; stoppedBy: "budget" | "backstop" | null };
+
+export const CONTENTION_FACTOR = 2;
+
+export const OTHER_BUSY_LIMIT = 0.25;
 
 export const chargedMs = (clock: CaseClock, budgetMs: number): number => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - budgetMs);
 
-export type Timing = "within" | "over" | "starved";
+export type Timing = "within" | "band" | "over" | "starved";
 
 export const ranPastBudget = (budgetMs: number): string => `the case used its ${budgetMs} ms budget of CPU time and of time it spent waiting by its own choice`;
 
 export const starvedCase = (engine: string, budgetMs: number, backstopMs: number): string =>
   `${engine} stopped a case at its ${backstopMs} ms wall-clock backstop before the case had used its ${budgetMs} ms budget of CPU time and of time it spent waiting by its own choice, so the judge's machine kept it from the CPU, and this is no verdict on the work`;
 
+export const contendedCase = (engine: string, budgetMs: number, otherShare: number): string =>
+  `${engine} charged a case that answered rightly past its ${budgetMs} ms budget while other work kept ${Math.round(otherShare * 100)}% of the judge's CPUs busy, which slows the CPU time a case is charged, so this is no verdict on the work`;
+
 export function caseTiming(clock: CaseClock, budgetMs: number): Timing {
-  if (clock.started && chargedMs(clock, budgetMs) >= budgetMs) {
+  const charged = chargedMs(clock, budgetMs);
+  if (clock.started && charged >= budgetMs * CONTENTION_FACTOR) {
     return "over";
+  }
+  if (clock.started && charged >= budgetMs) {
+    return clock.otherShare >= OTHER_BUSY_LIMIT ? "band" : "over";
   }
   return clock.stoppedBy === null ? "within" : "starved";
 }

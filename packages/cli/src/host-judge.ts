@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { caseTiming, deadlineOf, failedOf, faultOf, ranPastBudget, type Stop, starvedCase } from "./verdict-model.js";
+import { caseTiming, contendedCase, deadlineOf, failedOf, faultOf, ranPastBudget, type Stop, starvedCase } from "./verdict-model.js";
 import { type CaseResult, type Cases, deadlineMissed, DIAGNOSTIC_BYTES, moduleText, OUTPUT_BYTES, permissionFlag, type Primitive, runOf, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const HOST_ENGINE = "node-vm";
@@ -18,13 +18,14 @@ export const hostBackstopMs = (budgetMs: number): number => budgetMs * HOST_BACK
 
 export type HostJudged = { engine: typeof HOST_ENGINE } & Tallied;
 export type WireArgs = { json: string; zeros: number[] };
-export type HostAnswer = CaseResult & { usedMs: number };
+export type HostAnswer = CaseResult & { usedMs: number; otherShare: number };
 
 export const wireArgs = (args: readonly Primitive[]): WireArgs => ({ json: JSON.stringify(args), zeros: args.flatMap((arg, at) => (Object.is(arg, -0) ? [at] : [])) });
 
 export const HOST_RUNNER = `
 import vm from "node:vm";
 import { writeSync } from "node:fs";
+import { cpus } from "node:os";
 import { types } from "node:util";
 process.on("unhandledRejection", () => undefined);
 const chunks = [];
@@ -35,6 +36,15 @@ const cpuNow = process.cpuUsage.bind(process);
 const used = (from) => {
   const at = cpuNow(from);
   return (at.user + at.system) / 1000;
+};
+const hostBusy = () => {
+  const all = cpus();
+  return { busy: all.reduce((sum, one) => sum + one.times.user + one.times.nice + one.times.sys + one.times.irq, 0), count: all.length, at: performance.now() };
+};
+const others = (host, usedMs) => {
+  const now = hostBusy();
+  const wall = now.at - host.at;
+  return wall > 0 && now.count > 0 ? Math.max(0, now.busy - host.busy - usedMs) / (wall * now.count) : 0;
 };
 const write = (results) => {
   const bytes = Buffer.from(JSON.stringify(results), "utf8");
@@ -49,8 +59,8 @@ const write = (results) => {
   return true;
 };
 const out = (results) => process.exit(write(results) ? 0 : 70);
-const all = (verdict, detail, usedMs) => out(cases.map(() => (detail === undefined ? { verdict, usedMs } : { verdict, detail, usedMs })));
-const context = vm.createContext(vm.constants.DONT_CONTEXTIFY, { codeGeneration: { strings: false, wasm: false } });
+const all = (verdict, detail, usedMs, otherShare) => out(cases.map(() => (detail === undefined ? { verdict, usedMs, otherShare } : { verdict, detail, usedMs, otherShare })));
+const context = vm.createContext(vm.constants.DONT_CONTEXTIFY, { codeGeneration: { strings: false, wasm: false }, microtaskMode: "afterEvaluate" });
 if (vm.runInContext("Reflect.deleteProperty(Atomics, 'wait') && typeof Atomics.wait === 'undefined'", context) !== true) process.exit(${UNBLOCKABLE_EXIT});
 const put = (name, value) => {
   try {
@@ -89,13 +99,14 @@ const call = host.call;
 let fn;
 let loading = true;
 const loadFrom = cpuNow();
+const loadHost = hostBusy();
 try {
   const module = new vm.SourceTextModule(source, { context, identifier: "delivery.mjs" });
   await module.link(() => {
     throw new Error("the delivery imports a module");
   });
   process.once("beforeExit", () => {
-    if (loading) all("no-module", "the module's top-level code never finished loading", used(loadFrom));
+    if (loading) all("no-module", "the module's top-level code never finished loading", used(loadFrom), others(loadHost, used(loadFrom)));
   });
   await module.evaluate({ timeout: backstopMs });
   loading = false;
@@ -103,12 +114,13 @@ try {
 } catch (error) {
   loading = false;
   const ended = failed(error);
-  all(ended.verdict === "stopped" ? "stopped" : "no-module", ended.verdict === "stopped" ? undefined : ended.detail, used(loadFrom));
+  all(ended.verdict === "stopped" ? "stopped" : "no-module", ended.verdict === "stopped" ? undefined : ended.detail, used(loadFrom), others(loadHost, used(loadFrom)));
 }
 const loadMs = used(loadFrom);
-if (loadMs >= budgetMs) all("stopped", undefined, loadMs);
+const loadOthers = others(loadHost, loadMs);
+if (loadMs >= budgetMs) all("stopped", undefined, loadMs, loadOthers);
 if (typeof fn !== "function") {
-  all("no-module", "the delivery has no default export function", loadMs);
+  all("no-module", "the delivery has no default export function", loadMs, loadOthers);
 }
 give(fn);
 const primitive = (v) => v === null || typeof v === "boolean" || typeof v === "number" || typeof v === "string";
@@ -127,9 +139,10 @@ const judgeOne = (c) => {
 const results = [];
 for (const c of cases) {
   const from = cpuNow();
+  const host = hostBusy();
   const result = judgeOne(c);
   const usedMs = used(from);
-  results.push({ ...result, usedMs });
+  results.push({ ...result, usedMs, otherShare: others(host, usedMs) });
   if (result.verdict === "stopped" || usedMs >= budgetMs) break;
 }
 out(results);
@@ -189,19 +202,24 @@ const readable = (result: unknown): result is HostAnswer =>
   result !== null &&
   HOST_VERDICTS.includes((result as { verdict?: unknown }).verdict as string) &&
   typeof (result as { usedMs?: unknown }).usedMs === "number" &&
-  Number.isFinite((result as { usedMs: number }).usedMs);
+  Number.isFinite((result as { usedMs: number }).usedMs) &&
+  typeof (result as { otherShare?: unknown }).otherShare === "number" &&
+  Number.isFinite((result as { otherShare: number }).otherShare);
 
 export function hostTally(answers: readonly HostAnswer[], total: number, budgetMs: number): HostJudged {
   const backstopMs = hostBackstopMs(budgetMs);
   const results: CaseResult[] = [];
   for (const [index, answer] of answers.entries()) {
-    const timing = caseTiming({ started: true, usedMs: answer.usedMs, idleMs: 0, ioMs: 0, stoppedBy: answer.verdict === "stopped" ? "backstop" : null }, budgetMs);
+    const timing = caseTiming({ started: true, usedMs: answer.usedMs, idleMs: 0, ioMs: 0, otherShare: answer.otherShare, stoppedBy: answer.verdict === "stopped" ? "backstop" : null }, budgetMs);
     if (timing === "starved") {
       return { engine: HOST_ENGINE, ...tallied(results, total, faultOf(starvedCase(HOST, budgetMs, backstopMs), total - index)) };
     }
     const result: CaseResult = answer.detail === undefined ? { verdict: answer.verdict } : { verdict: answer.verdict, detail: answer.detail };
-    results.push(timing === "over" ? { verdict: "stopped", detail: ranPastBudget(budgetMs) } : result);
-    if (timing === "over" && index + 1 < total) {
+    if (timing === "band" && result.verdict === "pass") {
+      return { engine: HOST_ENGINE, ...tallied(results, total, faultOf(contendedCase(HOST, budgetMs, answer.otherShare), total - index)) };
+    }
+    results.push(timing === "over" || (timing === "band" && result.verdict === "stopped") ? { verdict: "stopped", detail: ranPastBudget(budgetMs) } : result);
+    if ((timing === "over" || timing === "band") && index + 1 < total) {
       return { engine: HOST_ENGINE, ...tallied(results, total, failedOf(hostAfterFail(index), total - index - 1)) };
     }
   }

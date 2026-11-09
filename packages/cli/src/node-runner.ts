@@ -80,6 +80,17 @@ const taskState = () => {
   }
   return disk ? "disk" : "idle";
 };
+const hostTicks = () => {
+  try {
+    const lines = readFileSync("/proc/stat", "utf8").split("\\n");
+    const count = lines.filter((line) => /^cpu\\d/.test(line)).length;
+    const ticks = lines[0].trim().split(/\\s+/).slice(1).map(Number);
+    const busy = ticks[0] + ticks[1] + ticks[2] + ticks[5] + ticks[6] + ticks[7];
+    return count > 0 && Number.isFinite(busy) ? { busy, count } : null;
+  } catch {
+    return null;
+  }
+};
 const charged = (clock) => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - config.caseMs);
 const settle = async () => {
   const until = performance.now() + config.settleMs;
@@ -126,7 +137,7 @@ const runCase = (token, json, zeros) =>
     let timedOut = false;
     let code = null;
     let signal = null;
-    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, ioMs: 0, stoppedBy: null };
+    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null };
     let from = null;
     let last = 0;
     let lastState = "run";
@@ -150,19 +161,21 @@ const runCase = (token, json, zeros) =>
       const cpu = usage();
       if (cpu === null) clock.metered = false;
       else clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
+      const host = final && cpu !== null && from.host !== null ? hostTicks() : null;
+      if (host !== null && now > from.at) clock.otherShare = Math.max(0, (host.busy - from.host.busy) * config.tickMs - (cpu - from.cpu) / 1000) / ((now - from.at) * host.count);
     };
     const tick = () => {
       sampler = setTimeout(() => {
         if (exited) return;
         read(false);
-        if (charged(clock) >= config.caseMs || !clock.metered) stopBy("budget");
+        if (charged(clock) >= config.killMs || !clock.metered) stopBy("budget");
         else tick();
       }, config.sampleMs);
     };
     child.stdio[${STARTED_FD}].once("data", () => {
       const cpu = usage();
       if (cpu === null) clock.metered = false;
-      from = { cpu: cpu ?? 0, own: own() };
+      from = { cpu: cpu ?? 0, own: own(), host: hostTicks(), at: performance.now() };
       last = performance.now();
       clock.started = true;
       if (!exited) tick();

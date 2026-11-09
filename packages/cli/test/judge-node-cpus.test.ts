@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { describe, expect, it } from "vitest";
 import { judgeNode, NODE_ENGINE, nodeBackstopMs } from "../src/node-judge.js";
 import { KEEPER_OOM_SCORE } from "../src/node-runner.js";
@@ -12,6 +14,7 @@ const bytes = (source: string) => new TextEncoder().encode(source);
 const ONE = [{ args: [2], expected: 4 }];
 const cases = (caseMs?: number): Cases => ({ steps: 10_000_000, heap: 1 << 26, seed: 1, clock: 0, cases: ONE, ...(caseMs === undefined ? {} : { caseMs }) });
 const WORK = (loops: number) => `export default (n) => { let x = 0; for (let i = 0; i < ${loops}; i += 1) x = (x + i * 7) % 1000003; return n * 2 + (x === -1 ? 1 : 0); };`;
+const SPIN_TO = (ms: number) => `export default (n) => { const from = process.cpuUsage(); while (process.cpuUsage(from).user + process.cpuUsage(from).system < ${ms} * 1000) {} return n * 2; };`;
 const judged = async (source: string, cpus: string, list: Cases) => {
   const { judged: node } = await judgeNode(box(cpus), bytes(source), "work.mjs", list, 1, 600);
   return { node, outcome: engineOutcome(NODE_ENGINE, node).outcome };
@@ -19,11 +22,11 @@ const judged = async (source: string, cpus: string, list: Cases) => {
 
 describe("plain Node cases under the judge's --sandbox-cpus choice", () => {
   it("gives one correct module the same verdict at 1 CPU and at 0.1 CPU, where the old wall-clock limit failed it", SLOW, async () => {
-    const correct = WORK(6e8);
+    const correct = WORK(2.5e8);
     const full = await judged(correct, "1", cases());
     expect(full.outcome).toBe("pass");
     const tenth = await judged(correct, "0.1", cases());
-    expect(["pass", "infra"]).toContain(tenth.outcome);
+    expect(tenth.outcome).toBe("pass");
     expect(tenth.node.failures).toEqual([]);
   });
 
@@ -53,6 +56,25 @@ describe("plain Node cases under the judge's --sandbox-cpus choice", () => {
     const probe = "import { readFileSync } from 'node:fs'; export default () => ['' + process.ppid, '1'].map((pid) => readFileSync('/proc/' + pid + '/oom_score_adj', 'utf8').trim()).join(' ');";
     const { judged: node } = await judgeNode(box("1"), bytes(probe), "keepers.mjs", { ...cases(), cases: [{ args: [], expected: `${KEEPER_OOM_SCORE} ${KEEPER_OOM_SCORE}` }] }, 1, 600);
     expect([node.passed, node.failures]).toEqual([1, []]);
+  });
+
+  it("never passes a correct case charged past its budget, and fails it unless other work kept the judge busy", SLOW, async () => {
+    const { node, outcome } = await judged(SPIN_TO(1_400), "1", cases(1_000));
+    expect(["fail", "infra"]).toContain(outcome);
+    if (outcome === "fail") expect(node.failures).toEqual([{ case: 0, verdict: "stopped", detail: ranPastBudget(1_000) }]);
+    else expect(node.stop?.reason).toMatch(/of the judge's CPUs busy/);
+  });
+
+  it("leaves a correct case charged just past its budget no verdict while other work keeps every host CPU busy, never a fail", SLOW, async () => {
+    const hogs = Array.from({ length: availableParallelism() }, () => spawn(process.execPath, ["-e", "for (;;) {}"], { stdio: "ignore" }));
+    try {
+      await new Promise((done) => setTimeout(done, 1_000));
+      const { node, outcome } = await judged(SPIN_TO(1_400), "1", cases(1_000));
+      expect([outcome, node.failures]).toEqual(["infra", []]);
+      expect(node.stop?.reason).toMatch(/of the judge's CPUs busy/);
+    } finally {
+      for (const hog of hogs) hog.kill("SIGKILL");
+    }
   });
 
   it("charges CPU spent in children the kernel reaps itself, so such work neither passes over budget nor turns its fail into infra", SLOW, async () => {
