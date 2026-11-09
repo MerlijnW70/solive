@@ -13,6 +13,7 @@ import { TOKEN_NAMES } from "../src/tokens.js";
 import { sol, tokenAccountRent } from "../src/agent/wallet/costs.js";
 import { ata, balance, cli, funded, h, transport, world } from "./harness.js";
 import { approved, UNJUDGED } from "./approved.js";
+import { lookupTable } from "./lookup-table-kit.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -160,6 +161,54 @@ describe("a wallet server on a committee", () => {
     expect(setups(again["summary"])).toEqual(setups(shown["summary"]).filter((line) => line !== setup));
     expect(again["approval"]).not.toBe(shown["approval"]);
     expect(await ok(client, "wallet_committee_release", { ...e.ballot, votes, approval: again["approval"], send: true })).toMatchObject({ sent: true });
+    expect(balance(paid)).toBeGreaterThan(0n);
+  });
+
+  it("releases an eight-member committee's votes for one payee through a lookup table of the preview's lookup_accounts", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(wallet);
+    const others = await Promise.all(Array.from({ length: 7 }, () => generateKeyPairSigner()));
+    const payer = await funded();
+    const created = await cli(
+      ["committee", "create", "--url", "devnet", "--keypair", "payer.json", "--members", sortMembers([wallet, ...others.map((m) => m.address)]).join(","), "--threshold", "3", "--fee-wallet", payer.address, "--yes"],
+      { "payer.json": payer },
+    );
+    expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
+    const committee = created.json()["committee"] as Address;
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "6e".repeat(32) }));
+    const worker = await keyed();
+    const work = "e9".repeat(32);
+    const made = await announced(escrow["intent"] as Address, worker, work);
+    const ballot = { owner: wallet, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work };
+    const digest = await createClient({ url: "http://cluster", transport }).committeeBallot({
+      intent: { owner: wallet, nonce: BigInt(ballot.nonce) },
+      announcement: made.announcement,
+      opening: { sha256: work, salt: made.salt },
+      result: 1n,
+    });
+    const shownVote = await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot });
+    const own = (await ok(client, "wallet_committee_vote", { ...UNJUDGED, ...ballot, approval: shownVote["approval"], send: true }))["vote"] as { member: Address; signature: string };
+    const theirs = await Promise.all(
+      others.slice(0, 2).map(async (m) => {
+        const vote = await signCommitteeVote(m, digest.digest, digest.committee.members);
+        return { member: vote.member, signature: hex(vote.signature) };
+      }),
+    );
+    const votes = [own, ...theirs];
+    const bare = await ok(client, "wallet_committee_release", { ...ballot, votes });
+    expect(bare["summary"]).toEqual(expect.arrayContaining([expect.stringMatching(/^Too large: this committee release builds a \d+-byte transaction, over the 1232-byte limit; pass lookup_table/)]));
+    expect((await call(client, "wallet_committee_release", { ...ballot, votes, approval: bare["approval"], send: true })).value).toMatchObject({ code: "ReleaseTooLarge" });
+    const paid = await findAssociatedTokenAddress({ owner: worker.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect(balance(paid)).toBeLessThan(1n);
+    const lookups = bare["lookup_accounts"] as Address[];
+    expect(lookups).toContain(committee);
+    const table = (await generateKeyPairSigner()).address;
+    lookupTable(lookups, table);
+    const tabled = await ok(client, "wallet_committee_release", { ...ballot, votes, lookup_table: table });
+    expect(tabled["summary"]).not.toEqual(expect.arrayContaining([expect.stringMatching(/^Too large: /)]));
+    expect(tabled["approval"]).not.toBe(bare["approval"]);
+    h.packetLimit = true;
+    expect(await ok(client, "wallet_committee_release", { ...ballot, votes, lookup_table: table, approval: tabled["approval"], send: true })).toMatchObject({ sent: true });
     expect(balance(paid)).toBeGreaterThan(0n);
   });
 
