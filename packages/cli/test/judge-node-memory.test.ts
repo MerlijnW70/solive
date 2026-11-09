@@ -29,6 +29,15 @@ vi.mock("node:child_process", async (original) => {
     if (reads.oldNode && Array.isArray(args) && args.includes("--entrypoint")) {
       return actual.spawn(process.execPath, ["-e", 'process.stderr.write("node: bad option: --disable-sigusr1\\n"); process.exit(9)'], options ?? {});
     }
+    if (reads.broken && Array.isArray(args) && args[0] === "run" && args.some((arg) => String(arg).endsWith("launch.mjs"))) {
+      const child = actual.spawn(...all);
+      const stdin = child.stdin;
+      if (stdin !== null) {
+        const write = stdin.write.bind(stdin) as (chunk: unknown, ...rest: unknown[]) => boolean;
+        stdin.write = ((chunk: unknown, ...rest: unknown[]) => write(String(chunk).split(JSON.stringify(MEMORY_EVENTS)).join(JSON.stringify(`${MEMORY_EVENTS}.hidden`)), ...rest)) as typeof stdin.write;
+      }
+      return child;
+    }
     if (reads.broken && Array.isArray(args) && args[0] === "run") {
       const hidden = ["run", "--mount", `type=tmpfs,target=${dirname(MEMORY_EVENTS)}`, ...args.slice(1)];
       return actual.spawn("docker", hidden, options ?? {});

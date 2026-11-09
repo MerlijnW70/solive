@@ -195,7 +195,7 @@ export function hostTally(answers: readonly HostAnswer[], total: number, budgetM
   const backstopMs = hostBackstopMs(budgetMs);
   const results: CaseResult[] = [];
   for (const [index, answer] of answers.entries()) {
-    const timing = caseTiming({ started: true, usedMs: answer.usedMs, idleMs: 0, stoppedBy: answer.verdict === "stopped" ? "backstop" : null }, budgetMs);
+    const timing = caseTiming({ started: true, usedMs: answer.usedMs, idleMs: 0, ioMs: 0, stoppedBy: answer.verdict === "stopped" ? "backstop" : null }, budgetMs);
     if (timing === "starved") {
       return { engine: HOST_ENGINE, ...tallied(results, total, faultOf(starvedCase(HOST, budgetMs, backstopMs), total - index)) };
     }

@@ -12,13 +12,17 @@ export const STARTED_FD = 3;
 
 export const CASE_OOM_SCORE = 1000;
 
+export const KEEPER_OOM_SCORE = -1000;
+
+export const KEEPERS_EXPOSED = "the plain Node launcher could not take itself and the container's init out of the kernel's out-of-memory choice, so a case's memory kill could end the launcher instead, and no case was run";
+
 export const UNPREPARED = "unprepared";
 
 export const SAME_UID = "the plain Node launcher runs under the uid its cases would run under, so a case could reach it, and no case was run";
 
 export const NODE_LAUNCHER = `
 import { spawn, spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const caseFile = process.argv[2];
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -39,36 +43,27 @@ const others = () => {
   const list = pids();
   return list === null ? null : list.length;
 };
-const fields = (pid) => {
-  const stat = readFileSync("/proc/" + pid + "/stat", "utf8");
-  return stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-};
 const running = () => readdirSync("/proc").filter((pid) => /^\\d{1,10}$/.test(pid) && pid !== "1" && pid !== String(process.pid));
 const usage = () => {
-  let ticks = 0;
   try {
-    for (const pid of ["self", "1"]) {
-      const own = fields(pid);
-      ticks += Number(own[13]) + Number(own[14]);
-    }
+    const found = /^usage_usec (\\d{1,20})$/m.exec(readFileSync(config.cpuStat, "utf8"));
+    return found === null ? null : Number(found[1]);
   } catch {
     return null;
   }
-  for (const pid of running()) {
-    try {
-      const own = fields(pid);
-      ticks += Number(own[11]) + Number(own[12]) + Number(own[13]) + Number(own[14]);
-    } catch {}
-  }
-  return Number.isSafeInteger(ticks) ? (ticks * 1e6) / config.clockTicks : null;
 };
-const runnable = () => {
+const own = () => {
+  const at = process.cpuUsage();
+  return at.user + at.system;
+};
+const taskState = () => {
   let list;
   try {
     list = running();
   } catch {
     return null;
   }
+  let disk = false;
   for (const pid of list) {
     let tasks = [];
     try {
@@ -77,12 +72,15 @@ const runnable = () => {
     for (const task of tasks) {
       try {
         const stat = readFileSync("/proc/" + pid + "/task/" + task + "/stat", "utf8");
-        if (stat.charAt(stat.lastIndexOf(")") + 2) === "R") return true;
+        const state = stat.charAt(stat.lastIndexOf(")") + 2);
+        if (state === "R") return "run";
+        if (state === "D") disk = true;
       } catch {}
     }
   }
-  return false;
+  return disk ? "disk" : "idle";
 };
+const charged = (clock) => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - config.caseMs);
 const settle = async () => {
   const until = performance.now() + config.settleMs;
   for (;;) {
@@ -103,6 +101,17 @@ const memoryEvents = () => {
     return null;
   }
 };
+const keepers = () => {
+  for (const pid of ["self", "1"]) {
+    try {
+      writeFileSync("/proc/" + pid + "/oom_score_adj", "${KEEPER_OOM_SCORE}");
+      if (readFileSync("/proc/" + pid + "/oom_score_adj", "utf8").trim() !== "${KEEPER_OOM_SCORE}") return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+};
 const scoreLock = () => {
   const probe = spawnSync(process.execPath, ["--disable-sigusr1", caseFile], { input: JSON.stringify({ probe: true, token: "", json: "[]", zeros: [], path: config.path, uid: config.uid, gid: config.gid }), encoding: "utf8", timeout: config.probeMs, killSignal: "SIGKILL", stdio: ["pipe", "pipe", "ignore"] });
   if (probe.status === 0) return String(probe.stdout).trim() === "${CASE_OOM_SCORE}" ? "locked" : "unlocked";
@@ -117,10 +126,10 @@ const runCase = (token, json, zeros) =>
     let timedOut = false;
     let code = null;
     let signal = null;
-    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, stoppedBy: null };
+    const clock = { started: false, metered: true, usedMs: 0, idleMs: 0, ioMs: 0, stoppedBy: null };
     let from = null;
     let last = 0;
-    let lastIdle = false;
+    let lastState = "run";
     let sampler;
     let exited = false;
     const stopBy = (cause) => {
@@ -132,26 +141,28 @@ const runCase = (token, json, zeros) =>
     const read = (final) => {
       if (from === null) return;
       const now = performance.now();
-      const idle = final ? lastIdle : runnable() === false;
-      clock.idleMs += idle && lastIdle ? now - last : 0;
+      const state = final ? lastState : taskState();
+      if (state === null) clock.metered = false;
+      if (state === lastState && state === "idle") clock.idleMs += now - last;
+      if (state === lastState && state === "disk") clock.ioMs += now - last;
       last = now;
-      lastIdle = idle;
+      lastState = state ?? "run";
       const cpu = usage();
       if (cpu === null) clock.metered = false;
-      else clock.usedMs = Math.max(0, cpu - from.cpu) / 1000;
+      else clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
     };
     const tick = () => {
       sampler = setTimeout(() => {
         if (exited) return;
         read(false);
-        if (clock.usedMs + clock.idleMs >= config.caseMs || !clock.metered) stopBy("budget");
+        if (charged(clock) >= config.caseMs || !clock.metered) stopBy("budget");
         else tick();
       }, config.sampleMs);
     };
     child.stdio[${STARTED_FD}].once("data", () => {
       const cpu = usage();
       if (cpu === null) clock.metered = false;
-      from = { cpu: cpu ?? 0 };
+      from = { cpu: cpu ?? 0, own: own() };
       last = performance.now();
       clock.started = true;
       if (!exited) tick();
@@ -198,9 +209,9 @@ for await (const line of lines) {
       process.stderr.write(${JSON.stringify(SAME_UID)} + "\\n");
       process.exit(78);
     }
-    if (usage() === null || runnable() === null) {
-      process.stdout.write(${JSON.stringify(NODE_UNMETERED)} + "\\n");
-      process.exit(0);
+    if (!keepers()) {
+      process.stderr.write(${JSON.stringify(KEEPERS_EXPOSED)} + "\\n");
+      process.exit(70);
     }
     if (config.pinned === true && memoryEvents() === null) {
       process.stdout.write(${JSON.stringify(NODE_UNCOUNTED)} + "\\n");
@@ -209,6 +220,10 @@ for await (const line of lines) {
     const lock = config.pinned === true ? scoreLock() : "locked";
     if (lock !== "locked") {
       process.stdout.write((lock === "unlocked" ? ${JSON.stringify(NODE_UNLOCKED)} : ${JSON.stringify(NODE_UNPROBED)}) + "\\n");
+      process.exit(0);
+    }
+    if (usage() === null || taskState() === null) {
+      process.stdout.write(${JSON.stringify(NODE_UNMETERED)} + "\\n");
       process.exit(0);
     }
     process.stdout.write(${JSON.stringify(NODE_READY)} + "\\n");

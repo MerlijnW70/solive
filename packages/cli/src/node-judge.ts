@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { judgeRoot, removeCopy } from "./artifact.js";
-import { endedState, MEMORY_EVENTS, MEMORY_PROCS, removeContainer } from "./check-process.js";
+import { CPU_STAT, endedState, MEMORY_EVENTS, MEMORY_PROCS, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { CASE_OOM_SCORE, NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED, NODE_UNLOCKED, NODE_UNMETERED, NODE_UNPROBED, UNPREPARED } from "./node-runner.js";
@@ -17,7 +17,6 @@ export const NODE_RUNNER = "runner";
 export const NODE_CASE_MS = 5_000;
 export const NODE_SAMPLE_MS = 10;
 export const NODE_BOOT_MS = 2_000;
-export const CLOCK_TICKS = 100;
 export const NODE_SETTLE_MS = 2_000;
 export const NODE_HEAP_FACTOR = 1;
 export const NODE_LAUNCHER_USER = "0:0";
@@ -99,11 +98,12 @@ const spanOf = (value: unknown): number | null => (typeof value === "number" && 
 
 export function clockOf(value: unknown): (CaseClock & { metered: boolean }) | null {
   if (value === null || typeof value !== "object") return null;
-  const { started, metered, usedMs, idleMs, stoppedBy } = value as Record<string, unknown>;
+  const { started, metered, usedMs, idleMs, ioMs, stoppedBy } = value as Record<string, unknown>;
   const used = spanOf(usedMs);
   const idle = spanOf(idleMs);
-  if (typeof started !== "boolean" || typeof metered !== "boolean" || used === null || idle === null || !STOPPERS.includes(stoppedBy)) return null;
-  return { started, metered, usedMs: used, idleMs: idle, stoppedBy: stoppedBy as CaseClock["stoppedBy"] };
+  const io = spanOf(ioMs);
+  if (typeof started !== "boolean" || typeof metered !== "boolean" || used === null || idle === null || io === null || !STOPPERS.includes(stoppedBy)) return null;
+  return { started, metered, usedMs: used, idleMs: idle, ioMs: io, stoppedBy: stoppedBy as CaseClock["stoppedBy"] };
 }
 
 const countOf = (value: unknown): number | null => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
@@ -143,9 +143,9 @@ export const memoryUnlocked = (memory: string): string =>
 
 export const NODE_DEADLINE = "the judgement's --timeout ran out before the plain Node engine finished every case";
 
-export const nodeUnmetered = "the plain Node launcher cannot read the CPU time and states of its cases' processes in /proc, so a case's budget could be measured only on the judge's wall clock, which the judge's CPU share and load decide; judge it on a host whose containers mount /proc; no plain Node case was run and nothing was paid";
+export const nodeUnmetered = `the plain Node launcher cannot read its container's CPU time in ${CPU_STAT}, as a cgroup v2 host gives it, or its cases' processes in /proc, so a case's budget could be measured only on the judge's wall clock, which the judge's CPU share and load decide; judge it on a cgroup v2 host; no plain Node case was run and nothing was paid`;
 
-export const CASE_UNMETERED = "the plain Node launcher could not read a case's CPU time in /proc, so whether the case kept to its budget is unknown, and this is no verdict on the work";
+export const CASE_UNMETERED = `the plain Node launcher could not read a case's CPU time in ${CPU_STAT} or its processes in /proc, so whether the case kept to its budget is unknown, and this is no verdict on the work`;
 
 export const probeUnfinished = (probeMs: number): string =>
   `the plain Node launcher's probe case, which runs no delivery, did not finish within its ${probeMs} ms wall-clock backstop on this host, so whether a case could lower its out-of-memory score is unknown, and this is no verdict on the work`;
@@ -357,7 +357,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, clockTicks: CLOCK_TICKS, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, pinned: limits.pinned?.memory !== undefined });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 

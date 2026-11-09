@@ -317,7 +317,7 @@ Each engine keeps a wall-clock backstop well past the budget, `hostBackstopMs` a
 
 A hirer pins the budget of both engines with `"case_ms": 1000`, a whole number of milliseconds from 100 to 60000, and the plain Node CPUs with `"node_cpus": "0.5"`, in the format of `--sandbox-cpus`. `judge --plain-node` then refuses a `--sandbox-cpus` that differs. Publishing a spec refuses a `node_memory`, `case_ms` or `node_cpus` that no judge would accept.
 
-Plain Node reads a case's CPU time and its processes' states from `/proc` in its container; where it cannot, `judge --plain-node` refuses with exit 78. The host engine has no `Atomics.wait`, so a call cannot wait without using CPU.
+Plain Node reads a case's CPU time from its container's cgroup v2 `cpu.stat`, which counts every process however it ended, and its processes' states from `/proc`; where it cannot, `judge --plain-node` refuses with exit 78. The host engine has no `Atomics.wait`, so a call cannot wait without using CPU.
 
 A worker delivers the module as UTF-8 text. `judge` refuses a module that is not, with exit 78, and judges nothing: Node reads such bytes loosely, so a module saved as Windows-1252 may run in plain Node but not in the judge's engines, and failing it would punish an editor's setting. The worker delivers it again saved as UTF-8. `solive_wallet_judge_work` refuses it the same way.
 

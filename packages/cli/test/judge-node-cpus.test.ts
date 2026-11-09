@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { judgeNode, NODE_ENGINE, nodeBackstopMs } from "../src/node-judge.js";
+import { KEEPER_OOM_SCORE } from "../src/node-runner.js";
 import { SANDBOX_IMAGE, SANDBOX_TMP } from "../src/sandbox.js";
 import { engineOutcome, ranPastBudget } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
@@ -44,6 +45,27 @@ describe("plain Node cases under the judge's --sandbox-cpus choice", () => {
         const { node, outcome } = await judged(source, cpus, cases(budget));
         expect([outcome, node.failures], `${cpus} ${source}`).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]]);
         expect(performance.now() - started, `${cpus} ${source}`).toBeLessThan(nodeBackstopMs(budget, cpus) + 30_000);
+      }
+    }
+  });
+
+  it("leaves only a case's own processes for the kernel to kill for memory: the launcher and the container's init are out of its choice", SLOW, async () => {
+    const probe = "import { readFileSync } from 'node:fs'; export default () => ['' + process.ppid, '1'].map((pid) => readFileSync('/proc/' + pid + '/oom_score_adj', 'utf8').trim()).join(' ');";
+    const { judged: node } = await judgeNode(box("1"), bytes(probe), "keepers.mjs", { ...cases(), cases: [{ args: [], expected: `${KEEPER_OOM_SCORE} ${KEEPER_OOM_SCORE}` }] }, 1, 600);
+    expect([node.passed, node.failures]).toEqual([1, []]);
+  });
+
+  it("charges CPU spent in children the kernel reaps itself, so such work neither passes over budget nor turns its fail into infra", SLOW, async () => {
+    const budget = 500;
+    const one = "my $p = fork(); if ($p == 0) { my $x = 0; $x++ while $x < 2500000; exit 0 } select(undef, undef, undef, 0.01) while kill 0, $p;";
+    const hiding = [
+      `import { spawn } from 'node:child_process'; spawn('perl', ['-e', "$SIG{CHLD} = 'IGNORE'; while (1) { ${one} }"], { stdio: 'ignore' }); await new Promise(() => setInterval(() => {}, 1000)); export default () => 4;`,
+      `import { execFileSync } from 'node:child_process'; export default (n) => { execFileSync('perl', ['-e', "$SIG{CHLD} = 'IGNORE'; for (1..60) { ${one} }"]); return n * 2; };`,
+    ];
+    for (const cpus of ["1", "0.1"]) {
+      for (const source of hiding) {
+        const { node, outcome } = await judged(source, cpus, cases(budget));
+        expect([outcome, node.failures], `${cpus} ${source}`).toEqual(["fail", [{ case: 0, verdict: "stopped", detail: ranPastBudget(budget) }]]);
       }
     }
   });

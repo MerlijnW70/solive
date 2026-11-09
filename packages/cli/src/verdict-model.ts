@@ -37,7 +37,9 @@ export const deadlineOf = (reason: string, unfinished: number): Stop => ({ cause
 
 export const failedOf = (reason: string, unfinished: number): Stop => ({ cause: "failed", reason, unfinished });
 
-export type CaseClock = { started: boolean; usedMs: number; idleMs: number; stoppedBy: "budget" | "backstop" | null };
+export type CaseClock = { started: boolean; usedMs: number; idleMs: number; ioMs: number; stoppedBy: "budget" | "backstop" | null };
+
+export const chargedMs = (clock: CaseClock, budgetMs: number): number => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - budgetMs);
 
 export type Timing = "within" | "over" | "starved";
 
@@ -47,7 +49,7 @@ export const starvedCase = (engine: string, budgetMs: number, backstopMs: number
   `${engine} stopped a case at its ${backstopMs} ms wall-clock backstop before the case had used its ${budgetMs} ms budget of CPU time and of time it spent waiting by its own choice, so the judge's machine kept it from the CPU, and this is no verdict on the work`;
 
 export function caseTiming(clock: CaseClock, budgetMs: number): Timing {
-  if (clock.started && clock.usedMs + clock.idleMs >= budgetMs) {
+  if (clock.started && chargedMs(clock, budgetMs) >= budgetMs) {
     return "over";
   }
   return clock.stoppedBy === null ? "within" : "starved";
