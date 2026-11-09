@@ -621,7 +621,15 @@ impl World {
         if ixs.is_empty() {
             return Err("empty base".into());
         }
-        self.mutate_while(&mut ixs, mutations, |tried| self.fits(tried))?;
+        let mut whole = ixs.clone();
+        if let Some(last) = whole.last_mut() {
+            self.mutate(last, mutations)?;
+        }
+        if self.fits(&whole) {
+            ixs = whole;
+        } else {
+            self.mutate_while(&mut ixs, mutations, |tried| self.fits(tried))?;
+        }
         self.submit(ixs)
     }
 

@@ -205,9 +205,14 @@ fn joined(prefix: &[Instruction], more: &[Instruction]) -> Vec<Instruction> {
     ixs
 }
 
-fn build(world: &World, prefix: &[Instruction], piece: &Piece) -> TestResult<Vec<Instruction>> {
+fn build(
+    world: &World,
+    prefix: &[Instruction],
+    piece: &Piece,
+    trim: bool,
+) -> TestResult<Vec<Instruction>> {
     let me = world.attacker.key.pubkey();
-    let fits = |tried: &[Instruction]| world.fits(&joined(prefix, tried));
+    let fits = |tried: &[Instruction]| !trim || world.fits(&joined(prefix, tried));
     Ok(match piece {
         Piece::Base {
             base,
@@ -386,25 +391,89 @@ fn apply(ixs: &mut Vec<Instruction>, edit: &Edit) -> TestResult {
     Ok(())
 }
 
-fn compose(world: &mut World, pieces: &[Piece], edits: &[Edit], link_any: bool) -> TestResult {
+struct Composition {
+    ixs: Vec<Instruction>,
+    pieces: Vec<bool>,
+    edits: Vec<bool>,
+    trimmed: bool,
+}
+
+fn untrimmed(
+    world: &World,
+    pieces: &[Piece],
+    edits: &[Edit],
+    link_any: bool,
+) -> TestResult<Vec<Instruction>> {
     let mut ixs = Vec::new();
     for p in pieces {
-        let tried = joined(&ixs, &build(world, &ixs, p)?);
-        if world.fits(&tried) {
+        ixs.extend(build(world, &[], p, false)?);
+    }
+    ixs.truncate(MAX_INSTRUCTIONS);
+    autolink(&mut ixs, link_any)?;
+    for e in edits {
+        apply(&mut ixs, e)?;
+    }
+    Ok(ixs)
+}
+
+fn trimmed(
+    world: &World,
+    pieces: &[Piece],
+    edits: &[Edit],
+    link_any: bool,
+) -> TestResult<Composition> {
+    let mut ixs = Vec::new();
+    let mut kept_pieces = Vec::new();
+    for p in pieces {
+        let tried = joined(&ixs, &build(world, &ixs, p, true)?);
+        let fits = world.fits(&tried);
+        if fits {
             ixs = tried;
         }
+        kept_pieces.push(fits);
     }
     if ixs.is_empty() {
         return Err(format!("no drawn piece fits a transaction: {pieces:?}").into());
     }
     autolink(&mut ixs, link_any)?;
+    let mut kept_edits = Vec::new();
     for e in edits {
         let mut tried = ixs.clone();
         apply(&mut tried, e)?;
-        if world.fits(&tried) {
+        let fits = world.fits(&tried);
+        if fits {
             ixs = tried;
         }
+        kept_edits.push(fits);
     }
+    Ok(Composition {
+        ixs,
+        pieces: kept_pieces,
+        edits: kept_edits,
+        trimmed: true,
+    })
+}
+
+fn composition(
+    world: &World,
+    pieces: &[Piece],
+    edits: &[Edit],
+    link_any: bool,
+) -> TestResult<Composition> {
+    let whole = untrimmed(world, pieces, edits, link_any)?;
+    if world.fits(&whole) {
+        return Ok(Composition {
+            ixs: whole,
+            pieces: vec![true; pieces.len()],
+            edits: vec![true; edits.len()],
+            trimmed: false,
+        });
+    }
+    trimmed(world, pieces, edits, link_any)
+}
+
+fn compose(world: &mut World, pieces: &[Piece], edits: &[Edit], link_any: bool) -> TestResult {
+    let ixs = composition(world, pieces, edits, link_any)?.ixs;
     world.submit(ixs)
 }
 
@@ -559,33 +628,37 @@ fn run(token_2022: bool, flavor: usize, steps: &[Step]) -> TestResult {
         anchor_spl::token::ID
     };
     let mut world = World::with_mints(program, mints(token_2022, flavor))?;
+    play(&mut world, steps)
+}
+
+fn play(world: &mut World, steps: &[Step]) -> TestResult {
     for (n, s) in steps.iter().enumerate() {
         match s {
             Step::Compose {
                 pieces,
                 edits,
                 link_any,
-            } => composed_within_treasury_rules(&mut world, pieces, edits, *link_any),
-            Step::Treasury { program } => break_treasury(&mut world, *program),
+            } => composed_within_treasury_rules(world, pieces, edits, *link_any),
+            Step::Treasury { program } => break_treasury(world, *program),
             Step::Warp { secs } => {
                 let now = world.env.now().checked_add(*secs).ok_or("clock")?;
                 world.env.set_now(now);
                 Ok(())
             }
-            Step::Deploy { pick } => deploy_over(&mut world, *pick),
+            Step::Deploy { pick } => deploy_over(world, *pick),
             Step::Issuer { pick, freeze } => {
                 let target = *world
                     .tokens
                     .get(pick.checked_rem(world.tokens.len()).ok_or("no tokens")?)
                     .ok_or("tokens")?;
-                set_frozen(&mut world, &target, *freeze);
+                set_frozen(world, &target, *freeze);
                 Ok(())
             }
         }
         .map_err(|e| format!("step {n} {s:?}: {e}"))?;
     }
-    thaw_everything(&mut world);
-    liveness(&mut world).map_err(|e| format!("after {} steps: {e}", steps.len()))?;
+    thaw_everything(world);
+    liveness(world).map_err(|e| format!("after {} steps: {e}", steps.len()))?;
     let composed = steps
         .iter()
         .filter(|s| matches!(s, Step::Compose { .. }))
@@ -738,10 +811,7 @@ fn an_attack_that_cannot_land_or_is_skipped_fails_the_gate() -> TestResult {
 fn the_composer_trims_a_draw_too_large_to_land() -> TestResult {
     let mut world = World::new(anchor_spl::token::ID)?;
     let pieces = biggest_bases(&world, 6)?;
-    let mut all = Vec::new();
-    for p in &pieces {
-        all = joined(&all, &build(&world, &all, p)?);
-    }
+    let all = untrimmed(&world, &pieces, &[Edit::Duplicate { at: 0 }], false)?;
     assert!(!world.fits(&all), "the untrimmed draw cannot land");
     compose(&mut world, &pieces, &[Edit::Duplicate { at: 0 }], false)?;
     assert_eq!(
@@ -777,7 +847,7 @@ fn every_piece_mutation_and_flavour_still_lands() -> TestResult {
             }
             let pieces = every_piece(&world)?;
             for p in &pieces {
-                let alone = build(&world, &[], p)?;
+                let alone = build(&world, &[], p, false)?;
                 assert!(
                     !alone.is_empty() && world.fits(&alone),
                     "{label}: {p:?} cannot land on its own"
@@ -790,5 +860,134 @@ fn every_piece_mutation_and_flavour_still_lands() -> TestResult {
                 .map_err(|e| format!("{label}: {e}"))?;
         }
     }
+    Ok(())
+}
+
+fn small_pieces() -> Vec<Piece> {
+    vec![
+        Piece::Begin { pick: 0 },
+        Piece::End { pick: 0, pay: 0 },
+        Piece::Donate {
+            to: 0,
+            amount: 1,
+            output: false,
+        },
+        Piece::Donate {
+            to: 1,
+            amount: 1,
+            output: true,
+        },
+    ]
+}
+
+fn every_edit() -> Vec<Edit> {
+    vec![
+        Edit::Duplicate { at: 0 },
+        Edit::Swap { a: 0, b: 1 },
+        Edit::Relink { at: 0, to: 0 },
+        Edit::Drop { at: 4 },
+        Edit::Duplicate { at: 1 },
+    ]
+}
+
+fn assert_dropped_only_when_oversize(
+    world: &World,
+    pieces: &[Piece],
+    edits: &[Edit],
+    link_any: bool,
+    made: &Composition,
+) -> TestResult {
+    assert_eq!(made.pieces.len(), pieces.len());
+    assert_eq!(made.edits.len(), edits.len());
+    let mut ixs = Vec::new();
+    for (p, kept) in pieces.iter().zip(&made.pieces) {
+        let tried = joined(&ixs, &build(world, &ixs, p, true)?);
+        assert_eq!(
+            world.fits(&tried),
+            *kept,
+            "{p:?} is dropped exactly when adding it measures oversize"
+        );
+        if *kept {
+            ixs = tried;
+        }
+    }
+    autolink(&mut ixs, link_any)?;
+    for (e, kept) in edits.iter().zip(&made.edits) {
+        let mut tried = ixs.clone();
+        apply(&mut tried, e)?;
+        assert_eq!(
+            world.fits(&tried),
+            *kept,
+            "{e:?} is dropped exactly when applying it measures oversize"
+        );
+        if *kept {
+            ixs = tried;
+        }
+    }
+    assert!(
+        made.ixs == ixs,
+        "the composition is the kept items in order"
+    );
+    assert!(world.fits(&made.ixs), "the composition lands");
+    Ok(())
+}
+
+#[test]
+fn a_draw_that_fits_is_sent_exactly_as_drawn() -> TestResult {
+    let mut world = World::new(anchor_spl::token::ID)?;
+    let pieces = small_pieces();
+    let edits = every_edit();
+    let made = composition(&world, &pieces, &edits, false)?;
+    assert!(!made.trimmed, "a draw that fits is not trimmed");
+    assert!(made.pieces.iter().chain(&made.edits).all(|kept| *kept));
+    assert_eq!(made.ixs.len(), 5, "4 pieces, 2 duplicates and 1 drop");
+    assert!(made.ixs == untrimmed(&world, &pieces, &edits, false)?);
+    compose(&mut world, &pieces, &edits, false)?;
+    world.every_attack_landed(1)
+}
+
+#[test]
+fn the_composer_drops_a_piece_or_edit_only_when_it_measures_oversize() -> TestResult {
+    let mut world = World::new(anchor_spl::token::ID)?;
+    let mut pieces = biggest_bases(&world, 3)?;
+    pieces.extend(small_pieces());
+    pieces.extend(biggest_bases(&world, 3)?);
+    pieces.extend(small_pieces());
+    let edits = every_edit();
+    let made = composition(&world, &pieces, &edits, false)?;
+    assert!(made.trimmed, "the draw is too large to send whole");
+    assert!(
+        made.pieces.iter().any(|kept| !kept),
+        "some piece is dropped"
+    );
+    assert!(
+        made.pieces.iter().filter(|kept| **kept).count() > 1,
+        "more than one piece is kept"
+    );
+    assert!(made.edits.iter().any(|kept| *kept), "some edit is kept");
+    assert_dropped_only_when_oversize(&world, &pieces, &edits, false, &made)?;
+    compose(&mut world, &pieces, &edits, false)?;
+    world.every_attack_landed(1)
+}
+
+#[test]
+fn a_run_with_an_unlandable_attack_fails_its_gate() -> TestResult {
+    let mut world = World::new(anchor_spl::token::ID)?;
+    let mut ixs = world.bases()?.first().ok_or("no base")?.clone();
+    let last = ixs.last_mut().ok_or("empty base")?;
+    last.data.resize(
+        last.data.len().saturating_add(svm_tests::PACKET_DATA_SIZE),
+        0,
+    );
+    world.submit(ixs)?;
+    let steps = [Step::Compose {
+        pieces: small_pieces(),
+        edits: Vec::new(),
+        link_any: false,
+    }];
+    let failed = play(&mut world, &steps)
+        .err()
+        .ok_or("the run passed its gate")?;
+    assert!(failed.to_string().contains("cannot land"), "{failed}");
     Ok(())
 }
