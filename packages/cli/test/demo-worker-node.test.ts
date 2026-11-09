@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import { worker } from "./demo-worker-module.js";
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const { backoff, BUSY_HOLD_MS, gateOf, jittered, MAX_RETRY_AFTER_MS, pollEvery, repeat, retryAfterMs, rpcOf, tick } = worker;
 const T0 = 1_800_000_000_000;
+const CLEANER = join(ROOT, "scripts", "demo-worker-log.sh");
 
 const temp: string[] = [];
 afterAll(async () => {
@@ -52,6 +53,15 @@ describe("the demo worker on a busy node", () => {
     expect(retryAfterMs(new Date(T0 - 5_000).toUTCString(), T0)).toBe(0);
     expect(retryAfterMs(null, T0)).toBeNull();
     expect(retryAfterMs("soon", T0)).toBeNull();
+  });
+
+  it("falls back to its own hold for a Retry-After that is negative, fractional or not a valid form, rather than retrying at once", () => {
+    for (const header of ["-5", "-120", "1.5", "120.5", "1e3", "0x10", "Infinity", "garbage", "", "2026-11-09T00:00:00Z", "-1 GMT"]) {
+      expect(retryAfterMs(header, T0), header).toBeNull();
+    }
+    expect(retryAfterMs("  45  ", T0)).toBe(45_000);
+    expect(retryAfterMs("0", T0)).toBe(0);
+    expect(retryAfterMs("Wed, 21 Oct 2015 07:28:00 GMT", T0)).toBe(0);
   });
 
   it("honours Retry-After on a 429: no request reaches the node again before it ends", async () => {
@@ -188,16 +198,49 @@ describe("the demo worker's log", () => {
     expect(JSON.parse(out[0] as string).detail).toBe("deliver failed: \u0000\u0000\u001b[31mred\r\nnext");
   });
 
-  it("removes the NUL run an unclean stop leaves in the log before the worker starts, and keeps every line", async () => {
+  it("removes the NUL run an unclean stop leaves in the log by writing a clean copy beside it and renaming it over, and keeps every line", async () => {
     const dir = await scratch();
     const log = join(dir, "demo-worker.log");
     const lines = ['{"at":"1","action":"delivered"}', '{"at":"2","action":"delivered"}'];
     await writeFile(log, `${lines[0]}\n${"\u0000".repeat(4096)}\n${lines[1]}\n`);
-    const said = execFileSync("bash", [join(ROOT, "scripts", "demo-worker-log.sh"), log], { encoding: "utf8" });
-    expect(await readFile(log, "utf8")).toBe(`${lines[0]}\n\n${lines[1]}\n`);
-    expect(JSON.parse(said).detail).toBe(`removed 4096 NUL bytes that an unclean stop left in ${log}`);
-    expect(execFileSync("bash", [join(ROOT, "scripts", "demo-worker-log.sh"), log], { encoding: "utf8" })).toBe("");
-    expect(execFileSync("bash", [join(ROOT, "scripts", "demo-worker-log.sh"), join(dir, "absent.log")], { encoding: "utf8" })).toBe("");
+    await chmod(log, 0o640);
+    const before = (await stat(log)).ino;
+    expect(execFileSync("bash", [CLEANER, log], { encoding: "utf8" })).toBe("");
+    const after = await stat(log);
+    expect(after.ino).not.toBe(before);
+    expect(after.mode & 0o777).toBe(0o640);
+    const text = await readFile(log, "utf8");
+    expect(text).not.toContain("\u0000");
+    const kept = text.trimEnd().split("\n");
+    expect(kept.slice(0, 3)).toEqual([lines[0], "", lines[1]]);
+    expect(JSON.parse(kept[3] as string).detail).toBe(`removed 4096 NUL bytes that an unclean stop left in ${log}`);
+    expect(execFileSync("bash", [CLEANER, log], { encoding: "utf8" })).toBe("");
+    expect(execFileSync("bash", [CLEANER, join(dir, "absent.log")], { encoding: "utf8" })).toBe("");
+    expect(execFileSync("bash", [CLEANER], { encoding: "utf8" })).toBe("");
+  });
+
+  it.skipIf(process.getuid?.() === 0)("never fails and leaves the log as it is when it cannot write beside it", async () => {
+    const dir = await scratch();
+    const shut = join(dir, "ro");
+    await mkdir(shut);
+    const log = join(shut, "demo-worker.log");
+    const text = "line1\n\u0000\u0000\u0000line2\n";
+    await writeFile(log, text);
+    await chmod(shut, 0o555);
+    const said = execFileSync("bash", [CLEANER, log], { encoding: "utf8" });
+    await chmod(shut, 0o755);
+    expect(JSON.parse(said).detail).toBe(`found 3 NUL bytes in ${log} but cannot write beside it, so they stay`);
+    expect(await readFile(log, "utf8")).toBe(text);
+  });
+
+  it("leaves a log that is a symbolic link alone", async () => {
+    const dir = await scratch();
+    const target = join(dir, "victim");
+    await writeFile(target, "secret\u0000\n");
+    await symlink(target, join(dir, "demo-worker.log"));
+    expect(execFileSync("bash", [CLEANER, join(dir, "demo-worker.log")], { encoding: "utf8" })).toBe("");
+    expect(await readFile(target, "utf8")).toBe("secret\u0000\n");
+    expect((await lstat(join(dir, "demo-worker.log"))).isSymbolicLink()).toBe(true);
   });
 
   it("installs the unit the runbook shows and a logrotate stanza that bounds the log without losing the open file", async () => {
@@ -206,16 +249,38 @@ describe("the demo worker's log", () => {
     const unit = await readFile(join(dir, "etc/systemd/system/solive-demo-worker.service"), "utf8");
     expect(unit).toContain("\nExecStart=/bin/bash /home/dev/solive/scripts/demo-worker.sh\n");
     expect(unit).toContain("\nStandardOutput=append:/home/dev/demo-worker.log\n");
-    expect(unit).toContain("\nExecStartPre=/bin/bash /home/dev/solive/scripts/demo-worker-log.sh /home/dev/demo-worker.log\n");
+    expect(unit).toContain("\nExecStartPre=-/bin/bash /home/dev/solive/scripts/demo-worker-log.sh /home/dev/demo-worker.log\n");
     const runbook = await readFile(join(ROOT, "docs/maintainers/operations.md"), "utf8");
     const shown = /```ini\n(\[Unit\]\nDescription=solive devnet demo worker\n[\s\S]*?)```/.exec(runbook)?.[1];
     expect(shown).toBe(unit);
     const rotate = await readFile(join(dir, "etc/logrotate.d/solive-demo-worker"), "utf8");
     expect(rotate.split("\n")[0]).toBe("/home/dev/demo-worker.log {");
     expect(rotate).toMatch(/^ {2}copytruncate$/m);
+    expect(rotate).toMatch(/^ {2}su dev dev$/m);
+    expect((await stat(join(dir, "home/dev/demo-worker.log"))).isFile()).toBe(true);
     expect(rotate).toMatch(/^ {2}size 10M$/m);
     expect(rotate).toMatch(/^ {2}rotate 5$/m);
     expect(runbook).toContain(rotate);
+  });
+
+  it("refuses a user name that is not a plain name, so nothing it holds can become a unit directive", async () => {
+    for (const user of ["dev\nExecStartPre=/bin/sh -c id", "Dev", "dev user", "../root", "-dev"]) {
+      const dir = await scratch();
+      const run = spawnSync("bash", [join(ROOT, "scripts", "demo-worker-install.sh")], { env: { ...process.env, DEMO_WORKER_INSTALL_ROOT: dir, DEMO_WORKER_USER: user }, encoding: "utf8" });
+      expect(run.status, JSON.stringify(user)).toBe(1);
+      expect(run.stderr).toContain("DEMO_WORKER_USER is a plain user name");
+      await expect(stat(join(dir, "etc/systemd/system/solive-demo-worker.service"))).rejects.toThrow(/ENOENT/);
+    }
+  });
+
+  it("refuses a log path that is a symbolic link, so it never hands another file to the worker's user", async () => {
+    const dir = await scratch();
+    await mkdir(join(dir, "home/dev"), { recursive: true });
+    await writeFile(join(dir, "victim"), "secret\n");
+    await symlink(join(dir, "victim"), join(dir, "home/dev/demo-worker.log"));
+    const run = spawnSync("bash", [join(ROOT, "scripts", "demo-worker-install.sh")], { env: { ...process.env, DEMO_WORKER_INSTALL_ROOT: dir }, encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("is a symbolic link");
   });
 
   it.skipIf(process.getuid?.() === 0)("refuses to install into the system without root", () => {

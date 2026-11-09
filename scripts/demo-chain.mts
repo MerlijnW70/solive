@@ -97,7 +97,7 @@ export function programReader(rpc: Rpc, program: string): Read {
 
 export type Cli = (args: readonly string[]) => Promise<unknown>;
 
-export type Action = "claimed" | "delivered" | "skipped" | "failed" | "gave-up" | "dropped" | "collected" | "ended" | "lost";
+export type Action = "claimed" | "delivered" | "skipped" | "failed" | "gave-up" | "dropped" | "collected" | "ended" | "lost" | "reclaimed";
 
 export type Event = { intent: string; demo: string; action: Action; detail?: string };
 
@@ -160,12 +160,14 @@ export function gateOf(clock: () => number = Date.now, sleep: (ms: number) => Pr
   };
 }
 
+const HTTP_DATE = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
 export function retryAfterMs(header: string | null, nowMs: number): number | null {
   const raw = header?.trim() ?? "";
   if (/^\d+$/.test(raw)) {
     return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
   }
-  const at = raw === "" ? Number.NaN : Date.parse(raw);
+  const at = HTTP_DATE.test(raw) ? Date.parse(raw) : Number.NaN;
   return Number.isFinite(at) ? Math.min(Math.max(at - nowMs, 0), MAX_RETRY_AFTER_MS) : null;
 }
 

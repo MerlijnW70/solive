@@ -49,9 +49,9 @@ describe("the demo worker's claim policy", () => {
     const [found] = [chain.escrow("protected", { stake: 20_000_000n, reviewSecs: 3_600, killFee: 5_000_000n })];
     expect(shown(await workJobs(chain.cli, [found], SETTINGS, ledger, chain.now))).toEqual(["claimed protected", "delivered protected"]);
     const verbs = chain.calls.map((args) => (args[0] === "deliver" ? (args.includes("--yes") ? "deliver" : "preview") : `${args[0]} ${args[1]}`));
-    expect(verbs).toEqual(["claims show", "claims take", "preview", "deliver"]);
+    expect(verbs).toEqual(["claims show", "preview", "claims take", "preview", "deliver"]);
     expect(ledger.holds.get("protected")).toMatchObject({ stake: "20000000", killFee: "5000000", delivered: true, reviewUntil: NOW + 3_600 });
-    expect(healthOf(ledger, WORKER, chain.now, null, 0).stake_at_risk_lamports).toBe("20000000");
+    expect(healthOf(ledger, WORKER, chain.now, null, 0, SETTINGS).stake_at_risk_lamports).toBe("20000000");
   });
 
   it("leaves an escrow whose expiry leaves no room for a claim and the whole review window", async () => {
@@ -89,7 +89,7 @@ describe("the demo worker's caps", () => {
     chain.now += 600;
     await collectRound(chain.cli, settings, ledger, chain.now);
     expect(shown(await workJobs(chain.cli, found, settings, ledger, chain.now))).toEqual(["claimed d", "delivered d"]);
-    expect(healthOf(ledger, WORKER, chain.now, null, 0).stake_at_risk_lamports).toBe("30000000");
+    expect(healthOf(ledger, WORKER, chain.now, null, 0, SETTINGS).stake_at_risk_lamports).toBe("30000000");
   });
 
   it("never stakes more on one owner's escrows than its cap per owner", async () => {
@@ -117,7 +117,7 @@ describe("the demo worker's collect", () => {
     expect(chain.count("claims show")).toBe(2);
     chain.now += 1_800;
     const restarted = await readLedger(path);
-    expect(healthOf(restarted, WORKER, chain.now, null, 0)).toMatchObject({ uncollected_lamports: "25000000", overdue_lamports: "0" });
+    expect(healthOf(restarted, WORKER, chain.now, null, 0, SETTINGS)).toMatchObject({ uncollected_lamports: "25000000", overdue_lamports: "0" });
     expect(shown(await collectRound(chain.cli, SETTINGS, restarted, chain.now))).toEqual(["collected silent"]);
     await writeLedger(path, restarted);
     expect(chain.balance()).toBe(START_BALANCE + 5_000_000n);
@@ -125,7 +125,7 @@ describe("the demo worker's collect", () => {
     expect(await collectRound(chain.cli, SETTINGS, await readLedger(path), chain.now)).toEqual([]);
     expect(await collectRound(chain.cli, SETTINGS, restarted, chain.now)).toEqual([]);
     expect(chain.count("claims collect")).toBe(1);
-    expect(healthOf(await readLedger(path), WORKER, chain.now, null, 0)).toMatchObject({ stake_at_risk_lamports: "0", uncollected_lamports: "0", collected_lamports: "25000000", claims_held: 0 });
+    expect(healthOf(await readLedger(path), WORKER, chain.now, null, 0, SETTINGS)).toMatchObject({ stake_at_risk_lamports: "0", uncollected_lamports: "0", collected_lamports: "25000000", claims_held: 0 });
   });
 
   it("retries a failed collect later, waiting longer each time, and never sends two", async () => {
@@ -152,12 +152,12 @@ describe("the demo worker's collect", () => {
     chain.now += 3_600;
     expect(shown(await collectRound(chain.cli, SETTINGS, ledger, chain.now))).toEqual(["ended released"]);
     const stuck = chain.escrow("stuck", { stake: 10_000_000n });
-    chain.failNext.set("deliver", MAX_FAILURES);
-    for (let round = 0; round < MAX_FAILURES; round += 1) {
-      await workJobs(chain.cli, [stuck], SETTINGS, ledger, chain.now);
-    }
+    chain.failYes.add("stuck");
+    chain.failNext.set("claims drop", 1);
+    expect(shown(await workJobs(chain.cli, [stuck], SETTINGS, ledger, chain.now))).toEqual(["claimed stuck", "failed stuck"]);
+    expect(ledger.failures.get("stuck")).toBeLessThan(MAX_FAILURES);
+    expect(shown(await workJobs(chain.cli, [stuck], SETTINGS, ledger, chain.now))).toEqual(["dropped stuck"]);
     expect(ledger.done.has("stuck")).toBe(true);
-    expect(shown(await collectRound(chain.cli, SETTINGS, ledger, chain.now))).toEqual(["dropped stuck"]);
     expect(chain.balance()).toBe(START_BALANCE);
   });
 
@@ -176,12 +176,12 @@ describe("the demo worker's collect", () => {
     const ledger = emptyLedger();
     await workJobs(chain.cli, [chain.escrow("late", { stake: 20_000_000n, killFee: 5_000_000n })], SETTINGS, ledger, chain.now);
     const ended = NOW + 3_600;
-    expect(healthOf(ledger, WORKER, ended + OVERDUE_SECS - 1, 7n, 0)).toMatchObject({ uncollected_lamports: "25000000", overdue_lamports: "0", balance_lamports: "7" });
-    expect(healthOf(ledger, WORKER, ended + OVERDUE_SECS, 7n, 0).overdue_lamports).toBe("25000000");
-    expect(Object.keys(healthOf(ledger, WORKER, ended, null, 0)).sort()).toEqual(
-      ["at", "balance_lamports", "claims_held", "collected_lamports", "last_delivery", "lost_lamports", "node_busy_until", "overdue_lamports", "stake_at_risk_lamports", "uncollected_lamports", "wallet"].sort(),
+    expect(healthOf(ledger, WORKER, ended + OVERDUE_SECS - 1, 7n, 0, SETTINGS)).toMatchObject({ uncollected_lamports: "25000000", overdue_lamports: "0", balance_lamports: "7" });
+    expect(healthOf(ledger, WORKER, ended + OVERDUE_SECS, 7n, 0, SETTINGS).overdue_lamports).toBe("25000000");
+    expect(Object.keys(healthOf(ledger, WORKER, ended, null, 0, SETTINGS)).sort()).toEqual(
+      ["alerts", "at", "balance_lamports", "breaker_until", "claims_held", "collected_lamports", "last_delivery", "lost_lamports", "lost_recent_lamports", "node_busy_until", "open_deliveries", "overdue_lamports", "stake_at_risk_lamports", "state_recovered", "strikes_recent", "uncollected_lamports", "wallet"].sort(),
     );
-    expect(healthOf(ledger, WORKER, ended, null, 0).last_delivery).toEqual({ at: new Date(NOW * 1000).toISOString(), intent: "late" });
+    expect(healthOf(ledger, WORKER, ended, null, 0, SETTINGS).last_delivery).toEqual({ at: new Date(NOW * 1000).toISOString(), intent: "late" });
   });
 });
 

@@ -1,31 +1,9 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
 import { type Cli, type Event, record, sentSignature, textOf } from "./demo-chain.mts";
+import { type Hold, type Ledger, type Strike, type StrikeKind, replaceFile } from "./demo-state.mts";
 
-export type Hold = {
-  intent: string;
-  demo: string;
-  owner: string;
-  nonce: string;
-  stake: string;
-  killFee: string;
-  until: number;
-  reviewUntil: number | null;
-  delivered: boolean;
-  tries: number;
-  nextTry: number;
-};
+export type Breaker = { strikes: number; ownerStrikes: number; windowSecs: number };
 
-export type Ledger = {
-  done: Set<string>;
-  failures: Map<string, number>;
-  noted: Set<string>;
-  holds: Map<string, Hold>;
-  lastDelivery: { at: number; intent: string } | null;
-  collected: bigint;
-  lost: bigint;
-};
-
-export type Caps = { maxStake: bigint; maxAtRisk: bigint; maxPerOwner: bigint; claimSecs: number };
+export type Caps = { maxStake: bigint; maxAtRisk: bigint; maxPerOwner: bigint; claimSecs: number; maxReviewSecs: number; maxOpenDeliveries: number; breaker: Breaker };
 
 export type Terms = { stake: bigint; killFee: bigint; reviewSecs: number; maxSecs: number };
 
@@ -41,8 +19,6 @@ export const OVERDUE_SECS = 3_600;
 export const COLLECT_RETRY_SECS = 60;
 export const MAX_COLLECT_RETRY_SECS = 3_600;
 export const REVIEW_RECHECK_SECS = 1_800;
-
-export const emptyLedger = (done: Iterable<string> = []): Ledger => ({ done: new Set(done), failures: new Map(), noted: new Set(), holds: new Map(), lastDelivery: null, collected: 0n, lost: 0n });
 
 const wholeOf = (value: unknown): number => {
   const number = Number(value ?? 0);
@@ -72,18 +48,44 @@ export const atRisk = (holds: Iterable<Hold>, owner?: string): bigint => {
   return total;
 };
 
-export function claimPlan(terms: Terms, owner: string, expiresAt: number, now: number, caps: Caps, holds: readonly Hold[]): Plan | Refusal {
+const recentOf = (strikes: readonly Strike[], now: number, windowSecs: number, owner?: string): Strike[] => strikes.filter((each) => each.at > now - windowSecs && (owner === undefined || each.owner === owner));
+
+export function breakerUntil(strikes: readonly Strike[], now: number, breaker: Breaker, owner?: string): number | null {
+  const limit = owner === undefined ? breaker.strikes : breaker.ownerStrikes;
+  const times = recentOf(strikes, now, breaker.windowSecs, owner)
+    .map((each) => each.at)
+    .sort((a, b) => a - b);
+  const opening = times[times.length - limit];
+  return times.length >= limit && opening !== undefined ? opening + breaker.windowSecs : null;
+}
+
+export function strike(ledger: Ledger, owner: string, now: number, kind: StrikeKind, lamports: bigint, breaker: Breaker): void {
+  ledger.strikes = [...recentOf(ledger.strikes, now, breaker.windowSecs), { at: now, owner, kind, lamports: String(lamports) }];
+}
+
+export function claimPlan(terms: Terms, owner: string, expiresAt: number, now: number, caps: Caps, holds: readonly Hold[], strikes: readonly Strike[] = []): Plan | Refusal {
   if (terms.stake > caps.maxStake) {
     return { reason: `its claim stake of ${terms.stake} lamports is above this worker's cap of ${caps.maxStake}`, final: true };
   }
   if (terms.stake > 0n && terms.reviewSecs === 0) {
     return { reason: `its claims open no review window, so a delivery its judge never answers would lose the stake of ${terms.stake} lamports to the owner`, final: true };
   }
+  if (terms.stake > 0n && terms.reviewSecs > caps.maxReviewSecs) {
+    return { reason: `its review window of ${terms.reviewSecs} seconds is longer than this worker's cap of ${caps.maxReviewSecs}, so its stake would stay locked too long`, final: true };
+  }
   const secs = Math.min(terms.maxSecs, caps.claimSecs, expiresAt - now - CLAIM_MARGIN_SECS - terms.reviewSecs);
   if (!(secs >= MIN_CLAIM_SECS)) {
     return { reason: "the escrow ends too soon, or lets a claim last too briefly, to claim it and leave its judge the whole review window", final: true };
   }
   if (terms.stake > 0n) {
+    const shut = breakerUntil(strikes, now, caps.breaker);
+    if (shut !== null) {
+      return { reason: `the breaker is open after ${caps.breaker.strikes} lost or failed claims within ${caps.breaker.windowSecs} seconds, so this worker takes no staked claim until ${shut}`, final: false };
+    }
+    const shutOwner = breakerUntil(strikes, now, caps.breaker, owner);
+    if (shutOwner !== null) {
+      return { reason: `the breaker is open for owner ${owner} after ${caps.breaker.ownerStrikes} lost or failed claims on its escrows, so this worker takes no staked claim of it until ${shutOwner}`, final: false };
+    }
     const total = atRisk(holds) + terms.stake;
     if (total > caps.maxAtRisk) {
       return { reason: `claiming it would put ${total} lamports of stake at risk, above this worker's cap of ${caps.maxAtRisk}`, final: false };
@@ -123,16 +125,24 @@ export async function boardOrNull(cli: Cli, owner: string, nonce: string): Promi
   }
 }
 
-async function settleHold(cli: Cli, payer: Payer, ledger: Ledger, hold: Hold, now: number): Promise<Event[]> {
+export type Settler = Payer & Pick<Caps, "breaker">;
+
+function lose(ledger: Ledger, hold: Hold, now: number, settler: Settler): Event[] {
+  ledger.holds.delete(hold.intent);
+  ledger.lost += BigInt(hold.stake);
+  strike(ledger, hold.owner, now, "lost", BigInt(hold.stake), settler.breaker);
+  return [{ intent: hold.intent, demo: hold.demo, action: "lost", detail: `the claim lapsed before a review armed, and its stake of ${hold.stake} lamports went to the owner` }];
+}
+
+async function settleHold(cli: Cli, settler: Settler, ledger: Ledger, hold: Hold, now: number): Promise<Event[]> {
   const board = await boardOrNull(cli, hold.owner, hold.nonce);
   const event = (action: Event["action"], detail: string): Event[] => [{ intent: hold.intent, demo: hold.demo, action, detail }];
-  const flags = ["--keypair", payer.keypair, "--owner", hold.owner, "--nonce", hold.nonce, "--yes"];
-  if (board === null || textOf(board["worker"]) !== payer.wallet) {
-    ledger.holds.delete(hold.intent);
+  const flags = ["--keypair", settler.keypair, "--owner", hold.owner, "--nonce", hold.nonce, "--yes"];
+  if (board === null || textOf(board["worker"]) !== settler.wallet) {
     if (hold.reviewUntil === null && now >= hold.until) {
-      ledger.lost += BigInt(hold.stake);
-      return event("lost", `the claim lapsed before a review armed, and its stake of ${hold.stake} lamports went to the owner`);
+      return lose(ledger, hold, now, settler);
     }
+    ledger.holds.delete(hold.intent);
     return event("ended", "the claim is no longer this worker's: a release, reject, cancel or collect settled its stake");
   }
   const review = record(board["review"]);
@@ -154,19 +164,18 @@ async function settleHold(cli: Cli, payer: Payer, ledger: Ledger, hold: Hold, no
     ledger.holds.delete(hold.intent);
     return event("dropped", `no review protects this claim, so the worker gave it back with its stake: ${signature}`);
   }
-  ledger.holds.delete(hold.intent);
-  ledger.lost += BigInt(hold.stake);
-  return event("lost", `the claim lapsed before a review armed, and its stake of ${hold.stake} lamports went to the owner`);
+  return lose(ledger, hold, now, settler);
 }
 
-export async function collectRound(cli: Cli, payer: Payer, ledger: Ledger, now: number): Promise<Event[]> {
+export async function collectRound(cli: Cli, settler: Settler, ledger: Ledger, now: number): Promise<Event[]> {
   const events: Event[] = [];
   for (const hold of [...ledger.holds.values()]) {
-    if (hold.nextTry > now || (!hold.delivered && !ledger.done.has(hold.intent))) {
+    const working = !hold.delivered && !ledger.done.has(hold.intent) && now < hold.until - CLAIM_MARGIN_SECS;
+    if (hold.nextTry > now || working) {
       continue;
     }
     try {
-      events.push(...(await settleHold(cli, payer, ledger, hold, now)));
+      events.push(...(await settleHold(cli, settler, ledger, hold, now)));
     } catch (error) {
       hold.tries += 1;
       hold.nextTry = now + Math.min(COLLECT_RETRY_SECS * 2 ** Math.min(hold.tries - 1, 16), MAX_COLLECT_RETRY_SECS);
@@ -174,6 +183,17 @@ export async function collectRound(cli: Cli, payer: Payer, ledger: Ledger, now: 
     }
   }
   return events;
+}
+
+export async function reclaimRound(cli: Cli, payer: Payer, ledger: Ledger): Promise<Event[]> {
+  const shown = record(await cli(["reclaim", "--keypair", payer.keypair, "--yes"]));
+  const closed = Array.isArray(shown["closed"]) ? shown["closed"].length : 0;
+  const kept = Array.isArray(shown["kept"]) ? shown["kept"].length : null;
+  if (kept === null) {
+    throw new Error(`reclaim listed no announcements it keeps: ${JSON.stringify(shown).slice(0, 300)}`);
+  }
+  ledger.openDeliveries = kept;
+  return closed === 0 ? [] : [{ intent: payer.wallet, demo: "reclaim", action: "reclaimed", detail: `closed ${closed} announcements of this worker and got their rent back; ${kept} stay open` }];
 }
 
 export type Health = {
@@ -187,12 +207,18 @@ export type Health = {
   overdue_lamports: string;
   collected_lamports: string;
   lost_lamports: string;
+  lost_recent_lamports: string;
+  strikes_recent: number;
+  breaker_until: string | null;
+  open_deliveries: number;
+  state_recovered: string | null;
   node_busy_until: string | null;
+  alerts: string[];
 };
 
 const iso = (secs: number): string => new Date(secs * 1000).toISOString();
 
-export function healthOf(ledger: Ledger, wallet: string, now: number, balance: bigint | null, busyUntilMs: number): Health {
+export function healthOf(ledger: Ledger, wallet: string, now: number, balance: bigint | null, busyUntilMs: number, caps: Pick<Caps, "breaker" | "maxOpenDeliveries">): Health {
   let uncollected = 0n;
   let overdue = 0n;
   for (const hold of ledger.holds.values()) {
@@ -203,6 +229,16 @@ export function healthOf(ledger: Ledger, wallet: string, now: number, balance: b
     const late = hold.reviewUntil === null ? now >= hold.until + OVERDUE_SECS : now >= hold.reviewUntil + OVERDUE_SECS;
     overdue += late ? (hold.reviewUntil === null ? BigInt(hold.stake) : owed) : 0n;
   }
+  const recent = recentOf(ledger.strikes, now, caps.breaker.windowSecs);
+  const lostRecent = recent.filter((each) => each.kind === "lost").reduce((sum, each) => sum + BigInt(each.lamports), 0n);
+  const shut = breakerUntil(ledger.strikes, now, caps.breaker);
+  const alerts = [
+    ...(overdue > 0n ? ["overdue"] : []),
+    ...(lostRecent > 0n ? ["lost"] : []),
+    ...(shut !== null ? ["breaker"] : []),
+    ...(ledger.openDeliveries >= caps.maxOpenDeliveries ? ["rent"] : []),
+    ...(ledger.recovered !== null ? ["state"] : []),
+  ];
   return {
     at: iso(now),
     wallet,
@@ -214,61 +250,14 @@ export function healthOf(ledger: Ledger, wallet: string, now: number, balance: b
     overdue_lamports: String(overdue),
     collected_lamports: String(ledger.collected),
     lost_lamports: String(ledger.lost),
+    lost_recent_lamports: String(lostRecent),
+    strikes_recent: recent.length,
+    breaker_until: shut === null ? null : iso(shut),
+    open_deliveries: ledger.openDeliveries,
+    state_recovered: ledger.recovered,
     node_busy_until: busyUntilMs > now * 1000 ? new Date(busyUntilMs).toISOString() : null,
+    alerts,
   };
 }
 
-async function replace(path: string, text: string): Promise<void> {
-  await writeFile(`${path}.tmp`, text);
-  await rename(`${path}.tmp`, path);
-}
-
-export const writeHealth = (path: string, health: Health): Promise<void> => replace(path, `${JSON.stringify(health)}\n`);
-
-const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((each): each is string => typeof each === "string") : []);
-
-function holdFrom(value: unknown, path: string): Hold {
-  const held = record(value);
-  const text = (key: string) => {
-    const found = held[key];
-    if (typeof found !== "string" || found === "") {
-      throw new Error(`${path} holds a claim without ${key}; fix or remove that entry, so no stake is forgotten`);
-    }
-    return found;
-  };
-  const stake = text("stake");
-  const killFee = text("killFee");
-  if (!/^\d+$/.test(stake) || !/^\d+$/.test(killFee)) {
-    throw new Error(`${path} holds a claim whose stake or kill fee is not a whole number of lamports`);
-  }
-  const until = wholeOf(held["until"]);
-  const reviewUntil = held["reviewUntil"] === null || held["reviewUntil"] === undefined ? null : wholeOf(held["reviewUntil"]);
-  return { intent: text("intent"), demo: text("demo"), owner: text("owner"), nonce: text("nonce"), stake, killFee, until, reviewUntil, delivered: held["delivered"] === true, tries: wholeOf(held["tries"]), nextTry: wholeOf(held["nextTry"]) };
-}
-
-export async function readLedger(path: string): Promise<Ledger> {
-  let saved: Record<string, unknown>;
-  try {
-    saved = record(JSON.parse(await readFile(path, "utf8")));
-  } catch (error) {
-    if (record(error)["code"] === "ENOENT") {
-      return emptyLedger();
-    }
-    throw error;
-  }
-  const ledger = emptyLedger(strings(saved["done"]));
-  for (const hold of Array.isArray(saved["holds"]) ? saved["holds"] : []) {
-    const read = holdFrom(hold, path);
-    ledger.holds.set(read.intent, read);
-  }
-  const last = record(saved["last_delivery"]);
-  ledger.lastDelivery = typeof last["intent"] === "string" ? { at: wholeOf(last["at"]), intent: last["intent"] } : null;
-  ledger.collected = BigInt(/^\d+$/.test(String(saved["collected_lamports"])) ? String(saved["collected_lamports"]) : "0");
-  ledger.lost = BigInt(/^\d+$/.test(String(saved["lost_lamports"])) ? String(saved["lost_lamports"]) : "0");
-  return ledger;
-}
-
-export async function writeLedger(path: string, ledger: Ledger): Promise<void> {
-  const saved = { done: [...ledger.done], holds: [...ledger.holds.values()], last_delivery: ledger.lastDelivery, collected_lamports: String(ledger.collected), lost_lamports: String(ledger.lost) };
-  await replace(path, `${JSON.stringify(saved)}\n`);
-}
+export const writeHealth = (path: string, health: Health): Promise<void> => replaceFile(path, `${JSON.stringify(health)}\n`, false);

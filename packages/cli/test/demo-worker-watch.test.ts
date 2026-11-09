@@ -18,7 +18,7 @@ const {
 const PROGRAM = "Program11111111111111111111111111111111111111";
 const NOW = 1_800_000_000;
 const DEMO: Demo = { name: "fizzbuzz", specHash: "ab".repeat(32), solution: "solution.mjs", workUrl: "https://example.test/solution.mjs" };
-const SETTINGS: Settings = { keypair: "k.json", wallet: "Worker1111111111111111111111111111111111111", maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900 };
+const SETTINGS: Settings = { keypair: "k.json", wallet: "Worker1111111111111111111111111111111111111", maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900, maxReviewSecs: 86_400, maxOpenDeliveries: 30, breaker: { strikes: 3, ownerStrikes: 1, windowSecs: 86_400 } };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 class FakeSocket implements Socket {

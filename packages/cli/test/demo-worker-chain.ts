@@ -4,7 +4,7 @@ export const WORKER = "Worker1111111111111111111111111111111111111";
 export const NOW = 1_800_000_000;
 export const START_BALANCE = 1_930_000_000n;
 export const DEMO: Demo = { name: "fizzbuzz", specHash: "638375b5fb917437e51237bfcbcf690bdb583eeac4ee2d07bd8e39e9d921ae70", solution: "/x/solution.mjs", workUrl: "https://x/solution.mjs" };
-export const SETTINGS: Settings = { keypair: "k.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900 };
+export const SETTINGS: Settings = { keypair: "k.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900, maxReviewSecs: 86_400, maxOpenDeliveries: 30, breaker: { strikes: 3, ownerStrikes: 1, windowSecs: 86_400 } };
 
 export type Terms = { owner?: string; stake?: bigint; reviewSecs?: number; killFee?: bigint; maxSecs?: number; expiresIn?: number };
 
@@ -16,8 +16,11 @@ export class ScriptedChain {
   balances = new Map<string, bigint>([[WORKER, START_BALANCE]]);
   failNext = new Map<string, number>();
   unprotected = new Set<string>();
+  unsealable = new Set<string>();
+  failYes = new Set<string>();
+  closable = new Set<string>();
   private boards = new Map<string, Board>();
-  private announced = new Set<string>();
+  announced = new Set<string>();
   private nonce = 0;
 
   escrow(intent: string, terms: Terms = {}): Found {
@@ -75,7 +78,19 @@ export class ScriptedChain {
       throw new Error(`${verb} failed: HTTP error (503): the node is busy`);
     }
     if (verb === "deliver") {
-      return this.deliver(at("--intent"), args.includes("--yes"));
+      const intent = at("--intent");
+      if (this.unsealable.has(intent)) {
+        throw new Error(`deliver --keypair failed: 4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM has no encryption key`);
+      }
+      if (this.failYes.has(intent) && args.includes("--yes")) {
+        throw new Error("deliver --keypair failed: the program refused the announcement");
+      }
+      return this.deliver(intent, args.includes("--yes"));
+    }
+    if (verb === "reclaim") {
+      const closed = [...this.announced].filter((intent) => this.closable.has(intent));
+      closed.forEach((intent) => this.announced.delete(intent));
+      return { closed: closed.map((intent) => `ann-${intent}`), kept: [...this.announced].map((intent) => `ann-${intent}`), sent: closed.length > 0 };
     }
     const board = this.boards.get(`${at("--owner")}:${at("--nonce")}`);
     if (board === undefined) {

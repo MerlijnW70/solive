@@ -3,69 +3,61 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  backoff,
-  type Cli,
-  type Demo,
-  type DemoJob,
-  type Event,
-  type Found,
-  type Gate,
-  gateOf,
-  jittered,
-  type Log,
-  pause,
-  programReader,
-  type Read,
-  record,
-  type Rpc,
-  rpcOf,
-  rpcUrlOf,
-  sentSignature,
-  textOf,
-  wsUrlOf,
-} from "./demo-chain.mts";
-import { type Caps, claimPlan, collectRound, healthOf, holdOf, type Ledger, readLedger, type Refusal, termsOf, writeHealth, writeLedger } from "./demo-guard.mts";
+import { backoff, type Cli, type Demo, type Event, type Found, type Gate, gateOf, jittered, type Log, pause, programReader, type Read, record, type Rpc, rpcOf, rpcUrlOf, textOf, wsUrlOf } from "./demo-chain.mts";
+import { type Caps, collectRound, healthOf, reclaimRound, writeHealth } from "./demo-guard.mts";
+import { type Ledger, readLedger, writeLedger } from "./demo-state.mts";
 import { type Socket, watch } from "./demo-watch.mts";
+import { demosOf, fastWork, jobsOf, type Settings, workJobs } from "./demo-work.mts";
 
 export * from "./demo-chain.mts";
 export * from "./demo-guard.mts";
+export * from "./demo-state.mts";
 export * from "./demo-watch.mts";
-
-export type Settings = Caps & { keypair: string; wallet: string; checkpoint?: () => Promise<void> };
+export * from "./demo-work.mts";
 
 export const SPEC_FILE = "SPEC.md";
 export const SOLUTION_FILE = "solution.mjs";
-export const MAX_FAILURES = 3;
 export const FAST_INTERVAL_SECS = 30;
 export const WATCHED_INTERVAL_SECS = 120;
 export const FULL_INTERVAL_SECS = 300;
 export const COLLECT_INTERVAL_SECS = 300;
+export const RECLAIM_INTERVAL_SECS = 3_600;
 export const CLAIM_SECS = 900;
 export const MAX_STAKE_LAMPORTS = 50_000_000;
 export const MAX_AT_RISK_LAMPORTS = 150_000_000;
 export const MAX_OWNER_LAMPORTS = 50_000_000;
+export const MAX_REVIEW_SECS = 86_400;
+export const MAX_OPEN_DELIVERIES = 30;
+export const BREAKER_STRIKES = 3;
+export const BREAKER_OWNER_STRIKES = 1;
+export const BREAKER_WINDOW_SECS = 86_400;
 
 export const USAGE = [
-  "usage: demo-worker.mts [--once] [--help] -- <command line, such as intent-engine>",
-  "It stakes only on a claim whose stake is 0, or whose review window protects an honest delivery, within the caps below; it collects every review that ends unanswered.",
-  "DEMO_WORKER_KEYPAIR              the worker's devnet key file; required",
-  "DEMO_WORKER_CLI                  the command line demo-worker.sh runs; default the checkout's build",
-  "DEMO_WORKER_DEMOS                the folder of demo specs and solutions; required",
-  "DEMO_WORKER_BASE_URL             where the work urls point; required",
-  "DEMO_WORKER_STATE                the file of escrows it is done with and claims it holds; required",
-  "DEMO_WORKER_HEALTH               the health file a monitor reads; required",
-  "DEMO_WORKER_URL                  the cluster or node address; default devnet",
-  "DEMO_WORKER_WS_URL               the node's websocket address; default derived from DEMO_WORKER_URL",
-  "DEMO_WORKER_PROGRAM              the program address; default the owner of the config account",
-  `DEMO_WORKER_FAST_INTERVAL        seconds between fast rounds; default ${FAST_INTERVAL_SECS}`,
-  `DEMO_WORKER_WATCHED_INTERVAL     seconds between fast rounds while subscribed; default ${WATCHED_INTERVAL_SECS}`,
-  `DEMO_WORKER_INTERVAL             seconds between full scans; default ${FULL_INTERVAL_SECS}`,
-  `DEMO_WORKER_COLLECT_INTERVAL     seconds between collect rounds; default ${COLLECT_INTERVAL_SECS}`,
-  `DEMO_WORKER_CLAIM_SECS           the longest claim it takes; default ${CLAIM_SECS}`,
-  `DEMO_WORKER_MAX_STAKE_LAMPORTS   the largest stake of one claim; default ${MAX_STAKE_LAMPORTS}`,
-  `DEMO_WORKER_MAX_AT_RISK_LAMPORTS the most stake it holds at risk at once; default ${MAX_AT_RISK_LAMPORTS}`,
-  `DEMO_WORKER_MAX_OWNER_LAMPORTS   the most stake it holds on one owner's escrows; default ${MAX_OWNER_LAMPORTS}`,
+  "usage: demo-worker.mts [--once] [--reset-breaker] [--help] -- <command line, such as intent-engine>",
+  "It stakes only on a claim whose stake is 0, or whose review window protects an honest delivery that it can seal, within the caps below; it collects every review that ends unanswered.",
+  "DEMO_WORKER_KEYPAIR                the worker's devnet key file; required",
+  "DEMO_WORKER_CLI                    the command line demo-worker.sh runs; default the checkout's build",
+  "DEMO_WORKER_DEMOS                  the folder of demo specs and solutions; required",
+  "DEMO_WORKER_BASE_URL               where the work urls point; required",
+  "DEMO_WORKER_STATE                  the file of escrows it is done with and claims it holds; required",
+  "DEMO_WORKER_HEALTH                 the health file a monitor reads; required",
+  "DEMO_WORKER_URL                    the cluster or node address; default devnet",
+  "DEMO_WORKER_WS_URL                 the node's websocket address; default derived from DEMO_WORKER_URL",
+  "DEMO_WORKER_PROGRAM                the program address; default the owner of the config account",
+  `DEMO_WORKER_FAST_INTERVAL          seconds between fast rounds; default ${FAST_INTERVAL_SECS}`,
+  `DEMO_WORKER_WATCHED_INTERVAL       seconds between fast rounds while subscribed; default ${WATCHED_INTERVAL_SECS}`,
+  `DEMO_WORKER_INTERVAL               seconds between full scans; default ${FULL_INTERVAL_SECS}`,
+  `DEMO_WORKER_COLLECT_INTERVAL       seconds between collect rounds; default ${COLLECT_INTERVAL_SECS}`,
+  `DEMO_WORKER_RECLAIM_INTERVAL       seconds between reclaims of announcement rent; default ${RECLAIM_INTERVAL_SECS}`,
+  `DEMO_WORKER_CLAIM_SECS             the longest claim it takes; default ${CLAIM_SECS}`,
+  `DEMO_WORKER_MAX_STAKE_LAMPORTS     the largest stake of one claim; default ${MAX_STAKE_LAMPORTS}`,
+  `DEMO_WORKER_MAX_AT_RISK_LAMPORTS   the most stake it holds at risk at once; default ${MAX_AT_RISK_LAMPORTS}`,
+  `DEMO_WORKER_MAX_OWNER_LAMPORTS     the most stake it holds on one owner's escrows; default ${MAX_OWNER_LAMPORTS}`,
+  `DEMO_WORKER_MAX_REVIEW_SECS        the longest review window it stakes on; default ${MAX_REVIEW_SECS}`,
+  `DEMO_WORKER_MAX_OPEN_DELIVERIES    the most announcements whose rent is not back yet; default ${MAX_OPEN_DELIVERIES}`,
+  `DEMO_WORKER_BREAKER_STRIKES        lost or failed claims in a window that stop all staked claims; default ${BREAKER_STRIKES}`,
+  `DEMO_WORKER_BREAKER_OWNER_STRIKES  lost or failed claims of one owner in a window that stop its staked claims; default ${BREAKER_OWNER_STRIKES}`,
+  `DEMO_WORKER_BREAKER_WINDOW         the breaker's window in seconds; default ${BREAKER_WINDOW_SECS}`,
 ].join("\n");
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -80,176 +72,6 @@ export async function loadDemos(dir: string, baseUrl: string): Promise<Demo[]> {
       return { name, specHash: sha256(await readFile(join(dir, name, SPEC_FILE))), solution, workUrl: `${baseUrl}/${name}/${SOLUTION_FILE}` };
     }),
   );
-}
-
-function jobOf(value: unknown): DemoJob | null {
-  const job = record(value);
-  const [intent, owner, nonce, specHash, expiresAt] = ["intent", "owner", "nonce", "specHash", "expiresAt"].map((key) => textOf(job[key]));
-  if (intent == null || owner == null || nonce == null || specHash == null || expiresAt == null) {
-    return null;
-  }
-  const claimedBy = textOf(job["claimed_by"]);
-  const waiting = Number(job["waiting"] ?? 0);
-  return {
-    intent,
-    owner,
-    nonce,
-    specHash: specHash.toLowerCase(),
-    takesClaims: job["takes_claims"] === true,
-    claimedBy,
-    waiting: Number.isFinite(waiting) ? waiting : 0,
-    expiresAt: Number(expiresAt),
-  };
-}
-
-export const jobsOf = (listed: unknown): DemoJob[] => {
-  const jobs = record(listed)["jobs"];
-  return Array.isArray(jobs) ? jobs.map(jobOf).filter((job): job is DemoJob => job !== null) : [];
-};
-
-const boardOf = async (cli: Cli, job: DemoJob): Promise<Record<string, unknown>> => record(await cli(["claims", "show", "--owner", job.owner, "--nonce", job.nonce]));
-
-export function heldOf(board: Record<string, unknown>): { claimedBy: string | null; waiting: number } {
-  const waiting = Number(record(board["line"])["waiting"] ?? 0);
-  return { claimedBy: board["state"] === "held" ? textOf(board["worker"]) : null, waiting: Number.isFinite(waiting) ? waiting : 0 };
-}
-
-async function claim(cli: Cli, demo: Demo, job: DemoJob, settings: Settings, ledger: Ledger, now: number): Promise<Event | Refusal> {
-  if (job.claimedBy !== null || job.waiting > 0) {
-    return { reason: "another worker holds or waits for its claim", final: false };
-  }
-  const board = job.board ?? (await boardOf(cli, job));
-  const plan = claimPlan(termsOf(board), job.owner, job.expiresAt, now, settings, [...ledger.holds.values()]);
-  if ("reason" in plan) {
-    return plan;
-  }
-  const taken = await cli(["claims", "take", "--keypair", settings.keypair, "--owner", job.owner, "--nonce", job.nonce, "--secs", String(plan.secs), "--yes"]);
-  const signature = sentSignature(taken, "claims take");
-  if (plan.terms.stake > 0n) {
-    ledger.holds.set(job.intent, holdOf(demo.name, job, plan.terms, now + plan.secs));
-    await settings.checkpoint?.();
-  }
-  return { intent: job.intent, demo: demo.name, action: "claimed", detail: signature };
-}
-
-async function adopt(cli: Cli, demo: Demo, job: DemoJob, ledger: Ledger): Promise<void> {
-  if (ledger.holds.has(job.intent)) {
-    return;
-  }
-  const board = job.board ?? (await boardOf(cli, job));
-  const terms = termsOf(board);
-  if (terms.stake > 0n) {
-    ledger.holds.set(job.intent, holdOf(demo.name, job, terms, Number(textOf(board["until"]) ?? 0)));
-  }
-}
-
-const unprotectedWhy = (preview: Record<string, unknown>): string => {
-  const summary = Array.isArray(preview["summary"]) ? preview["summary"] : [];
-  const line = summary.find((each): each is string => typeof each === "string" && each.startsWith("Unprotected: "));
-  return line === undefined ? "the preview did not say it is protected" : line.slice("Unprotected: ".length, 400);
-};
-
-async function deliver(cli: Cli, demo: Demo, job: DemoJob, settings: Settings, ledger: Ledger, now: number): Promise<Event> {
-  const args = ["deliver", "--keypair", settings.keypair, "--intent", job.intent, "--artifact", demo.solution, "--work-url", demo.workUrl];
-  const hold = ledger.holds.get(job.intent);
-  if (hold !== undefined && !hold.delivered) {
-    const preview = record(await cli(args));
-    if (textOf(preview["seq"]) === null && preview["protected"] !== true) {
-      const dropped = await cli(["claims", "drop", "--keypair", settings.keypair, "--owner", job.owner, "--nonce", job.nonce, "--yes"]);
-      ledger.holds.delete(job.intent);
-      return { intent: job.intent, demo: demo.name, action: "dropped", detail: `its delivery would arm no review (${unprotectedWhy(preview)}), so the worker gave the claim back with its stake: ${sentSignature(dropped, "claims drop")}` };
-    }
-  }
-  const shown = record(await cli([...args, "--yes"]));
-  const detail = shown["sent"] === true ? sentSignature(shown, "deliver") : (textOf(shown["next"]) ?? "already announced");
-  if (hold !== undefined) {
-    hold.delivered = true;
-    const until = textOf(shown["review_until"]);
-    hold.reviewUntil = shown["protected"] === true && until !== null ? Number(until) : null;
-  }
-  ledger.lastDelivery = { at: now, intent: job.intent };
-  return { intent: job.intent, demo: demo.name, action: "delivered", detail };
-}
-
-async function work(cli: Cli, demo: Demo, job: DemoJob, settings: Settings, ledger: Ledger, now: number): Promise<Event[]> {
-  const events: Event[] = [];
-  const mine = job.claimedBy === settings.wallet || ledger.holds.has(job.intent);
-  if (job.takesClaims && !mine) {
-    const claimed = await claim(cli, demo, job, settings, ledger, now);
-    if ("reason" in claimed) {
-      if (claimed.final) {
-        ledger.done.add(job.intent);
-      }
-      if (ledger.noted.has(job.intent)) {
-        return [];
-      }
-      ledger.noted.add(job.intent);
-      return [{ intent: job.intent, demo: demo.name, action: "skipped", detail: claimed.reason }];
-    }
-    events.push(claimed);
-  } else if (job.takesClaims) {
-    await adopt(cli, demo, job, ledger);
-  }
-  events.push(await deliver(cli, demo, job, settings, ledger, now));
-  ledger.done.add(job.intent);
-  return events;
-}
-
-function failed(demo: Demo, job: DemoJob, ledger: Ledger, error: unknown): Event {
-  const failures = (ledger.failures.get(job.intent) ?? 0) + 1;
-  ledger.failures.set(job.intent, failures);
-  const gaveUp = failures >= MAX_FAILURES;
-  if (gaveUp) {
-    ledger.done.add(job.intent);
-  }
-  return { intent: job.intent, demo: demo.name, action: gaveUp ? "gave-up" : "failed", detail: messageOf(error) };
-}
-
-export function demosOf(demos: readonly Demo[], jobs: readonly DemoJob[]): Found[] {
-  const byHash = new Map(demos.map((demo) => [demo.specHash, demo]));
-  return jobs.flatMap((job) => {
-    const demo = byHash.get(job.specHash);
-    return demo === undefined ? [] : [{ demo, job }];
-  });
-}
-
-export async function workJobs(cli: Cli, found: readonly Found[], settings: Settings, ledger: Ledger, now: number): Promise<Event[]> {
-  const events: Event[] = [];
-  for (const { demo, job } of found) {
-    if (ledger.done.has(job.intent)) {
-      continue;
-    }
-    try {
-      events.push(...(await work(cli, demo, job, settings, ledger, now)));
-    } catch (error) {
-      events.push(failed(demo, job, ledger, error));
-    }
-  }
-  return events;
-}
-
-export async function demoRound(cli: Cli, demos: readonly Demo[], settings: Settings, ledger: Ledger, now: number): Promise<Event[]> {
-  return workJobs(cli, demosOf(demos, jobsOf(await cli(["jobs"]))), settings, ledger, now);
-}
-
-export const untouched = (ledger: Ledger, intent: string): boolean => !ledger.done.has(intent) && !ledger.noted.has(intent);
-
-export async function fastRound(cli: Cli, read: Read, demos: readonly Demo[], settings: Settings, ledger: Ledger, now: number): Promise<Event[]> {
-  return fastWork(cli, await read(demos, now), settings, ledger, now);
-}
-
-export async function fastWork(cli: Cli, found: readonly Found[], settings: Settings, ledger: Ledger, now: number): Promise<Event[]> {
-  const events: Event[] = [];
-  for (const { demo, job } of found.filter((each) => untouched(ledger, each.job.intent))) {
-    try {
-      const board = job.takesClaims ? await boardOf(cli, job) : undefined;
-      const seen = board === undefined ? job : { ...job, ...heldOf(board), board };
-      events.push(...(await work(cli, demo, seen, settings, ledger, now)));
-    } catch (error) {
-      events.push(failed(demo, job, ledger, error));
-    }
-  }
-  return events;
 }
 
 export async function programOf(cli: Cli, rpc: Rpc): Promise<string> {
@@ -302,6 +124,48 @@ export async function repeat(path: string, round: () => Promise<Event[]>, every:
   }
 }
 
+export type Rounds = { fast: () => Promise<Event[]>; full: () => Promise<Event[]>; collect: () => Promise<Event[]>; watched: (found: Found) => Promise<Event[]> };
+
+export type RoundDeps = {
+  cli: Cli;
+  read: Read;
+  demos: readonly Demo[];
+  settings: Settings;
+  ledger: Ledger;
+  now: () => number;
+  lock: <T>(task: () => Promise<T>) => Promise<T>;
+  saved: (events: Event[]) => Promise<Event[]>;
+  refresh?: () => Promise<void>;
+  reclaimSecs: number;
+};
+
+export function roundsOf(deps: RoundDeps): Rounds {
+  const { cli, demos, settings, ledger, now, lock, saved } = deps;
+  let reclaimAt = 0;
+  const reclaim = async (): Promise<Event[]> => {
+    if (now() < reclaimAt) {
+      return [];
+    }
+    reclaimAt = now() + deps.reclaimSecs;
+    return reclaimRound(cli, settings, ledger).catch((error: unknown) => [{ intent: settings.wallet, demo: "reclaim", action: "failed" as const, detail: `reclaiming announcement rent failed: ${messageOf(error)}` }]);
+  };
+  return {
+    fast: async () => {
+      const found = await deps.read(demos, now());
+      return lock(async () => saved(await fastWork(cli, found, settings, ledger, now())));
+    },
+    full: async () => {
+      const found = demosOf(demos, jobsOf(await cli(["jobs"])));
+      return lock(async () => saved(await workJobs(cli, found, settings, ledger, now())));
+    },
+    collect: async () => {
+      await deps.refresh?.();
+      return lock(async () => saved([...(await collectRound(cli, settings, ledger, now())), ...(await reclaim())]));
+    },
+    watched: (found) => lock(async () => saved(await fastWork(cli, [found], settings, ledger, now()))),
+  };
+}
+
 export function cliOf(command: readonly string[], url: string): Cli {
   const [file, ...prefix] = command;
   if (file === undefined) {
@@ -331,7 +195,7 @@ const needed = (env: NodeJS.ProcessEnv, name: string): string => {
   return value;
 };
 
-export type Timing = { fastSecs: number; fullSecs: number; watchedSecs: number; collectSecs: number; claimSecs: number; maxStake: bigint; maxAtRisk: bigint; maxPerOwner: bigint };
+export type Timing = Caps & { fastSecs: number; fullSecs: number; watchedSecs: number; collectSecs: number; reclaimSecs: number };
 
 const secondsOf = (env: NodeJS.ProcessEnv, name: string, fallback: number): number => {
   const raw = env[name];
@@ -343,6 +207,14 @@ const secondsOf = (env: NodeJS.ProcessEnv, name: string, fallback: number): numb
     throw new Error(`${name} is a number of seconds above 0, not "${raw}"`);
   }
   return value;
+};
+
+const countOf = (env: NodeJS.ProcessEnv, name: string, fallback: number): number => {
+  const raw = env[name] ?? String(fallback);
+  if (!/^[1-9]\d{0,8}$/.test(raw)) {
+    throw new Error(`${name} is a whole number above 0, not "${raw}"`);
+  }
+  return Number(raw);
 };
 
 const lamportsOf = (env: NodeJS.ProcessEnv, name: string, fallback: number): bigint => {
@@ -358,10 +230,18 @@ export const timingOf = (env: NodeJS.ProcessEnv): Timing => ({
   fullSecs: secondsOf(env, "DEMO_WORKER_INTERVAL", FULL_INTERVAL_SECS),
   watchedSecs: secondsOf(env, "DEMO_WORKER_WATCHED_INTERVAL", WATCHED_INTERVAL_SECS),
   collectSecs: secondsOf(env, "DEMO_WORKER_COLLECT_INTERVAL", COLLECT_INTERVAL_SECS),
+  reclaimSecs: secondsOf(env, "DEMO_WORKER_RECLAIM_INTERVAL", RECLAIM_INTERVAL_SECS),
   claimSecs: secondsOf(env, "DEMO_WORKER_CLAIM_SECS", CLAIM_SECS),
   maxStake: lamportsOf(env, "DEMO_WORKER_MAX_STAKE_LAMPORTS", MAX_STAKE_LAMPORTS),
   maxAtRisk: lamportsOf(env, "DEMO_WORKER_MAX_AT_RISK_LAMPORTS", MAX_AT_RISK_LAMPORTS),
   maxPerOwner: lamportsOf(env, "DEMO_WORKER_MAX_OWNER_LAMPORTS", MAX_OWNER_LAMPORTS),
+  maxReviewSecs: secondsOf(env, "DEMO_WORKER_MAX_REVIEW_SECS", MAX_REVIEW_SECS),
+  maxOpenDeliveries: countOf(env, "DEMO_WORKER_MAX_OPEN_DELIVERIES", MAX_OPEN_DELIVERIES),
+  breaker: {
+    strikes: countOf(env, "DEMO_WORKER_BREAKER_STRIKES", BREAKER_STRIKES),
+    ownerStrikes: countOf(env, "DEMO_WORKER_BREAKER_OWNER_STRIKES", BREAKER_OWNER_STRIKES),
+    windowSecs: secondsOf(env, "DEMO_WORKER_BREAKER_WINDOW", BREAKER_WINDOW_SECS),
+  },
 });
 
 export const pollEvery = (watching: () => boolean, fastMs: number, watchedMs: number): number => (watching() ? Math.max(fastMs, watchedMs) : fastMs);
@@ -371,6 +251,14 @@ export async function balanceOf(rpc: Rpc, wallet: string): Promise<bigint | null
   return value !== null && /^\d+$/.test(value) ? BigInt(value) : null;
 }
 
+export async function resetBreaker(statePath: string): Promise<number> {
+  const ledger = await readLedger(statePath);
+  const cleared = ledger.strikes.length;
+  ledger.strikes = [];
+  await writeLedger(statePath, ledger);
+  return cleared;
+}
+
 export async function runWorker(env: NodeJS.ProcessEnv, argv: readonly string[]): Promise<void> {
   const split = argv.indexOf("--");
   const flags = argv.slice(0, split < 0 ? argv.length : split);
@@ -378,62 +266,62 @@ export async function runWorker(env: NodeJS.ProcessEnv, argv: readonly string[])
     console.log(USAGE);
     return;
   }
-  const once = flags.includes("--once");
   const keypair = needed(env, "DEMO_WORKER_KEYPAIR");
   const timing = timingOf(env);
+  const statePath = needed(env, "DEMO_WORKER_STATE");
+  if (flags.includes("--reset-breaker")) {
+    console.log(JSON.stringify({ at: new Date().toISOString(), round: "breaker", detail: `cleared ${await resetBreaker(statePath)} strikes; staked claims resume` }));
+    return;
+  }
   const url = env["DEMO_WORKER_URL"] ?? "devnet";
   const cli = cliOf(split < 0 ? [] : argv.slice(split + 1), url);
   const gate = gateOf();
   const rpc = rpcOf(rpcUrlOf(url), fetch, gate);
   const demos = await loadDemos(needed(env, "DEMO_WORKER_DEMOS"), needed(env, "DEMO_WORKER_BASE_URL"));
-  const statePath = needed(env, "DEMO_WORKER_STATE");
   const healthPath = needed(env, "DEMO_WORKER_HEALTH");
   const wallet = textOf(record(await cli(["balance", "--keypair", keypair]))["address"]);
   if (wallet === null) {
     throw new Error("balance printed no address for DEMO_WORKER_KEYPAIR");
   }
   const ledger = await readLedger(statePath);
-  const caps = { maxStake: timing.maxStake, maxAtRisk: timing.maxAtRisk, maxPerOwner: timing.maxPerOwner, claimSecs: timing.claimSecs };
+  const { fastSecs, fullSecs, watchedSecs, collectSecs, reclaimSecs, ...caps } = timing;
   const settings: Settings = { ...caps, keypair, wallet, checkpoint: () => writeLedger(statePath, ledger) };
   const program = env["DEMO_WORKER_PROGRAM"] || (await programOf(cli, rpc));
-  const read = programReader(rpc, program);
-  const lock = serialized();
   const now = () => Math.floor(Date.now() / 1000);
   let balance: bigint | null = null;
   const saved = async (events: Event[]) => {
     await writeLedger(statePath, ledger);
-    await writeHealth(healthPath, healthOf(ledger, wallet, now(), balance, gate.until()));
+    await writeHealth(healthPath, healthOf(ledger, wallet, now(), balance, gate.until(), caps));
     return events;
   };
-  const fast = () => lock(async () => saved(await fastRound(cli, read, demos, settings, ledger, now())));
-  const full = async () => {
-    const found = demosOf(demos, jobsOf(await cli(["jobs"])));
-    return lock(async () => saved(await workJobs(cli, found, settings, ledger, now())));
-  };
-  const collect = async () => {
+  const refresh = async () => {
     balance = (await balanceOf(rpc, wallet).catch(() => null)) ?? balance;
-    return lock(async () => saved(await collectRound(cli, settings, ledger, now())));
   };
+  const rounds = roundsOf({ cli, read: programReader(rpc, program), demos, settings, ledger, now, lock: serialized(), saved, refresh, reclaimSecs });
   const log: Log = { out: (line) => console.log(line), err: (line) => console.error(line) };
-  const shownCaps = { max_stake: String(caps.maxStake), max_at_risk: String(caps.maxAtRisk), max_per_owner: String(caps.maxPerOwner) };
+  const shownCaps = { max_stake: String(caps.maxStake), max_at_risk: String(caps.maxAtRisk), max_per_owner: String(caps.maxPerOwner), max_review_secs: caps.maxReviewSecs, breaker: caps.breaker };
   console.log(JSON.stringify({ wallet, program, caps: shownCaps, demos: demos.map(({ name, specHash, workUrl }) => ({ name, spec_hash: specHash, work_url: workUrl })) }));
-  if (once) {
-    await tick("collect", collect, log);
-    await tick("fast", fast, log);
-    await tick("full", full, log);
+  if (ledger.recovered !== null) {
+    const kept = ledger.recovered === "backup" ? "the last good copy is in use" : "its copy was unreadable too, so the claims it holds are read back from the chain";
+    console.error(JSON.stringify({ at: new Date().toISOString(), round: "state", detail: `${statePath} was unreadable and is kept beside it; ${kept}` }));
+  }
+  if (flags.includes("--once")) {
+    await tick("collect", rounds.collect, log);
+    await tick("fast", rounds.fast, log);
+    await tick("full", rounds.full, log);
     return;
   }
   const pace: Pace = { gate };
-  const seen = (found: Found) => void tick("watch", () => lock(async () => saved(await fastWork(cli, [found], settings, ledger, now()))), log);
+  const seen = (found: Found) => void tick("watch", () => rounds.watched(found), log);
   const Sockets = (globalThis as unknown as { WebSocket: new (url: string) => Socket }).WebSocket;
   let open = false;
   const link = { up: () => void (open = true), down: () => void (open = false) };
   const watching = watch((socketUrl) => new Sockets(socketUrl), env["DEMO_WORKER_WS_URL"] || wsUrlOf(url), program, demos, now, seen, log, pause, () => true, link);
   await Promise.all([
     watching,
-    repeat("fast", fast, () => pollEvery(() => open, timing.fastSecs * 1000, timing.watchedSecs * 1000), log, pause, () => true, pace),
-    repeat("full", full, () => timing.fullSecs * 1000, log, pause, () => true, pace),
-    repeat("collect", collect, () => timing.collectSecs * 1000, log, pause, () => true, pace),
+    repeat("fast", rounds.fast, () => pollEvery(() => open, fastSecs * 1000, watchedSecs * 1000), log, pause, () => true, pace),
+    repeat("full", rounds.full, () => fullSecs * 1000, log, pause, () => true, pace),
+    repeat("collect", rounds.collect, () => collectSecs * 1000, log, pause, () => true, pace),
   ]);
 }
 

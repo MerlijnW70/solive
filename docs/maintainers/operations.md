@@ -457,23 +457,47 @@ It announces each escrow once and keeps the escrows it is done with in `DEMO_WOR
 A hirer who never judges must not be able to take the worker's stakes. The worker stakes only where [fair closing](../judge.md#fair-closing) protects an honest delivery:
 
 - The stake is 0. It claims and delivers, whatever the review terms.
-- The board opens a review window. It claims for at most the time that still leaves the judge the whole window before the escrow expires, so its first announcement arms the review. Before it announces, it previews the delivery; when the preview does not say `protected`, it drops the claim and gets its stake back.
+- The board opens a review window of at most `DEMO_WORKER_MAX_REVIEW_SECS`. It claims for at most the time that still leaves the judge the whole window before the escrow expires, so its first announcement arms the review.
 
-It skips every other claim and logs the reason once: a stake without a review window, a stake above `DEMO_WORKER_MAX_STAKE_LAMPORTS`, or an escrow that ends too soon. Those terms never change, so it does not read that board again.
+Before it stakes, it previews the delivery, which seals the work url to the escrow's judge exactly as the delivery does. An escrow whose judge no delivery can be sealed to fails that preview, so the worker never claims it and records it as done. After the claim it previews again; when the preview does not say `protected`, it drops the claim and gets its stake back.
+
+When the delivery after a claim fails, the worker drops the claim in the same step, before any claim term can run out, and gets its stake back. When that drop fails too, it retries the delivery and the drop in later rounds, and the collect round drops the claim at the latest 60 seconds before the claim term ends.
+
+It skips every other claim and logs the reason once: a stake without a review window, a review window above its cap, a stake above `DEMO_WORKER_MAX_STAKE_LAMPORTS`, or an escrow that ends too soon. Those terms never change, so it does not read that board again.
 
 Its stake at risk is the sum of the stakes of the claims it holds. It skips a claim that would lift that sum above `DEMO_WORKER_MAX_AT_RISK_LAMPORTS`, or the stake on one owner's escrows above `DEMO_WORKER_MAX_OWNER_LAMPORTS`, and claims it in a later full scan once room frees up.
+
+### Breaker
+
+Each lost stake, each claim given back after a failed delivery, and each claim given back because its delivery would arm no review counts as a strike against the escrow's owner. With `DEMO_WORKER_BREAKER_STRIKES` strikes within `DEMO_WORKER_BREAKER_WINDOW` seconds, the worker takes no staked claim at all; with `DEMO_WORKER_BREAKER_OWNER_STRIKES` strikes of one owner, it takes no staked claim of that owner. Claims with a stake of 0 go on. The breaker closes once the strikes age out of the window, or when an operator clears them:
+
+```sh
+sudo systemctl stop solive-demo-worker
+env DEMO_WORKER_KEYPAIR=/home/dev/.config/intent-engine/demo-worker.json bash scripts/demo-worker.sh --reset-breaker
+sudo systemctl start solive-demo-worker
+```
+
+### Collect and reclaim
 
 Every `DEMO_WORKER_COLLECT_INTERVAL` seconds it reads the board of each claim it holds, at most every 1800 seconds while a review runs:
 
 - A review that ended without a release or reject: it runs `claims collect`, which pays it the stake and the kill fee.
 - A claim no longer its own: a release, reject, cancel or someone else's collect settled it, and it stops tracking it.
-- A claim it holds with no review armed, after its delivery failed for good: it drops the claim and takes the stake back.
+- A claim it holds with no review armed, whose delivery failed: it drops the claim and takes the stake back.
 
 A failed collect is retried after 60 seconds, then twice as long each time, up to an hour. The claims it holds live in `DEMO_WORKER_STATE`, written as soon as a claim is taken, so a restart keeps collecting. The chain decides each step, so a collect is never sent twice.
 
+Every announcement locks rent until it closes. Every `DEMO_WORKER_RECLAIM_INTERVAL` seconds the collect round runs `reclaim`, which closes the worker's announcements that can close, and the delivery books left empty, and returns their rent. It counts the announcements that stay open, and starts no new job while that count is at `DEMO_WORKER_MAX_OPEN_DELIVERIES`; a claim it already holds is still delivered.
+
+### State file
+
+The worker writes `DEMO_WORKER_STATE` to a temporary file of its own, syncs it to disk, links the previous good copy to `DEMO_WORKER_STATE.bak` and renames the new file over the old one. A file that holds NUL bytes, nothing, or a claim it cannot read is moved aside to `DEMO_WORKER_STATE.corrupt-<time>`, and the worker starts from the copy. When the copy is unreadable too, it starts empty: its next full scan finds the escrows whose claims it holds and takes them back, and an escrow it already announced to is announced to nothing new. It refuses to start only when the file exists but cannot be read, such as for its permissions.
+
+`scripts/demo-worker.sh` takes an exclusive `flock` on `DEMO_WORKER_STATE.lock` before it starts the worker, and holds it while the worker runs. A second start, such as `--once` beside the service, exits with code 75 and writes nothing.
+
 ### Node use
 
-The fast path reads one demo spec hash at a time. On a 429 the worker waits as long as the node's `Retry-After` asks, or 30 seconds without one, and every path waits with it. While the subscription is open, the fast path polls every `DEMO_WORKER_WATCHED_INTERVAL` seconds instead of every `DEMO_WORKER_FAST_INTERVAL`.
+The fast path reads one demo spec hash at a time, outside the lock the rounds share, so a wait for the node never holds up the collect round. On a 429 the worker waits as long as the node's `Retry-After` asks, in whole seconds or as an HTTP date, or 30 seconds when the header is missing, negative, fractional or malformed, and every path waits with it. While the subscription is open, the fast path polls every `DEMO_WORKER_WATCHED_INTERVAL` seconds instead of every `DEMO_WORKER_FAST_INTERVAL`.
 
 ### Health file
 
@@ -490,12 +514,18 @@ After every round the worker replaces `DEMO_WORKER_HEALTH`, default `~/demo-work
 | `uncollected_lamports` | Stake and kill fee of reviews that ended and are not collected yet. |
 | `overdue_lamports` | Stake and kill fee owed for over 3600 seconds after a review ended, plus stakes of claims held 3600 seconds past their end with no review armed. |
 | `collected_lamports` | Everything `claims collect` paid it so far. |
-| `lost_lamports` | Stakes of claims that lapsed before a review armed. |
+| `lost_lamports` | Stakes of claims that lapsed before a review armed, ever. |
+| `lost_recent_lamports` | Stakes lost within the breaker's window. |
+| `strikes_recent` | Strikes within the breaker's window. |
+| `breaker_until` | Until when the breaker stops all staked claims, or null. |
+| `open_deliveries` | Announcements whose rent is not back yet. |
+| `state_recovered` | `backup` or `rebuild` when the state file was unreadable at start, else null. |
 | `node_busy_until` | Until when it waits for the node after a 429, or null. |
+| `alerts` | The names of what needs an operator: `overdue`, `lost`, `breaker`, `rent` and `state`. |
 
-A monitor alerts when `overdue_lamports` is not `"0"`, and when `at` is older than twice `DEMO_WORKER_INTERVAL`.
+A monitor alerts when `alerts` is not empty, which covers any loss within the window and any overdue stake, and when `at` is older than twice `DEMO_WORKER_INTERVAL`.
 
-The worker reads these environment variables. It refuses to start when a number is not a number above 0, or a cap is not a whole number of lamports, and names the variable. The installer reads the last two.
+The worker reads these environment variables. It refuses to start when a number is not a number above 0, a count is not a whole number above 0, or a cap is not a whole number of lamports, and names the variable. The installer reads the last two.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -512,16 +542,22 @@ The worker reads these environment variables. It refuses to start when a number 
 | `DEMO_WORKER_WATCHED_INTERVAL` | 120 | Seconds between fast rounds while the subscription is open. |
 | `DEMO_WORKER_INTERVAL` | 300 | Seconds between full scans. |
 | `DEMO_WORKER_COLLECT_INTERVAL` | 300 | Seconds between collect rounds. |
+| `DEMO_WORKER_RECLAIM_INTERVAL` | 3600 | Seconds between reclaims of announcement rent. |
 | `DEMO_WORKER_CLAIM_SECS` | 900 | The longest claim the worker takes, in seconds. |
 | `DEMO_WORKER_MAX_STAKE_LAMPORTS` | 50000000 | The largest claim stake the worker accepts, in lamports. |
 | `DEMO_WORKER_MAX_AT_RISK_LAMPORTS` | 150000000 | The most stake it holds at risk at once, in lamports. |
 | `DEMO_WORKER_MAX_OWNER_LAMPORTS` | 50000000 | The most stake it holds on one owner's escrows at once, in lamports. |
-| `DEMO_WORKER_INSTALL_ROOT` | empty: the system | A folder the installer writes the unit and logrotate files under, instead of `/`. |
-| `DEMO_WORKER_USER` | `dev` | The user the unit runs as; the checkout, key and log live in its home. |
+| `DEMO_WORKER_MAX_REVIEW_SECS` | 86400 | The longest review window it stakes on, in seconds. |
+| `DEMO_WORKER_MAX_OPEN_DELIVERIES` | 30 | The most announcements whose rent is not back yet before it starts no new job. |
+| `DEMO_WORKER_BREAKER_STRIKES` | 3 | Strikes within the window that stop all staked claims. |
+| `DEMO_WORKER_BREAKER_OWNER_STRIKES` | 1 | Strikes of one owner within the window that stop its staked claims. |
+| `DEMO_WORKER_BREAKER_WINDOW` | 86400 | The breaker's window, in seconds. |
+| `DEMO_WORKER_INSTALL_ROOT` | empty: the system | A folder the installer writes the unit, logrotate and log files under, instead of `/`. |
+| `DEMO_WORKER_USER` | `dev` | The user the unit runs as, a plain name; the checkout, key and log live in its home. |
 
-`--once` runs one collect round, one fast round and one full scan.
+`--once` runs one collect round, one fast round and one full scan. `--reset-breaker` clears the strikes and exits.
 
-`scripts/demo-worker-install.sh`, run as root, writes the unit and a logrotate stanza, gives the log to the worker's user, checks the stanza with `logrotate --debug` and reloads systemd. After a pull, the judge reinstalls and restarts:
+`scripts/demo-worker-install.sh`, run as root, refuses a user name that is not plain and a log path that is a symbolic link. It writes the unit and a logrotate stanza, gives the log to the worker's user, checks the stanza with `logrotate --debug` and reloads systemd. After a pull, the judge reinstalls and restarts:
 
 ```sh
 sudo bash scripts/demo-worker-install.sh
@@ -541,7 +577,7 @@ User=dev
 WorkingDirectory=/home/dev/solive
 Environment=DEMO_WORKER_KEYPAIR=/home/dev/.config/intent-engine/demo-worker.json
 Environment=DEMO_WORKER_CLI=/home/dev/solive-filler/node_modules/.bin/intent-engine
-ExecStartPre=/bin/bash /home/dev/solive/scripts/demo-worker-log.sh /home/dev/demo-worker.log
+ExecStartPre=-/bin/bash /home/dev/solive/scripts/demo-worker-log.sh /home/dev/demo-worker.log
 ExecStart=/bin/bash /home/dev/solive/scripts/demo-worker.sh
 Restart=always
 RestartSec=15
@@ -552,10 +588,13 @@ StandardError=append:/home/dev/demo-worker.log
 WantedBy=multi-user.target
 ```
 
-The worker writes one JSON line per event; JSON escapes every control byte, so it never writes a NUL. An unclean stop of WSL can still leave a run of NUL bytes where the file system lost the end of the log. Before each start, `scripts/demo-worker-log.sh` removes them and logs how many. The logrotate stanza at `/etc/logrotate.d/solive-demo-worker` bounds the log at about five rotations of 10 MB. It copies and truncates, so systemd keeps appending to the same open file:
+The worker writes one JSON line per event; JSON escapes every control byte, so it never writes a NUL. An unclean stop of WSL can still leave a run of NUL bytes where the file system lost the end of the log. Before each start, `scripts/demo-worker-log.sh` writes a copy without them beside the log, with a line that says how many it removed, and renames it over the log. It always exits 0, and the `-` before its path makes systemd start the worker even if it fails. It leaves a log that is a symbolic link alone.
+
+The logrotate stanza at `/etc/logrotate.d/solive-demo-worker` bounds the log at about five rotations of 10 MB, rotating as the worker's user. systemd holds the log open and has no signal to reopen it, so the stanza copies and truncates. Lines the worker writes between the copy and the truncate are lost; that window is the time to copy at most 10 MB:
 
 ```text
 /home/dev/demo-worker.log {
+  su dev dev
   size 10M
   rotate 5
   compress

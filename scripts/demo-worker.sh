@@ -17,4 +17,13 @@ export DEMO_WORKER_DEMOS="${DEMO_WORKER_DEMOS:-$root/examples/demo}"
 export DEMO_WORKER_BASE_URL="${DEMO_WORKER_BASE_URL:-${repository/https:\/\/github.com/https://raw.githubusercontent.com}/main/examples/demo}"
 export DEMO_WORKER_STATE="${DEMO_WORKER_STATE:-$HOME/demo-worker.json}"
 export DEMO_WORKER_HEALTH="${DEMO_WORKER_HEALTH:-$HOME/demo-worker-health.json}"
+lock="$DEMO_WORKER_STATE.lock"
+if ! exec 9>>"$lock"; then
+  echo "cannot open the lock file $lock" >&2
+  exit 1
+fi
+if ! flock -n 9; then
+  echo "another demo worker holds $lock, so this one does not start; stop it first, such as with systemctl stop solive-demo-worker" >&2
+  exit 75
+fi
 exec node --experimental-strip-types --disable-warning=ExperimentalWarning "$root/scripts/demo-worker.mts" "$@" -- "${cli[@]}"

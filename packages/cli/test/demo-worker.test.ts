@@ -13,7 +13,7 @@ const { demoRound, emptyLedger, jobsOf, loadDemos, MAX_FAILURES, readLedger, wri
 const WORKER = "Worker1111111111111111111111111111111111111";
 const OTHER = "Other11111111111111111111111111111111111111";
 const NOW = 1_800_000_000;
-const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900 };
+const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900, maxReviewSecs: 86_400, maxOpenDeliveries: 30, breaker: { strikes: 3, ownerStrikes: 1, windowSecs: 86_400 } };
 
 type Listed = { intent: string; specHash: string; takes_claims?: boolean; claimed_by?: string | null; waiting?: number; expiresAt?: string };
 
@@ -99,7 +99,7 @@ describe("the demo worker", () => {
     const { cli, calls } = stub(() => open);
     const ledger = emptyLedger();
     const events = await demoRound(cli, demos, SETTINGS, ledger, NOW);
-    expect(verbs(calls)).toEqual(["jobs", "deliver", "claims show", "claims take", "preview", "deliver", "claims show", "preview", "deliver"]);
+    expect(verbs(calls)).toEqual(["jobs", "deliver", "claims show", "preview", "claims take", "preview", "deliver", "claims show", "preview", "deliver"]);
     const delivered = calls.filter((args) => args[0] === "deliver" && args.includes("--yes"));
     expect(delivered.map((args) => argOf(args, "--intent"))).toEqual(["plain-demo", "claimable-demo", "held-by-me"]);
     expect(delivered.map((args) => [argOf(args, "--artifact"), argOf(args, "--work-url"), argOf(args, "--keypair"), args.at(-1)])).toEqual([
@@ -135,7 +135,7 @@ describe("the demo worker", () => {
     const ledger = await readLedger(path);
     await demoRound(first.cli, demos, SETTINGS, ledger, NOW);
     await writeLedger(path, ledger);
-    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ done: ["once"], holds: [], last_delivery: { at: NOW, intent: "once" }, collected_lamports: "0", lost_lamports: "0" });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ done: ["once"], holds: [], last_delivery: { at: NOW, intent: "once" }, collected_lamports: "0", lost_lamports: "0", strikes: [], open_deliveries: 1 });
     const second = stub(() => open);
     expect(await demoRound(second.cli, demos, SETTINGS, await readLedger(path), NOW)).toEqual([]);
     expect(verbs(second.calls)).toEqual(["jobs"]);

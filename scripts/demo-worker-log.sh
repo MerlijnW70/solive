@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-set -euo pipefail
-log="${1:?name the log file of the demo worker}"
+log="${1:-}"
 now() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
-[[ -f "$log" ]] || exit 0
-if [[ ! -w "$log" ]]; then
-  printf '{"at":"%s","round":"log","detail":"%s is not writable by this user, so NUL bytes an unclean stop left in it stay"}\n' "$(now)" "$log"
+say() { printf '{"at":"%s","round":"log","detail":"%s"}\n' "$(now)" "$1"; }
+if [[ -z "$log" || ! -f "$log" || -L "$log" ]]; then
   exit 0
 fi
-nuls="$(tr -cd '\000' < "$log" | wc -c)"
-if (( nuls > 0 )); then
-  clean="$(mktemp "$log.XXXXXX")"
-  trap 'rm -f "$clean"' EXIT
-  tr -d '\000' < "$log" > "$clean"
-  cat "$clean" > "$log"
-  printf '{"at":"%s","round":"log","detail":"removed %d NUL bytes that an unclean stop left in %s"}\n' "$(now)" "$nuls" "$log"
+nuls="$(tr -cd '\000' < "$log" 2>/dev/null | wc -c)"
+if [[ ! "$nuls" =~ ^[0-9]+$ ]] || (( nuls == 0 )); then
+  exit 0
 fi
+if ! clean="$(mktemp "$log.XXXXXX" 2>/dev/null)"; then
+  say "found $nuls NUL bytes in $log but cannot write beside it, so they stay"
+  exit 0
+fi
+if tr -d '\000' < "$log" > "$clean" && say "removed $nuls NUL bytes that an unclean stop left in $log" >> "$clean" && chmod --reference="$log" "$clean" && mv -f "$clean" "$log"; then
+  exit 0
+fi
+rm -f "$clean"
+say "found $nuls NUL bytes in $log but could not replace it, so they stay"
+exit 0

@@ -5,10 +5,11 @@ import { describe, expect, it } from "vitest";
 import { worker } from "./demo-worker-module.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
-const { CLAIM_SECS, COLLECT_INTERVAL_SECS, FAST_INTERVAL_SECS, FULL_INTERVAL_SECS, MAX_AT_RISK_LAMPORTS, MAX_OWNER_LAMPORTS, MAX_STAKE_LAMPORTS, runWorker, timingOf, USAGE, WATCHED_INTERVAL_SECS } = worker;
+const { CLAIM_SECS, COLLECT_INTERVAL_SECS, FAST_INTERVAL_SECS, FULL_INTERVAL_SECS, MAX_AT_RISK_LAMPORTS, MAX_OWNER_LAMPORTS, MAX_STAKE_LAMPORTS, runWorker, timingOf, USAGE, WATCHED_INTERVAL_SECS, RECLAIM_INTERVAL_SECS, MAX_REVIEW_SECS, MAX_OPEN_DELIVERIES, BREAKER_STRIKES, BREAKER_OWNER_STRIKES, BREAKER_WINDOW_SECS } = worker;
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const RUNBOOK = read("docs/maintainers/operations.md");
-const SECONDS = ["DEMO_WORKER_FAST_INTERVAL", "DEMO_WORKER_WATCHED_INTERVAL", "DEMO_WORKER_INTERVAL", "DEMO_WORKER_COLLECT_INTERVAL", "DEMO_WORKER_CLAIM_SECS"];
+const SECONDS = ["DEMO_WORKER_FAST_INTERVAL", "DEMO_WORKER_WATCHED_INTERVAL", "DEMO_WORKER_INTERVAL", "DEMO_WORKER_COLLECT_INTERVAL", "DEMO_WORKER_RECLAIM_INTERVAL", "DEMO_WORKER_CLAIM_SECS", "DEMO_WORKER_MAX_REVIEW_SECS", "DEMO_WORKER_BREAKER_WINDOW"];
+const COUNTS = ["DEMO_WORKER_MAX_OPEN_DELIVERIES", "DEMO_WORKER_BREAKER_STRIKES", "DEMO_WORKER_BREAKER_OWNER_STRIKES"];
 const LAMPORTS = ["DEMO_WORKER_MAX_STAKE_LAMPORTS", "DEMO_WORKER_MAX_AT_RISK_LAMPORTS", "DEMO_WORKER_MAX_OWNER_LAMPORTS"];
 const SOURCES = [...readdirSync(join(ROOT, "scripts")).filter((name) => /^demo-.*\.(mts|sh)$/.test(name)).map((name) => `scripts/${name}`)];
 
@@ -20,9 +21,13 @@ describe("the demo worker's settings", () => {
       watchedSecs: WATCHED_INTERVAL_SECS,
       collectSecs: COLLECT_INTERVAL_SECS,
       claimSecs: CLAIM_SECS,
+      reclaimSecs: RECLAIM_INTERVAL_SECS,
       maxStake: BigInt(MAX_STAKE_LAMPORTS),
       maxAtRisk: BigInt(MAX_AT_RISK_LAMPORTS),
       maxPerOwner: BigInt(MAX_OWNER_LAMPORTS),
+      maxReviewSecs: MAX_REVIEW_SECS,
+      maxOpenDeliveries: MAX_OPEN_DELIVERIES,
+      breaker: { strikes: BREAKER_STRIKES, ownerStrikes: BREAKER_OWNER_STRIKES, windowSecs: BREAKER_WINDOW_SECS },
     });
   });
 
@@ -37,8 +42,27 @@ describe("the demo worker's settings", () => {
         DEMO_WORKER_MAX_STAKE_LAMPORTS: "1000",
         DEMO_WORKER_MAX_AT_RISK_LAMPORTS: "3000",
         DEMO_WORKER_MAX_OWNER_LAMPORTS: "2000",
+        DEMO_WORKER_RECLAIM_INTERVAL: "600",
+        DEMO_WORKER_MAX_REVIEW_SECS: "7200",
+        DEMO_WORKER_MAX_OPEN_DELIVERIES: "5",
+        DEMO_WORKER_BREAKER_STRIKES: "4",
+        DEMO_WORKER_BREAKER_OWNER_STRIKES: "2",
+        DEMO_WORKER_BREAKER_WINDOW: "900",
       }),
-    ).toEqual({ fastSecs: 2.5, fullSecs: 60, watchedSecs: 10, collectSecs: 45, claimSecs: 300, maxStake: 1000n, maxAtRisk: 3000n, maxPerOwner: 2000n });
+    ).toEqual({
+      fastSecs: 2.5,
+      fullSecs: 60,
+      watchedSecs: 10,
+      collectSecs: 45,
+      reclaimSecs: 600,
+      claimSecs: 300,
+      maxStake: 1000n,
+      maxAtRisk: 3000n,
+      maxPerOwner: 2000n,
+      maxReviewSecs: 7200,
+      maxOpenDeliveries: 5,
+      breaker: { strikes: 4, ownerStrikes: 2, windowSecs: 900 },
+    });
   });
 
   for (const name of SECONDS) {
@@ -47,6 +71,15 @@ describe("the demo worker's settings", () => {
         const env = { DEMO_WORKER_KEYPAIR: "/nowhere/key.json", [name]: bad };
         expect(() => timingOf(env)).toThrow(name);
         await expect(runWorker(env, ["--once", "--", "false"])).rejects.toThrow(`${name} is a number of seconds above 0, not "${bad}"`);
+      });
+    }
+  }
+
+  for (const name of COUNTS) {
+    for (const bad of ["0", "-1", "1.5", "abc", "07"]) {
+      it(`refuse ${JSON.stringify(bad)} in ${name} at startup`, async () => {
+        const env = { DEMO_WORKER_KEYPAIR: "/nowhere/key.json", [name]: bad };
+        await expect(runWorker(env, ["--once", "--", "false"])).rejects.toThrow(`${name} is a whole number above 0, not "${bad}"`);
       });
     }
   }
@@ -65,7 +98,7 @@ describe("the demo worker's runbook", () => {
   const variables = [...new Set(SOURCES.flatMap((path) => [...read(path).matchAll(/DEMO_WORKER_[A-Z_]+/g)].map((m) => m[0])))].sort();
 
   it("documents every variable the worker, its wrapper and its installer read", () => {
-    expect(variables.length).toBeGreaterThanOrEqual(18);
+    expect(variables.length).toBeGreaterThanOrEqual(24);
     for (const name of variables) {
       expect(RUNBOOK, name).toMatch(new RegExp(`^\\| \`${name}\` \\| .+ \\| .+ \\|$`, "m"));
     }

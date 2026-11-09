@@ -3,6 +3,7 @@
   "exclude": [
     "test/demo-worker.test.ts",
     "test/demo-worker-fast.test.ts",
-    "test/demo-worker-watch.test.ts"
+    "test/demo-worker-watch.test.ts",
+    "test/demo-worker-seal.test.ts"
   ]
 }

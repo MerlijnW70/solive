@@ -42,7 +42,7 @@ const OTHER = "Other11111111111111111111111111111111111111";
 const KEY = "11111111111111111111111111111111" as Address;
 const OWNER = "CMbTKrcjd6kVd2VDMUzN6qkMoxsRSDgGHvjFKxB5n9iy" as Address;
 const NOW = 1_800_000_000;
-const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900 };
+const SETTINGS: Settings = { keypair: "/tmp/demo-worker.json", wallet: WORKER, maxStake: 50_000_000n, maxAtRisk: 150_000_000n, maxPerOwner: 50_000_000n, claimSecs: 900, maxReviewSecs: 86_400, maxOpenDeliveries: 30, breaker: { strikes: 3, ownerStrikes: 1, windowSecs: 86_400 } };
 
 type Escrow = { pubkey: string; specHash: string; nonce?: bigint; kind?: number; status?: number; claims?: number; expiresAt?: number };
 
@@ -222,7 +222,7 @@ describe("the demo worker's fast path", () => {
     const ledger = emptyLedger();
     const read = programReader(rpc, PROGRAM);
     expect(shown(await fastRound(cli, read, demos, SETTINGS, ledger, NOW))).toEqual(["delivered fizz-escrow", "claimed claimable-escrow", "delivered claimable-escrow"]);
-    expect(verbs(calls)).toEqual(["deliver", "claims show", "claims take", "preview", "deliver"]);
+    expect(verbs(calls)).toEqual(["deliver", "claims show", "preview", "claims take", "preview", "deliver"]);
     const take = calls.find((args) => args[1] === "take") ?? [];
     expect([take[take.indexOf("--owner") + 1], take[take.indexOf("--nonce") + 1]]).toEqual([OWNER, "4"]);
     const delivered = calls.filter((args) => args[0] === "deliver" && args.includes("--yes"));
