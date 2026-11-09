@@ -10,6 +10,7 @@ export const hostDetail = (cases: number): number => Math.max(16, Math.floor(OUT
 export const HOST_VERDICTS: readonly string[] = ["pass", "wrong", "not-primitive", "threw", "stopped", "no-module"];
 export const V8_SEEDS = 2_147_483_647;
 export const UNBLOCKABLE_EXIT = 71;
+export const HOST_FRESH_PAGES = 65_536;
 
 export const nodeSeed = (seed: number): number => 1 + (seed % V8_SEEDS);
 
@@ -37,11 +38,14 @@ const used = (from) => {
   const at = cpuNow(from);
   return (at.user + at.system) / 1000;
 };
-const hostBusy = () => ({ faults: process.resourceUsage().majorPageFault, at: performance.now() });
+const hostBusy = () => {
+  const usage = process.resourceUsage();
+  return { faults: usage.majorPageFault, touched: usage.minorPageFault, at: performance.now() };
+};
 const others = (host, usedMs) => {
   const now = hostBusy();
   const wall = now.at - host.at;
-  return now.faults === host.faults && wall > 0 ? Math.min(1, Math.max(0, wall - usedMs) / wall) : 0;
+  return now.faults === host.faults && now.touched - host.touched <= ${HOST_FRESH_PAGES} && wall > 0 ? Math.min(1, Math.max(0, wall - usedMs) / wall) : 0;
 };
 const write = (results) => {
   const bytes = Buffer.from(JSON.stringify(results), "utf8");

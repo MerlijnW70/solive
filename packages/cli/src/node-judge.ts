@@ -3,10 +3,11 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { judgeRoot, removeCopy } from "./artifact.js";
-import { CPU_MAX, CPU_STAT, endedState, MEMORY_CURRENT, MEMORY_EVENTS, MEMORY_PROCS, MEMORY_STAT, removeContainer } from "./check-process.js";
+import { CPU_MAX, CPU_STAT, endedState, MEMORY_EVENTS, MEMORY_PROCS, MEMORY_STAT, removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { CASE_OOM_SCORE, NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED, NODE_UNLOCKED, NODE_UNMETERED, NODE_UNPROBED, UNPREPARED } from "./node-runner.js";
+import { nodeSeccomp } from "./node-seccomp.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
 import { type CaseClock, caseFilledPinned, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, DISPLACED_LIMIT, ENGINE_FAULT, failedOf, faultOf, type Limits, type MemoryRise, type Outcome, pinnedLauncherEnd, type Stop, starvedCase, stoppedDetail, type Timing } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
@@ -44,7 +45,7 @@ export const nodeWatchMs = (backstopMs: number): number => 2 * backstopMs + 3 * 
 
 export const moduleName = (name: string): string => (name.endsWith(".mjs") ? name : `${name.replace(/\.[^.]*$/, "") || "delivery"}.mjs`);
 
-export function nodeArgs(box: Box, name: string, source: string, directory: string): string[] {
+export function nodeArgs(box: Box, name: string, source: string, directory: string, seccomp: string): string[] {
   return [
     "run",
     "-i",
@@ -59,6 +60,8 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
     ...NODE_CAPABILITIES.flatMap((capability) => ["--cap-add", capability]),
     "--security-opt",
     "no-new-privileges",
+    "--security-opt",
+    `seccomp=${seccomp}`,
     "--user",
     NODE_LAUNCHER_USER,
     "--pids-limit",
@@ -197,7 +200,7 @@ export function caseVerdict(answer: Answer, token: string, expected: Primitive, 
   return same(got.value, expected) ? { verdict: "pass" } : { verdict: "wrong", detail: got.value };
 }
 
-type Staged = { root: string; mount: string; directory: string; path: string };
+type Staged = { root: string; mount: string; directory: string; path: string; seccomp: string };
 
 async function stage(source: Uint8Array, name: string): Promise<Staged> {
   const root = await judgeRoot("judge-node-", true);
@@ -210,13 +213,14 @@ async function stage(source: Uint8Array, name: string): Promise<Staged> {
     await writeFile(join(mount, NODE_RUNNER, "launch.mjs"), NODE_LAUNCHER);
     await writeFile(join(mount, NODE_RUNNER, "case.mjs"), NODE_CASE);
     await writeFile(join(mount, random, file), source);
+    await writeFile(join(root, "seccomp.json"), await nodeSeccomp());
     await chmod(mount, SEARCHABLE);
     await shareable(mount);
   } catch (error) {
     await removeCopy(root);
     throw error;
   }
-  return { root, mount, directory: posix.join(NODE_ROOT, random), path: posix.join(NODE_ROOT, random, file) };
+  return { root, mount, directory: posix.join(NODE_ROOT, random), path: posix.join(NODE_ROOT, random, file), seccomp: join(root, "seccomp.json") };
 }
 
 type Conversed = { results: CaseResult[]; stop?: Stop; refused?: string };
@@ -396,7 +400,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, displacedLimit: DISPLACED_LIMIT, cpuMax: CPU_MAX, memoryCurrent: MEMORY_CURRENT, memoryStat: MEMORY_STAT, keptBytes: NODE_KEPT_BYTES, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, displacedLimit: DISPLACED_LIMIT, cpuMax: CPU_MAX, memoryStat: MEMORY_STAT, keptBytes: NODE_KEPT_BYTES, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 
@@ -417,7 +421,7 @@ export async function judgeNode(given: Box, source: Uint8Array, name: string, ca
   let conversed: Conversed = { results: [] };
   let cleanup: string | undefined;
   try {
-    conversed = await converse(nodeArgs(box, container, staged.mount, staged.directory), container, staged, cases, seed, { seconds: timeoutSeconds, memory: box.memory, ...(cases.nodeMemory === undefined ? {} : { pinned: { seconds: timeoutSeconds, memory: cases.nodeMemory } }) }, box.cpus);
+    conversed = await converse(nodeArgs(box, container, staged.mount, staged.directory, staged.seccomp), container, staged, cases, seed, { seconds: timeoutSeconds, memory: box.memory, ...(cases.nodeMemory === undefined ? {} : { pinned: { seconds: timeoutSeconds, memory: cases.nodeMemory } }) }, box.cpus);
   } finally {
     await removeContainer(container, dockerEnv(process.env));
     cleanup = await removeCopy(staged.root);

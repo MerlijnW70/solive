@@ -110,9 +110,8 @@ const throttles = () => {
 };
 const held = () => {
   try {
-    const current = Number(readFileSync(config.memoryCurrent, "utf8").trim());
     const fields = Object.fromEntries(readFileSync(config.memoryStat, "utf8").split("\\n").map((line) => line.split(" ")));
-    const value = current - (Number(fields.file) - Number(fields.shmem)) - Number(fields.slab_reclaimable);
+    const value = Number(fields.shmem) + Number(fields.kernel) - Number(fields.slab_reclaimable) + Number(fields.sock);
     return Number.isFinite(value) ? value : null;
   } catch {
     return null;

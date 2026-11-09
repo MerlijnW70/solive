@@ -79,8 +79,6 @@ export const CPU_STAT = "/sys/fs/cgroup/cpu.stat";
 
 export const CPU_MAX = "/sys/fs/cgroup/cpu.max";
 
-export const MEMORY_CURRENT = "/sys/fs/cgroup/memory.current";
-
 export const MEMORY_STAT = "/sys/fs/cgroup/memory.stat";
 
 export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {

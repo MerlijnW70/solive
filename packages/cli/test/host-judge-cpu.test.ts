@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { availableParallelism } from "node:os";
 import { describe, expect, it } from "vitest";
-import { HOST_CALL_MS, HOST_ENGINE, hostArgs, hostBackstopMs, hostDetail, judgeHost, hostTally, wireArgs } from "../src/host-judge.js";
+import { HOST_CALL_MS, HOST_ENGINE, HOST_FRESH_PAGES, hostArgs, hostBackstopMs, hostDetail, judgeHost, hostTally, wireArgs } from "../src/host-judge.js";
 import { engineOutcome, failedCases, ranPastBudget, spentBudget } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 
@@ -131,6 +131,18 @@ describe("the host engine's budget is CPU time, not the judge's wall clock", () 
     }
     const stopped = await throttled(source, cases(budget), 50, 50);
     expect([stopped.outcome, stopped.tally.failures, stopped.tally.stop?.reason]).toEqual(["infra", [], expect.stringMatching(DISPLACED)]);
+  });
+
+  it("closes the band for a call that touched more fresh memory than HOST_FRESH_PAGES, since reclaiming it can stall the call without CPU", LINUX, async () => {
+    const pages = HOST_FRESH_PAGES + 16_384;
+    const source = `export default (n) => { const a = new Float64Array(${pages} * 512); for (let i = 0; i < a.length; i += 512) a[i] = i; let x = 0; for (let i = 0; i < 2e8; i += 1) x = (x + i * 7) % 1000003; return n * 2 + (x === -1 ? 1 : 0) + (a[0] === -1 ? 1 : 0); };`;
+    const budget = Math.max(100, Math.round((await chargedMs(source)) / 1.2));
+    const small = looped(2e8);
+    const smallBudget = Math.max(100, Math.round((await chargedMs(small)) / 1.2));
+    const opened = await throttled(small, cases(smallBudget), 50, 50);
+    expect(opened.outcome).toBe("infra");
+    const touched = await throttled(source, cases(budget), 50, 50);
+    expect([touched.outcome, touched.tally.failures[0]?.verdict]).toEqual(["fail", "stopped"]);
   });
 
   it("leaves a delivery no way to wait without CPU: Atomics.wait is gone from the host engine", async () => {

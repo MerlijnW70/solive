@@ -2,6 +2,7 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { availableParallelism } from "node:os";
 import { describe, expect, it } from "vitest";
 import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
+import { OUTPUT_BYTES } from "../src/viper.js";
 import { SANDBOX_IMAGE, SANDBOX_TMP } from "../src/sandbox.js";
 import { engineOutcome, ranPastBudget } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
@@ -83,6 +84,44 @@ describe("the plain Node band on a real container", () => {
   it("passes a case that parks nothing, with the same launcher, so the check reads the case and not the host", SLOW, async () => {
     const { node } = await judged(`export default (n) => n * 2;`, "1", cases(2));
     expect([node.passed, node.failures]).toEqual([2, []]);
+  });
+
+  it("refuses a case every way to lower its own scheduling or narrow its CPUs, so it cannot make itself look kept off its CPU", SLOW, async () => {
+    const probe = `import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import os from "node:os";
+export default () => {
+  const pid = String(process.pid);
+  const state = () => { const stat = readFileSync("/proc/self/stat", "utf8"); const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" "); return [fields[16], fields[38], /^Cpus_allowed_list:\\s+(.*)$/m.exec(readFileSync("/proc/self/status", "utf8"))[1]].join(" "); };
+  const before = state();
+  const changed = [];
+  try { os.setPriority(19); changed.push("setPriority"); } catch {}
+  for (const [cmd, args] of [["renice", ["-n", "19", "-p", pid]], ["chrt", ["-a", "-i", "-p", "0", pid]], ["chrt", ["-a", "-b", "-p", "0", pid]], ["taskset", ["-a", "-p", "-c", "0", pid]], ["sh", ["-c", "nice -n 19 cut -d ' ' -f 19 /proc/self/stat | grep -qx 19"]]]) {
+    if (spawnSync(cmd, args, { stdio: "ignore" }).status === 0) changed.push(cmd + " " + args.slice(0, 2).join(" "));
+  }
+  return state() === before && before.startsWith("0 0 ") ? "held " + changed.join(",") : "moved " + before + " -> " + state() + " " + changed.join(",");
+};`;
+    const { judged: node } = await judgeNode(box("1"), bytes(probe), "work.mjs", { ...cases(), cases: [{ args: [], expected: "held " }] }, 1, 600);
+    expect([node.passed, node.failures]).toEqual([1, []]);
+  });
+
+  it("fails a case that tries to pin itself beside a busy process at the lowest priority before it runs past its budget", SLOW, async () => {
+    const cpu = String(availableParallelism() - 1);
+    const hog = spawn("taskset", ["-c", cpu, process.execPath, "-e", "for (;;) {}"], { stdio: "ignore" });
+    try {
+      await pause(500);
+      const steered = `import { spawnSync } from "node:child_process"; export default (n) => { spawnSync("taskset", ["-a", "-p", "-c", "${cpu}", String(process.pid)]); spawnSync("chrt", ["-a", "-i", "-p", "0", String(process.pid)]); ${spinTo(1_400)}; return n * 2; };`;
+      const { node, outcome } = await judged(steered);
+      expect([outcome.outcome, node.failures]).toEqual(["fail", OVER]);
+    } finally {
+      hog.kill("SIGKILL");
+    }
+  });
+
+  it("passes a right answer whose output is nearly the most a case may write, since the launcher's own memory for it is not the case's", SLOW, async () => {
+    const size = OUTPUT_BYTES - 4_096;
+    const { judged: node } = await judgeNode(box("1"), bytes(`export default () => "x".repeat(${size});`), "work.mjs", { ...cases(), caseMs: 5_000, cases: [{ args: [], expected: "x".repeat(size) }, { args: [], expected: "x".repeat(size) }] }, 1, 600);
+    expect([node.passed, node.failures, node.stop]).toEqual([2, [], undefined]);
   });
 
   it("leaves a case no file it could write to keep memory past its end", SLOW, async () => {
