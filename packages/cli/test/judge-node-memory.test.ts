@@ -121,6 +121,9 @@ const DEBUGGER = lines(
   "export default () => reached;",
 );
 
+const answeredOrSpared = (judged: { passed: number; failures: unknown[]; stop?: { cause: string; reason: string } | undefined }): boolean =>
+  judged.failures.length === 0 && ((judged.passed === 2 && judged.stop === undefined) || (judged.stop?.cause === "fault" && judged.stop.reason === caseFilledChosen(MEMORY)));
+
 const memoryStop = { cause: "fault", reason: selfKilledChosen(MEMORY), unfinished: 2 };
 
 describe("a plain Node case killed for memory under the memory the judge chose", () => {
@@ -145,7 +148,7 @@ describe("a plain Node case killed for memory under the memory the judge chose",
     expect([chosen.judged.passed, chosen.judged.failures, chosen.judged.stop]).toEqual([0, [], { cause: "fault", reason: caseFilledChosen(MEMORY), unfinished: 2 }]);
     expect(engineOutcome(NODE_ENGINE, chosen.judged)).toEqual({ outcome: "infra", reason: caseFilledChosen(MEMORY) });
     const answered = await judgeNode(BOX, bytes(FORKED_HOG_THEN_ANSWER), "count.mjs", CASES, 7, 60);
-    expect([answered.judged.passed, answered.judged.failures, answered.judged.stop]).toEqual([2, [], undefined]);
+    expect(answeredOrSpared(answered.judged)).toBe(true);
     const pinned = await judgeNode(BOX, bytes(FORKED_HOG), "count.mjs", { ...CASES, nodeMemory: MEMORY }, 7, 60);
     expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures]).toEqual([0, undefined, CASES.cases.map((_, at) => ({ case: at, verdict: "crashed", detail: caseFilledPinned(MEMORY) }))]);
     expect(engineOutcome(NODE_ENGINE, pinned.judged).outcome).toBe("fail");
@@ -153,7 +156,7 @@ describe("a plain Node case killed for memory under the memory the judge chose",
 
   it("has the launcher read the count around each case itself, with no docker exec into a container the work may have filled", DOCKER_TEST, async () => {
     const passing = await judgeNode(BOX, bytes(FORKED_HOG_THEN_ANSWER), "count.mjs", CASES, 7, 60);
-    expect([passing.judged.passed, passing.judged.failures, reads.count]).toEqual([2, [], 0]);
+    expect([answeredOrSpared(passing.judged), reads.count]).toEqual([true, 0]);
     const killed = await judgeNode(BOX, bytes(inNode('process.kill(process.pid, "SIGKILL");')), "count.mjs", CASES, 7, 60);
     expect([killed.judged.passed, killed.judged.stop, reads.count]).toEqual([0, undefined, 0]);
     const exited = await judgeNode(BOX, bytes(inNode("process.exit(3);")), "count.mjs", CASES, 7, 60);

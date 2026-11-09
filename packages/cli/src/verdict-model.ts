@@ -191,7 +191,7 @@ export function chosenFill(rise: MemoryRise | null, limits: Limits): Outcome | u
 }
 
 export function caseMemory(end: CaseEnd, passed: boolean, limits: Limits): Outcome | undefined {
-  if (!passed && end.signal === "SIGKILL" && !end.stoppedByJudge && (end.rise?.groupKill ?? 0) <= 0) {
+  if (!passed && end.signal === "SIGKILL" && !end.stoppedByJudge && (end.rise?.groupKill ?? 0) <= 0 && (end.rise?.oomKill ?? 0) <= 1) {
     return caseOutcome(end, limits);
   }
   return pinnedFill(end.rise, limits) ?? (passed ? undefined : chosenFill(end.rise, limits));

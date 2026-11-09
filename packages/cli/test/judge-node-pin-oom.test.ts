@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { JudgeRefused, oomInfra } from "../src/judge-errors.js";
-import { judgeNode, memoryUnlocked, NODE_ENGINE } from "../src/node-judge.js";
+import { CASE_UNMETERED, judgeNode, memoryUnlocked, NODE_ENGINE } from "../src/node-judge.js";
 import { NODE_READY, NODE_UNLOCKED, UNPREPARED } from "../src/node-runner.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_TMP } from "../src/sandbox.js";
-import { caseFilledChosen, caseFilledPinned, caseOomPinned, caseUnsettled, engineOutcome, failedCases, hostKillPinned, killedUnflagged, launcherFlaggedPinned, launcherKilledPinned, type MemoryRise, OOM_UNREAD_PINNED } from "../src/verdict-model.js";
+import { caseFilledChosen, caseFilledPinned, caseOomInfra, caseOomPinned, caseUnsettled, engineOutcome, failedCases, hostKillPinned, killedUnflagged, launcherFlaggedPinned, launcherKilledPinned, type MemoryRise, OOM_UNREAD_PINNED } from "../src/verdict-model.js";
 import type { Cases } from "../src/viper.js";
 
-type Reply = { code: number | null; signal: string | null; before: MemoryRise | null; after: MemoryRise | null; value?: number; settled?: boolean; verdict?: string };
+type Reply = { code: number | null; signal: string | null; before: MemoryRise | null; after: MemoryRise | null; value?: number; settled?: boolean; verdict?: string; metered?: boolean };
 
 const fake = vi.hoisted(() => ({ oomKilled: true, exitCode: 137, readyFirst: true, filledFirst: false, runs: [] as string[][], replies: undefined as Reply[] | undefined, greeting: "" }));
 
@@ -30,7 +30,7 @@ const replying = (replies: Reply[]) =>
     "    const reply = replies[seen - 2];",
     "    const framed = reply.verdict === undefined ? ['answer', 'number', String(reply.value)] : [reply.verdict, 'string', 'no capability'];",
     "    const out = reply.value === undefined && reply.verdict === undefined ? '' : Buffer.from('\\n' + token + JSON.stringify(framed) + token + '\\n').toString('base64');",
-    "    process.stdout.write(JSON.stringify({ token, out, code: reply.code, signal: reply.signal, timedOut: false, over: false, oomBefore: reply.before, oomAfter: reply.after, settled: reply.settled !== false, clock: { started: true, metered: true, usedMs: 1, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null } }) + '\\n');",
+    "    process.stdout.write(JSON.stringify({ token, out, code: reply.code, signal: reply.signal, timedOut: false, over: false, oomBefore: reply.before, oomAfter: reply.after, settled: reply.settled !== false, clock: { started: true, metered: reply.metered !== false, usedMs: 1, idleMs: 0, ioMs: 0, otherShare: 0, stoppedBy: null } }) + '\\n');",
     "  }",
     "});",
   ].join("\n");
@@ -217,6 +217,23 @@ describe("the two out-of-memory counts a plain Node case is judged by", () => {
       ],
     ]);
     expect(engineOutcome(NODE_ENGINE, judged)).toEqual({ outcome: "fail", reason: failedCases(NODE_ENGINE, 2, 2) });
+  });
+
+  it("lets the memory counts, not a lost CPU reading, decide a case the kernel killed for memory", async () => {
+    fake.exitCode = 0;
+    fake.oomKilled = false;
+    fake.replies = [
+      { code: null, signal: "SIGKILL", before: at(0), after: at(1), metered: false },
+      { code: 0, signal: null, before: at(1), after: at(1), value: 1 },
+    ];
+    const pinned = await judgeNode(BOX, MODULE, "count.mjs", PINNED, 7, 60);
+    expect([pinned.judged.passed, pinned.judged.stop, pinned.judged.failures]).toEqual([1, undefined, [{ case: 0, verdict: "crashed", detail: caseOomPinned(MEMORY) }]]);
+    fake.replies = [{ code: null, signal: "SIGKILL", before: at(0), after: at(1), metered: false }];
+    const chosen = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
+    expect([chosen.judged.failures, chosen.judged.stop?.reason]).toEqual([[], caseOomInfra(MEMORY)]);
+    fake.replies = [{ code: 0, signal: null, before: at(0), after: at(0), value: 2, metered: false }];
+    const unmetered = await judgeNode({ ...BOX, memory: MEMORY }, MODULE, "count.mjs", CASES, 7, 60);
+    expect([unmetered.judged.failures, unmetered.judged.stop?.reason]).toEqual([[], CASE_UNMETERED]);
   });
 
   it("reads the kernel's group kill from the launcher, and then charges the fill to the case without saying its own process used it", async () => {

@@ -98,7 +98,15 @@ const settle = async () => {
     sweep();
     const left = others();
     if (left === 0) return true;
-    if (left === null || performance.now() >= until) return false;
+    if (performance.now() >= until) return false;
+    await new Promise((done) => setTimeout(done, 5));
+  }
+};
+const retried = async (read) => {
+  const until = performance.now() + config.settleMs;
+  for (;;) {
+    const value = read();
+    if (value !== null || performance.now() >= until) return value;
     await new Promise((done) => setTimeout(done, 5));
   }
 };
@@ -142,6 +150,8 @@ const runCase = (token, json, zeros) =>
     let from = null;
     let last = 0;
     let lastState = "run";
+    let unread = false;
+    let base = null;
     let sampler;
     let exited = false;
     const stopBy = (cause) => {
@@ -154,14 +164,17 @@ const runCase = (token, json, zeros) =>
       if (from === null) return;
       const now = performance.now();
       const state = final ? lastState : taskState();
-      if (state === null) clock.metered = false;
+      const cpu = usage();
+      if (state === null || cpu === null) {
+        if (final) unread = true;
+        else if (now - last >= config.missMs) clock.metered = false;
+        return;
+      }
       if (state === lastState && state === "idle") clock.idleMs += now - last;
       if (state === lastState && state === "disk") clock.ioMs += now - last;
       last = now;
-      lastState = state ?? "run";
-      const cpu = usage();
-      if (cpu === null) clock.metered = false;
-      else clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
+      lastState = state;
+      clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
       const host = final && cpu !== null && from.host !== null ? hostTicks() : null;
       if (host !== null && now > from.at) clock.otherShare = Math.max(0, (host.busy - from.host.busy) * config.tickMs - (cpu - from.cpu) / 1000) / ((now - from.at) * host.count);
     };
@@ -199,6 +212,7 @@ const runCase = (token, json, zeros) =>
       clearTimeout(sampler);
       read(true);
       exited = true;
+      base = from;
       from = null;
       code = exitCode;
       signal = endedBy;
@@ -210,8 +224,12 @@ const runCase = (token, json, zeros) =>
       sweep();
       done({ token, out: "", code: null, signal: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });
-    child.once("close", () => {
-      read(true);
+    child.once("close", async () => {
+      if (unread && base !== null) {
+        const cpu = await retried(usage);
+        if (cpu === null) clock.metered = false;
+        else clock.usedMs = Math.max(clock.usedMs, (cpu - base.cpu - (own() - base.own)) / 1000);
+      }
       done({ token, out: over ? "" : Buffer.concat(out).toString("base64"), code, signal, timedOut, over, clock });
     });
   });
@@ -243,10 +261,11 @@ for await (const line of lines) {
     process.stdout.write(${JSON.stringify(NODE_READY)} + "\\n");
     continue;
   }
-  const oomBefore = memoryEvents();
+  const oomBefore = await retried(memoryEvents);
   const result = await runCase(message.token, message.json, message.zeros);
   const settled = await settle();
-  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter: memoryEvents(), settled }) + "\\n");
+  const oomAfter = await retried(memoryEvents);
+  process.stdout.write(JSON.stringify({ ...result, oomBefore, oomAfter, settled }) + "\\n");
 }
 `;
 

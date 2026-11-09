@@ -8,7 +8,7 @@ import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { CASE_OOM_SCORE, NODE_CASE, NODE_LAUNCHER, NODE_READY, NODE_UNCOUNTED, NODE_UNLOCKED, NODE_UNMETERED, NODE_UNPROBED, UNPREPARED } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, megabytesOf, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
-import { type CaseClock, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, ENGINE_FAULT, faultOf, type Limits, type MemoryRise, pinnedLauncherEnd, ranPastBudget, type Stop, starvedCase, type Timing } from "./verdict-model.js";
+import { type CaseClock, caseMemory, caseTiming, CONTENTION_FACTOR, contendedCase, caseUnsettled, containerOutcome, deadlineOf, ENGINE_FAULT, faultOf, type Limits, type MemoryRise, type Outcome, pinnedLauncherEnd, ranPastBudget, type Stop, starvedCase, type Timing } from "./verdict-model.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, OUTPUT_BYTES, type Primitive, stoppedTally, type Tallied, tallied } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
@@ -19,6 +19,7 @@ export const NODE_SAMPLE_MS = 10;
 export const NODE_BOOT_MS = 2_000;
 export const TICK_MS = 10;
 export const NODE_SETTLE_MS = 2_000;
+export const NODE_MISS_MS = 1_000;
 export const NODE_HEAP_FACTOR = 1;
 export const NODE_LAUNCHER_USER = "0:0";
 export const NODE_CAPABILITIES = ["SETUID", "SETGID", "KILL", "SYS_RESOURCE"] as const;
@@ -292,10 +293,24 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       token = "";
       settle(answer, sent);
     };
+    const memoryOf = (answer: Answer, passed: boolean): Outcome | undefined => {
+      const end = { signal: answer.signal ?? null, stoppedByJudge: answer.timedOut || answer.over, rise: riseOf(answer.oomBefore, answer.oomAfter) };
+      const blurred = unsettled;
+      unsettled = answer.settled === false;
+      const charged = caseMemory(end, passed, limits);
+      const pinned = limits.pinned?.memory;
+      return blurred && pinned !== undefined && charged?.outcome === "fail" ? { outcome: "infra", reason: caseUnsettled(pinned) } : charged;
+    };
     const settle = (answer: Answer, sent: string) => {
       const clock = clockOf(answer.clock);
       if (clock === null || !clock.metered) {
-        kill(faultOf(CASE_UNMETERED, left()));
+        const memory = memoryOf(answer, false);
+        if (memory?.outcome === "fail") {
+          results.push({ verdict: "crashed", detail: memory.reason });
+          next();
+          return;
+        }
+        kill(faultOf(memory?.outcome === "infra" ? memory.reason : CASE_UNMETERED, left()));
         return;
       }
       const timing = caseTiming(clock, budgetMs);
@@ -308,12 +323,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         kill(faultOf(contendedCase(ENGINE, budgetMs, clock.otherShare), left()));
         return;
       }
-      const end = { signal: answer.signal ?? null, stoppedByJudge: answer.timedOut || answer.over, rise: riseOf(answer.oomBefore, answer.oomAfter) };
-      const blurred = unsettled;
-      unsettled = answer.settled === false;
-      const charged = caseMemory(end, verdict.verdict === "pass", limits);
-      const pinned = limits.pinned?.memory;
-      const memory = blurred && pinned !== undefined && charged?.outcome === "fail" ? { outcome: "infra" as const, reason: caseUnsettled(pinned) } : charged;
+      const memory = memoryOf(answer, verdict.verdict === "pass");
       if (memory?.outcome === "infra") {
         kill(faultOf(memory.reason, left()));
         return;
@@ -364,7 +374,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, tickMs: TICK_MS, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, pinned: limits.pinned?.memory !== undefined });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, tickMs: TICK_MS, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 

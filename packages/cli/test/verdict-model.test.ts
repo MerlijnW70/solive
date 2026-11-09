@@ -107,6 +107,15 @@ describe("the verdict model, row by row", () => {
     expect([pinnedHog, caseMemory({ signal: null, stoppedByJudge: false, rise: kills(1) }, false, pinnedMemory)]).toEqual([fail(oomPinned("512m")), fail(caseFilledPinned("512m"))]);
   });
 
+  it("does not say the case's own process used the memory when the kernel killed more than one process of it, since a process it started may have filled it", () => {
+    const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
+    const twice = { oom: 2, oomKill: 2, groupKill: 0 };
+    expect(caseMemory({ signal: "SIGKILL", stoppedByJudge: false, rise: twice }, false, pinnedMemory)).toEqual(fail(caseFilledPinned("512m")));
+    expect(caseMemory({ signal: "SIGKILL", stoppedByJudge: false, rise: twice }, false, LIMITS)).toEqual(infra(caseFilledChosen("512m")));
+    expect(caseMemory({ signal: "SIGKILL", stoppedByJudge: false, rise: { oom: 3, oomKill: 1, groupKill: 0 } }, false, LIMITS)).toEqual(infra(caseOomInfra("512m")));
+    expect(caseMemory({ signal: "SIGKILL", stoppedByJudge: false, rise: { oom: 0, oomKill: 2, groupKill: 0 } }, false, pinnedMemory)).toEqual(infra(hostKillPinned("512m")));
+  });
+
   it("does not say the case's own process used the memory when the kernel killed its whole group, since a process it started may have filled it", () => {
     const pinnedMemory = { seconds: 90, memory: "1g", pinned: { seconds: 60, memory: "512m" } };
     const grouped = { oom: 1, oomKill: 2, groupKill: 1 };
