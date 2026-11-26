@@ -48,7 +48,7 @@ A `pay` review lets the check decide. A `fail` review fails the work without run
 
 The spec is read from the url its owner published, then from copies found by its sha256. When none of them gives the pinned bytes, for example because no url is published, the url now serves an edited file or a sealed spec cannot be opened, the review gate is unknown.
 
-Then these tools sign nothing, not even with a receipt, unless `--without-receipt` or `without_receipt` gives a reason that contains the words `review gate`. The refusal says why the gate is unknown.
+Then these tools sign nothing, not even with a receipt, with two exceptions. A `judge` run on this machine that recorded the spec, as below, settles the gate. `--without-receipt` or `without_receipt` with a reason that contains the words `review gate` signs anyway. The refusal says why the gate is unknown. When the url failed only for now, the MCP tools answer `SpecUnreadable`, which can be retried.
 
 `judge` saves on this machine a record of the escrow, the spec's sha256 and the reviewers it found, or that it found none. Later signatures here follow that record, even when the url changes or goes away. `solive_wallet_judge_work` judges nothing for a spec with the block. `solive_get_spec` and `intent-engine spec` show the block as `judge_review`.
 

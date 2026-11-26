@@ -4,7 +4,7 @@ import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address } from "@solana/kit";
 import { createClient } from "@intent-engine/client/node";
-import { opensTo } from "@intent-engine/client/internal";
+import { opensTo, unmemoized } from "@intent-engine/client/internal";
 import { openedBy } from "../../announcement-views.js";
 import { FETCH_CAPS } from "../../delivery-fetch.js";
 import { type AgentContext, define } from "../actions.js";
@@ -96,7 +96,7 @@ type Reader = (ctx: AgentContext, input: object) => Promise<object>;
 
 const readWith = (action: { run: unknown }): Reader => action.run as Reader;
 
-async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
+async function judgeCases(ctx: AgentContext, intent: Address): Promise<{ cases: Cases; specSha256: string }> {
   const spec = (await readWith(getSpec)(ctx, { intent })) as { sha256: string; matches: boolean; text?: string };
   if (!spec.matches) {
     throw new AgentRefusal("NotJudged", specDiffers(spec.sha256));
@@ -119,12 +119,18 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
   if (cases.draw !== undefined) {
     throw new AgentRefusal("NotJudged", DRAWS_CASES);
   }
-  return cases;
+  return { cases, specSha256: spec.sha256 };
 }
 
-async function runReceipt(ctx: AgentContext, intent: Address, sha256: string, announcement: Address, outcome: "pass" | "fail") {
-  const [signer, { held, params }] = await Promise.all([signerOf(ctx), proofEscrow(ctx, intent, "wallet_receipt")]);
-  const specSha256 = Buffer.from(params.specHash).toString("hex");
+export const specMoved = (checked: string, held: string): string =>
+  `the escrow now pins the spec sha256 ${held}, not the ${checked} this run checked, so no receipt or review gate record was saved`;
+
+async function runReceipt(ctx: AgentContext, intent: Address, specSha256: string, sha256: string, announcement: Address, outcome: "pass" | "fail") {
+  const [signer, { held, params }] = await Promise.all([signerOf(ctx), proofEscrow({ ...ctx, transport: unmemoized(ctx.transport) }, intent, "wallet_receipt")]);
+  const pinned = Buffer.from(params.specHash).toString("hex");
+  if (pinned !== specSha256) {
+    return { receiptRefused: specMoved(specSha256, pinned) };
+  }
   const ran = { judge: signer.address, owner: held.owner, nonce: held.nonce, intent, specSha256, deliveredSha256: sha256, announcement };
   const route = { sandbox: "viper", command: "viper", engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT } } as const;
   const home = ctx.wallet?.files.home;
@@ -236,7 +242,7 @@ export const walletJudgeWork = define({
     next: text(),
   }),
   run: async (ctx: AgentContext, input) => {
-    const cases = await judgeCases(ctx, input.intent);
+    const { cases, specSha256 } = await judgeCases(ctx, input.intent);
     const work = input.artifact === undefined ? ((await readWith(walletFetchWork)(ctx, input)) as Fetched) : await workAt(ctx, input, input.artifact);
     const text = work.untrusted_text;
     if (text === undefined) {
@@ -254,9 +260,9 @@ export const walletJudgeWork = define({
     const settles = work.opens_commitment && work.first !== undefined;
     const kept =
       passed && settles && work.first !== undefined
-        ? await runReceipt(ctx, work.intent, work.sha256, work.first.announcement, "pass")
+        ? await runReceipt(ctx, work.intent, specSha256, work.sha256, work.first.announcement, "pass")
         : outcome === "fail" && work.opens_commitment
-          ? await runReceipt(ctx, work.intent, work.sha256, work.announcement, "fail")
+          ? await runReceipt(ctx, work.intent, specSha256, work.sha256, work.announcement, "fail")
           : undefined;
     return {
       intent: work.intent,

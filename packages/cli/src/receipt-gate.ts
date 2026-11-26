@@ -33,7 +33,7 @@ const differs = (field: string, held: string, want: string): string => `the judg
 
 export const REVIEW_GATE_WORDS = "review gate";
 
-export type Gate = { pins: ReviewPins } | { problem: string } | { unknown: string } | { ungated: true };
+export type Gate = { pins: ReviewPins } | { problem: string } | { unknown: string; transient?: true } | { ungated: true };
 
 export const UNGATED: Gate = Object.freeze({ ungated: true as const });
 
