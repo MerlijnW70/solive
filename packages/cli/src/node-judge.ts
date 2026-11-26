@@ -17,6 +17,8 @@ export const NODE_ROOT = "/judge";
 export const NODE_RUNNER = "runner";
 export const NODE_CASE_MS = 5_000;
 export const NODE_SAMPLE_MS = 10;
+export const NODE_SAMPLE_FEWEST_MS = 1;
+export const NODE_SAMPLE_LOAD = 25;
 export const NODE_BOOT_MS = 2_000;
 export const NODE_SETTLE_MS = 2_000;
 export const NODE_MISS_MS = 1_000;
@@ -400,7 +402,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
       finish(null);
     });
     child.once("close", finish);
-    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, displacedLimit: DISPLACED_LIMIT, cpuMax: CPU_MAX, memoryStat: MEMORY_STAT, keptBytes: NODE_KEPT_BYTES, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
+    send({ seed: nodeSeed(seed), heapMb: NODE_HEAP_FACTOR * megabytesOf(limits.memory), caseMs: budgetMs, killMs: budgetMs * CONTENTION_FACTOR, displacedLimit: DISPLACED_LIMIT, cpuMax: CPU_MAX, memoryStat: MEMORY_STAT, keptBytes: NODE_KEPT_BYTES, backstopMs, probeMs: backstopMs, sampleMs: NODE_SAMPLE_MS, sampleFewestMs: NODE_SAMPLE_FEWEST_MS, sampleLoad: NODE_SAMPLE_LOAD, cpuStat: CPU_STAT, outputBytes: OUTPUT_BYTES, path: staged.path, uid: CASE_UID, gid: CASE_GID, events: MEMORY_EVENTS, procs: MEMORY_PROCS, settleMs: NODE_SETTLE_MS, missMs: NODE_MISS_MS, pinned: limits.pinned?.memory !== undefined });
   });
 }
 
