@@ -6,7 +6,7 @@ import { type AnnouncementView, loadAnnouncement, loadDeliveryBook, mintOf, open
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, keptLines, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
-import { artifactSha256 } from "./artifact.js";
+import { ArtifactTooLarge, artifactSha256 } from "./artifact.js";
 import type { Command } from "./command-types.js";
 import { ALREADY_ANNOUNCED, announceFeeKept, announceFeeOf, announceFeePaid, NOTHING_HELD } from "./delivery-shared.js";
 import { FlowRefused } from "./flows.js";
@@ -84,7 +84,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
   };
   if (plan.existing !== null) {
     const signature = await creationOf(transport, plan.announcement);
-    const unkept = await keepDelivery(runtime, ownRecord(plan.intent, sha256, plan.announcement, plan.existing.seq, signature, plan.existing.slot, worker.address));
+    const unkept = await keepDelivery(runtime, ownRecord(plan.intent, sha256, plan.announcement, plan.existing.seq, signature, plan.existing.slot, worker.address, await transport.genesisHash()));
     return {
       ...shown,
       sha256,
@@ -105,7 +105,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
   const made = await client.announce(input);
   const landed = await loadAnnouncement(transport, made.announcement);
   const signature = made.signature ?? (await creationOf(transport, made.announcement));
-  const unkept = await keepDelivery(runtime, ownRecord(plan.intent, sha256, made.announcement, made.seq, signature, landed?.slot ?? 0n, worker.address));
+  const unkept = await keepDelivery(runtime, ownRecord(plan.intent, sha256, made.announcement, made.seq, signature, landed?.slot ?? 0n, worker.address, await transport.genesisHash()));
   return {
     ...shown,
     sha256,
@@ -121,7 +121,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
 export const deliveredLine = (seq: bigint, sha256: string, signature: string | null, announcement: Address): string =>
   `seq=${seq} sha256=${sha256} signature=${signature ?? "unknown"} announcement=${announcement}`;
 
-const ownRecord = (intent: Address, sha256: string, announcement: Address, seq: bigint, signature: string | null, slot: bigint, worker: Address): OwnDelivery => ({
+const ownRecord = (intent: Address, sha256: string, announcement: Address, seq: bigint, signature: string | null, slot: bigint, worker: Address, cluster: string): OwnDelivery => ({
   intent,
   sha256,
   announcement,
@@ -129,6 +129,7 @@ const ownRecord = (intent: Address, sha256: string, announcement: Address, seq: 
   signature,
   slot: slot.toString(),
   worker,
+  cluster,
 });
 
 export const CREATION_LOOKBACK = 20;
@@ -302,6 +303,19 @@ export const SHA_FROM_PAID = "paid";
 export const SHA_FROM_OWN = "this machine's deliver";
 export const COMPARE_NEEDS_KEY = "--compare opens only paid announcements without --judge-keypair or --encryption-keypair, which open the salts of the others";
 
+export const TOO_LARGE_TO_COMPARE = "too large to compare";
+
+async function comparedOf(path: string): Promise<{ path: string; sha256: string } | { path: string; skipped: string }> {
+  try {
+    return { path, sha256: await artifactSha256(path) };
+  } catch (error) {
+    if (error instanceof ArtifactTooLarge) {
+      return { path, skipped: TOO_LARGE_TO_COMPARE };
+    }
+    throw error;
+  }
+}
+
 type Known = { sha256: string; from: string };
 
 async function knownWork(
@@ -336,9 +350,10 @@ async function deliveries(command: Extract<AnnounceCommand, { name: "deliveries"
   const list = await createClient({ url: command.url, transport }).announcements(command.intent);
   const openers = [...(command.judgeKeypair === undefined ? [] : [await runtime.loadKeypair(command.judgeKeypair)]), ...(await loadEncryptionKeys(runtime, command.encryptionKeypairs))];
   const compare = command.compare ?? [];
-  const compared = await Promise.all(compare.map(async (path) => ({ path, sha256: await artifactSha256(path) })));
+  const read = await Promise.all(compare.map(async (path) => comparedOf(path)));
+  const compared = read.flatMap((one) => ("sha256" in one ? [one] : []));
   const opened = openers.length === 0 ? [] : await openedBy(list.announcements, openers);
-  const known = await knownWork(list.announcements, opened, await ownDeliveries(runtime, list.intent), compared);
+  const known = await knownWork(list.announcements, opened, await ownDeliveries(runtime, list.intent, await transport.genesisHash()), compared);
   const view = listView(list);
   const urls = new Map(opened.flatMap(({ announcement, url }) => (url === null ? [] : [[announcement.address, url] as const])));
   const notes = [
@@ -356,7 +371,7 @@ async function deliveries(command: Extract<AnnounceCommand, { name: "deliveries"
         ...(urls.has(line.announcement) ? { url: urls.get(line.announcement) } : {}),
       };
     }),
-    ...(compared.length === 0 ? {} : { compared }),
+    ...(read.length === 0 ? {} : { compared: read }),
     ...(notes.length === 0 ? {} : { note: notes.join("; ") }),
   };
 }

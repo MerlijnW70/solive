@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, type KeyPairSigner, none } from "@solana/kit";
+import { type Address, createKeyPairSignerFromBytes, type KeyPairSigner, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { lamports } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
 import { getIntentDecoder } from "@intent-engine/core/internal";
 import { parse } from "../src/args.js";
 import { JOB_FUND, JOB_NEEDS_CREATE, NAME_RULE } from "../src/job-args.js";
-import { BACKUP_DIR_ENV, backupNeeded, backupReadBack, backupDiffers, JOB_EXISTS, jobFilePath, JOB_PREVIEW, specChanged, specCrlf, specEmpty } from "../src/job-create.js";
+import { BACKUP_DIR_ENV, escrowNotThisJob, backupNeeded, backupReadBack, backupDiffers, JOB_EXISTS, jobFilePath, JOB_PREVIEW, specChanged, specCrlf, specEmpty } from "../src/job-create.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { cli, funded, h, HOME, runtime, world } from "./harness.js";
 
@@ -110,6 +110,42 @@ describe("job create makes a funded worker key and an attested escrow from a spe
     expect(again.json()).toMatchObject({ existing: true, sent: false, intent: first.json()["intent"], state: "created" });
     expect(JSON.parse(h.files.get(path) ?? "{}")).toMatchObject({ state: "created" });
     expect(h.wires).toHaveLength(sent);
+  });
+
+  it("refuses to adopt another job's escrow that took its saved nonce, and sends nothing", async () => {
+    const other = await cli(creating(s, "--yes").map((arg) => (arg === "sg-job" ? "other-job" : arg === "kw1" ? "kw2" : arg)), { "hirer.json": s.hirer });
+    expect(other.code).toBe(EXIT_OK);
+    const taken = other.json() as { intent: Address; nonce: string };
+    const mine = join(s.dir, "mine.md");
+    await written(mine, `${SPEC}mine\n`);
+    const mineSha = createHash("sha256").update(`${SPEC}mine\n`).digest("hex");
+    const path = jobFilePath(JOBS, "sg-job");
+    const crashed = { job: "sg-job", state: "creating", spec: mine, spec_sha256: mineSha, judge: s.hirer.address, worker: "kw1", worker_address: s.hirer.address, worker_keypair: `${KEYS}/kw1.json`, worker_backup: `${BACKUP}/kw1.json`, amount: "0.01", nonce: taken.nonce, intent: taken.intent, fund_signature: null, escrow_signature: null, created_at: "2026-11-26T00:00:00.000Z" };
+    h.files.set(path, JSON.stringify(crashed));
+    const sent = h.wires.length;
+    const refused = await cli(creating(s, "--yes").map((arg) => (arg === s.spec ? mine : arg)), { "hirer.json": s.hirer });
+    expect([refused.code, refused.out, refused.err]).toEqual([EXIT_FAILED, "", escrowNotThisJob("sg-job", taken.intent, taken.nonce, `spec hash is not ${mineSha}`, path)]);
+    expect(JSON.parse(h.files.get(path) ?? "{}")).toMatchObject({ state: "creating" });
+    expect(h.wires).toHaveLength(sent);
+    const amount = await cli(creating(s, "--yes").map((arg) => (arg === "sg-job" ? "third" : arg)), { "hirer.json": s.hirer });
+    expect(amount.code).toBe(EXIT_OK);
+    const third = jobFilePath(JOBS, "third");
+    const kept = JSON.parse(h.files.get(third) ?? "{}") as Record<string, string>;
+    h.files.set(third, JSON.stringify({ ...kept, state: "creating", amount: "0.02" }));
+    const wrongAmount = await cli(creating(s, "--yes").map((arg) => (arg === "sg-job" ? "third" : arg)), { "hirer.json": s.hirer });
+    expect(wrongAmount.err).toBe(escrowNotThisJob("third", kept["intent"] as Address, String(kept["nonce"]), "amount is not 0.02 SOL", third));
+  });
+
+  it("checks the escrow before funding the key, so an escrow the hirer cannot pay funds nothing", async () => {
+    const sent = h.wires.length;
+    const refused = await cli(creating(s, "--yes").map((arg) => (arg === "0.01" ? "5000" : arg)), { "hirer.json": s.hirer });
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.out).toBe("");
+    expect(h.wires).toHaveLength(sent);
+    const key = JSON.parse(h.files.get(`${KEYS}/kw1.json`) ?? "[]") as number[];
+    const address = (await createKeyPairSignerFromBytes(Uint8Array.from(key))).address;
+    expect(lamportsOf(address)).toBe(0n);
+    expect(h.files.has(jobFilePath(JOBS, "sg-job"))).toBe(false);
   });
 
   it("does not fund the key when its backup reads back with other bytes", async () => {

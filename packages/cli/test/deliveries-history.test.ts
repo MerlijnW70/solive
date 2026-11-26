@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client/node";
-import { COMPARE_NEEDS_KEY, SHA_FROM_OWN, SHA_FROM_PAID, URL_HIDDEN } from "../src/announce-commands.js";
+import { COMPARE_NEEDS_KEY, SHA_FROM_OWN, SHA_FROM_PAID, TOO_LARGE_TO_COMPARE, URL_HIDDEN } from "../src/announce-commands.js";
+import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced, keyed, WORK_URL } from "./announce.js";
 import { cli, h, NOW, transport, type World, world } from "./harness.js";
@@ -67,6 +68,17 @@ describe("deliveries shows every delivery seq with its work, so a fix round comp
       { path: old, sha256: sha("41\n") },
       { path: fixed, sha256: sha("42\n") },
     ]);
+
+    const huge = join(j.dir, "huge.tar");
+    await writeFile(huge, "");
+    await truncate(huge, MAX_ARTIFACT_BYTES + 1);
+    const withHuge = await cli(["deliveries", "--intent", j.intent, "--judge-keypair", "judge.json", "--compare", huge, "--compare", fixed], {});
+    expect(withHuge.code).toBe(EXIT_OK);
+    expect(withHuge.json()["compared"]).toEqual([
+      { path: huge, skipped: TOO_LARGE_TO_COMPARE },
+      { path: fixed, sha256: sha("42\n") },
+    ]);
+    expect((withHuge.json()["announcements"] as Line[])[1]?.sha256_from).toBe(fixed);
 
     const blind = await cli(["deliveries", "--intent", j.intent, "--compare", fixed], {});
     expect(blind.json()["note"]).toBe(`${URL_HIDDEN}; ${COMPARE_NEEDS_KEY}`);

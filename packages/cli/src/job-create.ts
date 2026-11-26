@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type Address, createKeyPairSignerFromBytes, type TransactionPartialSigner } from "@solana/kit";
 import { getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
-import { formatAmount } from "@intent-engine/core";
-import { findIntentPda } from "@intent-engine/core/internal";
+import { formatAmount, Kind, parseAmount } from "@intent-engine/core";
+import { decodeParams, findIntentPda } from "@intent-engine/core/internal";
 import type { Transport } from "@intent-engine/client";
-import { rentExemptFor, rentSysvar } from "@intent-engine/client/internal";
+import { loadIntent, rentExemptFor, rentSysvar } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { parse } from "./args.js";
 import type { Command } from "./command-types.js";
@@ -180,6 +180,24 @@ const escrowRun = async (command: JobCreate, runtime: Runtime, judge: Address, s
 
 const intentAt = async (owner: Address, nonce: bigint): Promise<Address> => (await findIntentPda({ owner, nonce }))[0];
 
+export const escrowNotThisJob = (job: string, intent: Address, nonce: string, differs: string, path: string) =>
+  `job ${job} saved escrow ${intent} (nonce ${nonce}), but the escrow there is not this job's: its ${differs}; another job took that nonce, so move ${path} away and run again; nothing was sent`;
+
+async function ownEscrow(transport: Transport, job: JobFile, hirer: Address, path: string): Promise<void> {
+  const { intent } = await loadIntent(transport, hirer, BigInt(job.nonce));
+  const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
+  const attested = params.kind === Kind.AttestedResult;
+  const differs = [
+    ...(intent.owner === job.judge ? [] : [`owner ${intent.owner} is not ${job.judge}`]),
+    ...(attested && Buffer.from(params.specHash).toString("hex") === job.spec_sha256 ? [] : [`spec hash is not ${job.spec_sha256}`]),
+    ...(attested && params.amountIn === parseAmount(job.amount, SOL_DECIMALS) ? [] : [`amount is not ${job.amount} SOL`]),
+    ...(attested && params.attestor === job.judge ? [] : [`judge is not ${job.judge}`]),
+  ];
+  if (differs.length > 0) {
+    throw new FlowRefused(escrowNotThisJob(job.job, job.intent, job.nonce, differs.join(", its "), path));
+  }
+}
+
 const existing = (path: string, job: JobFile) => ({ ...job, job_file: path, existing: true, sent: false, next: JOB_EXISTS });
 
 export async function jobCreate(command: JobCreate, runtime: Runtime, transport: Transport): Promise<object> {
@@ -201,18 +219,19 @@ export async function jobCreate(command: JobCreate, runtime: Runtime, transport:
     return existing(path, kept);
   }
   if (kept !== null && (await transport.getAccount(kept.intent)) !== null) {
+    await ownEscrow(transport, kept, hirer.address, path);
     const done: JobFile = { ...kept, state: "created" };
     await runtime.saveText(path, `${JSON.stringify(done, null, 2)}\n`, false);
     return existing(path, done);
   }
   const worker = await workerKey(runtime, command.workerKey, keysDir, backupDir);
   const shownWorker = { name: worker.name, address: worker.address, keypair: worker.keypair, backup: worker.backup, created: worker.created, backed_up: true };
+  const previewEscrow = await escrowRun(command, runtime, hirer.address, spec.sha256, kept?.nonce, false);
   const fund = await funding(transport, hirer, worker.address, command.fund, command.yes);
   if (!command.yes) {
-    const escrow = await escrowRun(command, runtime, hirer.address, spec.sha256, kept?.nonce, false);
-    return { job: command.job, job_file: path, spec: command.spec, spec_sha256: spec.sha256, judge: hirer.address, worker: shownWorker, fund, escrow, sent: false, next: JOB_PREVIEW };
+    return { job: command.job, job_file: path, spec: command.spec, spec_sha256: spec.sha256, judge: hirer.address, worker: shownWorker, fund, escrow: previewEscrow, sent: false, next: JOB_PREVIEW };
   }
-  const nonce = kept?.nonce ?? String((await escrowRun(command, runtime, hirer.address, spec.sha256, undefined, false))["nonce"]);
+  const nonce = kept?.nonce ?? String(previewEscrow["nonce"]);
   const pending: JobFile = {
     job: command.job,
     state: "creating",

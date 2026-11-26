@@ -10,6 +10,7 @@ export type OwnDelivery = {
   signature: string | null;
   slot: string;
   worker: Address;
+  cluster: string;
 };
 
 export const deliveryBookPath = (home: string, intent: Address): string => `${settingsDir(home)}/delivered/${intent}.json`;
@@ -32,11 +33,12 @@ const isRecord = (value: unknown): value is OwnDelivery => {
     typeof entry["seq"] === "string" &&
     (entry["signature"] === null || typeof entry["signature"] === "string") &&
     typeof entry["slot"] === "string" &&
-    typeof entry["worker"] === "string"
+    typeof entry["worker"] === "string" &&
+    typeof entry["cluster"] === "string"
   );
 };
 
-export async function ownDeliveries(runtime: Pick<Runtime, "home" | "readText">, intent: Address): Promise<OwnDelivery[]> {
+async function keptDeliveries(runtime: Pick<Runtime, "home" | "readText">, intent: Address): Promise<OwnDelivery[]> {
   let text: string;
   try {
     text = await runtime.readText(deliveryBookPath(runtime.home, intent));
@@ -52,14 +54,18 @@ export async function ownDeliveries(runtime: Pick<Runtime, "home" | "readText">,
   return Array.isArray(parsed) ? parsed.filter(isRecord).filter((entry) => entry.intent === intent) : [];
 }
 
-export async function ownDelivery(runtime: Pick<Runtime, "home" | "readText">, intent: Address, sha256: string): Promise<OwnDelivery | null> {
-  return (await ownDeliveries(runtime, intent)).find((entry) => entry.sha256 === sha256) ?? null;
+export async function ownDeliveries(runtime: Pick<Runtime, "home" | "readText">, intent: Address, cluster: string): Promise<OwnDelivery[]> {
+  return (await keptDeliveries(runtime, intent)).filter((entry) => entry.cluster === cluster);
+}
+
+export async function ownDelivery(runtime: Pick<Runtime, "home" | "readText">, intent: Address, sha256: string, cluster: string): Promise<OwnDelivery | null> {
+  return (await ownDeliveries(runtime, intent, cluster)).find((entry) => entry.sha256 === sha256) ?? null;
 }
 
 export async function keepDelivery(runtime: Pick<Runtime, "home" | "readText" | "saveText">, record: OwnDelivery): Promise<string | undefined> {
   const path = deliveryBookPath(runtime.home, record.intent);
   try {
-    const kept = (await ownDeliveries(runtime, record.intent)).filter((entry) => entry.announcement !== record.announcement);
+    const kept = (await keptDeliveries(runtime, record.intent)).filter((entry) => entry.announcement !== record.announcement);
     await runtime.saveText(path, `${JSON.stringify([...kept, record], null, 2)}\n`, false);
     return undefined;
   } catch (error) {

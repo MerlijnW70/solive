@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import type { DeliveryOpener } from "@intent-engine/core";
 import { type FirstOpeningRefused, isSdkError, type Transport } from "@intent-engine/client";
-import { type FirstOpeningOutcome, firstOpeningIn } from "@intent-engine/client/internal";
+import { type FirstOpeningOutcome, firstOpeningIn, loadAnnouncement } from "@intent-engine/client/internal";
 import { type OwnDelivery, ownDelivery } from "./delivery-record.js";
 import { EXIT_RETRY, JudgeDeferred } from "./judge-errors.js";
 import type { Runtime } from "./runtime.js";
@@ -27,6 +27,20 @@ const pendingRefusal = (refusal: FirstOpeningRefused): boolean => refusal.reason
 
 const pending = (outcome: FirstOpeningOutcome): boolean => isSdkError(outcome.opening, "first-opening-refused") && pendingRefusal(outcome.opening);
 
+async function trustedOwn(transport: Transport, runtime: Pick<Runtime, "home" | "readText">, input: OpeningInput, outcome: FirstOpeningOutcome): Promise<OwnDelivery | null> {
+  const own = await ownDelivery(runtime, input.intent, input.sha256, await transport.genesisHash());
+  if (own === null || own.signature === null || outcome.list.announcements.some(({ address }) => address === own.announcement)) {
+    return null;
+  }
+  const signature = own.signature;
+  const [landing] = (await transport.signatureStatuses?.([signature]).catch(() => [null])) ?? [null];
+  if (landing !== "landed") {
+    return null;
+  }
+  const held = await loadAnnouncement(transport, own.announcement).catch(() => null);
+  return held !== null && held.intent === input.intent && held.worker === own.worker ? own : null;
+}
+
 export type WaitedOpening = FirstOpeningOutcome & { waited: number; own: OwnDelivery | null };
 
 type OpeningInput = { intent: Address; sha256: string; keypair: DeliveryOpener[] };
@@ -48,7 +62,7 @@ export async function openingAfterWait(
     waited += step;
     outcome = await firstOpeningIn(transport, input);
   }
-  const own = pending(outcome) ? await ownDelivery(runtime, input.intent, input.sha256) : null;
+  const own = pending(outcome) ? await trustedOwn(transport, runtime, input, outcome) : null;
   return { ...outcome, waited, own };
 }
 

@@ -45,13 +45,14 @@ describe("deliver tells the truth", () => {
     expect(out["delivered"]).toBe(deliveredLine(1n, j.sha256, out["signature"] as string, out["announcement"] as Address));
     expect(out["delivered"]).toMatch(/^seq=1 sha256=[0-9a-f]{64} signature=[1-9A-HJ-NP-Za-km-z]{64,90} announcement=[1-9A-HJ-NP-Za-km-z]{32,44}$/);
     const runtime = { home: HOME, readText: async (path: string) => h.files.get(path) ?? Promise.reject(new Error("none")) };
-    expect(await ownDeliveries(runtime, j.intent)).toEqual([
-      { intent: j.intent, sha256: j.sha256, announcement: out["announcement"], seq: "1", signature: out["signature"], slot: expect.stringMatching(/^[1-9][0-9]*$/), worker: j.worker.address },
+    expect(await ownDeliveries(runtime, j.intent, h.genesis)).toEqual([
+      { intent: j.intent, sha256: j.sha256, announcement: out["announcement"], seq: "1", signature: out["signature"], slot: expect.stringMatching(/^[1-9][0-9]*$/), worker: j.worker.address, cluster: h.genesis },
     ]);
     const again = await cli(delivering(j, "--yes"), {});
     expect([again.code, again.err]).toEqual([EXIT_OK, ""]);
     expect(again.json()).toMatchObject({ sent: false, seq: "1", delivered: expect.stringMatching(new RegExp(`^seq=1 sha256=${j.sha256} signature=\\S+ announcement=${String(out["announcement"])}$`)) });
     expect(JSON.parse(h.files.get(deliveryBookPath(HOME, j.intent)) ?? "[]")).toHaveLength(1);
+    expect(await ownDeliveries(runtime, j.intent, "another-genesis")).toEqual([]);
   });
 
   it("previews without a delivered line and sends nothing without --yes", async () => {

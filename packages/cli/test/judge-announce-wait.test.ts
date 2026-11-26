@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Address, KeyPairSigner } from "@solana/kit";
+import type { Address, KeyPairSigner, Signature } from "@solana/kit";
+import type { Transport } from "@intent-engine/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { deliveryBookAddress, getIntentDecoder } from "@intent-engine/core/internal";
@@ -46,6 +47,18 @@ const status = (intent: Address) => {
   return held.exists ? getIntentDecoder().decode(held.data).status : undefined;
 };
 
+const withStatuses = (): Transport => ({
+  ...boundMembers(transport),
+  signatureStatuses: async (signatures) =>
+    signatures.map((signature) => {
+      try {
+        return h.svm.getTransaction(signature as Signature) === null ? null : "landed";
+      } catch {
+        return null;
+      }
+    }),
+});
+
 describe("judge waits for a fresh announcement instead of racing it", () => {
   let j: Job;
 
@@ -84,14 +97,40 @@ describe("judge waits for a fresh announcement instead of racing it", () => {
 
   it("never says nobody announced while this machine's own confirmed deliver is not listed yet", async () => {
     const worker = await keyed("worker.json");
-    const plan = await createClient({ url: "http://cluster", transport }).plan.announce({ worker, intent: j.intent, sha256: j.sha256, url: WORK_URL });
-    const own = { intent: j.intent, sha256: j.sha256, announcement: plan.announcement, seq: "1", signature: "5".repeat(88), slot: "9", worker: worker.address };
+    const made = await announced(j.intent, worker, j.sha256);
+    const inner = boundMembers(transport);
+    h.through = { ...withStatuses(), engineAccounts: async (filter) => (await (inner.engineAccounts?.(filter) ?? [])).filter(({ address }) => address !== made.announcement) };
+    const own = { intent: j.intent, sha256: j.sha256, announcement: made.announcement, seq: String(made.seq), signature: String(made.signature), slot: "9", worker: worker.address, cluster: h.genesis };
     h.files.set(deliveryBookPath(HOME, j.intent), JSON.stringify([own]));
     const pending = await cli(judging(j, "--announce-wait", "4", "--yes"), j.keys);
     expect(pending.code).toBe(EXIT_RETRY);
     expect(pending.err).toBe(ownPending(own, 4));
     expect(pending.err).not.toContain(NOBODY_ANNOUNCED);
     expect(pending.err).not.toContain("no announcement opens");
+    h.files.set(deliveryBookPath(HOME, j.intent), JSON.stringify([{ ...own, cluster: "another-genesis" }]));
+    const elsewhere = await cli(judging(j, "--announce-wait", "4", "--yes"), j.keys);
+    expect(elsewhere.code).toBe(EXIT_REFUSED);
+    expect(elsewhere.err).toContain(waitedFor(4));
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+  });
+
+  it("ignores a forged record and a stale record of a listed announcement, from any cluster, and refuses as usual", async () => {
+    const worker = await keyed("worker.json");
+    const plan = await createClient({ url: "http://cluster", transport }).plan.announce({ worker, intent: j.intent, sha256: j.sha256, url: WORK_URL });
+    h.through = withStatuses();
+    const forged = { intent: j.intent, sha256: j.sha256, announcement: plan.announcement, seq: "1", signature: "4".repeat(87), slot: "9", worker: worker.address, cluster: h.genesis };
+    h.files.set(deliveryBookPath(HOME, j.intent), JSON.stringify([forged]));
+    const none = await cli(judging(j, "--announce-wait", "2", "--yes"), j.keys);
+    expect([none.code, none.err.includes(NOBODY_ANNOUNCED)]).toEqual([EXIT_REFUSED, true]);
+    const other = await announced(j.intent, worker, createHash("sha256").update("old work").digest("hex"));
+    const stale = { ...forged, announcement: other.announcement, signature: String(other.signature) };
+    for (const record of [stale, { ...stale, cluster: "another-genesis" }]) {
+      h.files.set(deliveryBookPath(HOME, j.intent), JSON.stringify([record]));
+      const refused = await cli(judging(j, "--announce-wait", "2", "--yes"), j.keys);
+      expect(refused.code).toBe(EXIT_REFUSED);
+      expect(refused.err).toContain("no announcement opens to this work");
+      expect(refused.err).toContain(waitedFor(2));
+    }
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
