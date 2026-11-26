@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, setup, SWAP_START, TEST_SWAP } from "../../wallet.js";
+import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, settingsPath, setup, SWAP_START, TEST_SWAP } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
@@ -52,6 +52,7 @@ export const walletSetup = define({
     keypair: text("the file holding the wallet's key on this machine"),
     created: flag("true when this call made the wallet"),
     url: text("the RPC node this server uses, as scheme, host and port only"),
+    confirm_url: optional(text("the second RPC node the settings file keeps for confirming reads, as scheme, host and port only; present only when the file holds one")),
     settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
     settings_backup: optional(text("the copy of the previous settings file, made when this call replaced one with different content")),
     sol: text("SOL the wallet holds"),
@@ -71,12 +72,13 @@ export const walletSetup = define({
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
     update: updateShape,
   }),
-  run: async (ctx: AgentContext) => {
+  run: async (ctx: AgentContext, _input, call: Call) => {
     const wallet = await testCluster(ctx);
     const apart = [ctx.agent?.signer.address, ctx.relay?.signer.address].filter((key): key is Address => key !== undefined);
     const made = await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet, true), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
       throw error instanceof ServerKeyNotWallet ? new AgentRefusal("KeyIsWallet", error.message) : error;
     });
+    call.wrote.push(`saved ${settingsPath(wallet.files.home)}`);
     return { ...made, notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };
   },
 });

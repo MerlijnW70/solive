@@ -217,6 +217,7 @@ export const walletWorker = define({
     const record: WorkerJob = { intent, owner: held.owner, nonce: held.nonce.toString(), mint: held.inputMint };
     await wallet.files.saveText(keypair, key.text, true);
     await wallet.files.saveText(job, JSON.stringify(record), false);
+    call.wrote.push(`saved ${keypair}`, `saved ${job}`);
     const path = limited(guard) ? await bookOf(wallet) : undefined;
     const sale: Sale = { id: randomUUID(), mint: NATIVE_MINT, at: now, amount: funding.total };
     const unmake = async () => {

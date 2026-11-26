@@ -24,7 +24,8 @@ import { RUN_FENCE } from "../../judge-run.js";
 import { fenceMentions } from "../../spec-blocks.js";
 import { REVIEW_FENCE } from "../../review-block.js";
 import { keptReceipt } from "../../judge-receipt.js";
-import { keepReviewRecord } from "../../review-record.js";
+import { keepReviewRecord, reviewRecordPath } from "../../review-record.js";
+import type { Call } from "../claims.js";
 import { secondsLeft } from "../../monotonic.js";
 
 export const ARTIFACT_PATH_LIMIT = 200;
@@ -125,7 +126,7 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<{ cases: 
 export const specMoved = (checked: string, held: string): string =>
   `the escrow now pins the spec sha256 ${held}, not the ${checked} this run checked, so no receipt or review gate record was saved`;
 
-async function runReceipt(ctx: AgentContext, intent: Address, specSha256: string, sha256: string, announcement: Address, outcome: "pass" | "fail") {
+async function runReceipt(ctx: AgentContext, call: Call, intent: Address, specSha256: string, sha256: string, announcement: Address, outcome: "pass" | "fail") {
   const [signer, { held, params }] = await Promise.all([signerOf(ctx), proofEscrow({ ...ctx, transport: unmemoized(ctx.transport) }, intent, "wallet_receipt")]);
   const pinned = Buffer.from(params.specHash).toString("hex");
   if (pinned !== specSha256) {
@@ -139,7 +140,12 @@ async function runReceipt(ctx: AgentContext, intent: Address, specSha256: string
   }
   const cluster = await ctx.transport.genesisHash();
   await keepReviewRecord(home, { cluster, intent, specSha256, review: null });
-  return keptReceipt(home, { ...ran, outcome, cluster, route });
+  call.wrote.push(`saved ${reviewRecordPath(home, intent)}`);
+  const receipt = await keptReceipt(home, { ...ran, outcome, cluster, route });
+  if (receipt.receipt !== undefined) {
+    call.wrote.push(`saved ${receipt.receipt}`);
+  }
+  return receipt;
 }
 
 type Fetched = { intent: Address; announcement: Address; worker: Address; sha256: string; opens_commitment: boolean; untrusted_text?: string; first?: { worker: Address; announcement: Address }; next: string };
@@ -241,7 +247,7 @@ export const walletJudgeWork = define({
     sent: flag("always false: this tool sends nothing"),
     next: text(),
   }),
-  run: async (ctx: AgentContext, input) => {
+  run: async (ctx: AgentContext, input, call: Call) => {
     const { cases, specSha256 } = await judgeCases(ctx, input.intent);
     const work = input.artifact === undefined ? ((await readWith(walletFetchWork)(ctx, input)) as Fetched) : await workAt(ctx, input, input.artifact);
     const text = work.untrusted_text;
@@ -260,9 +266,9 @@ export const walletJudgeWork = define({
     const settles = work.opens_commitment && work.first !== undefined;
     const kept =
       passed && settles && work.first !== undefined
-        ? await runReceipt(ctx, work.intent, specSha256, work.sha256, work.first.announcement, "pass")
+        ? await runReceipt(ctx, call, work.intent, specSha256, work.sha256, work.first.announcement, "pass")
         : outcome === "fail" && work.opens_commitment
-          ? await runReceipt(ctx, work.intent, specSha256, work.sha256, work.announcement, "fail")
+          ? await runReceipt(ctx, call, work.intent, specSha256, work.sha256, work.announcement, "fail")
           : undefined;
     return {
       intent: work.intent,
