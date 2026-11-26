@@ -53,6 +53,7 @@ export const walletSetup = define({
     created: flag("true when this call made the wallet"),
     url: text("the RPC node this server uses, as scheme, host and port only"),
     settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
+    settings_backup: optional(text("the copy of the previous settings file, made when this call replaced one with different content")),
     sol: text("SOL the wallet holds"),
     explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")),
     hint: optional(text("a reminder, on devnet only, of where devnet SOL shows")),
@@ -73,7 +74,7 @@ export const walletSetup = define({
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
     const apart = [ctx.agent?.signer.address, ctx.relay?.signer.address].filter((key): key is Address => key !== undefined);
-    const made = await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
+    const made = await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet, true), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
       throw error instanceof ServerKeyNotWallet ? new AgentRefusal("KeyIsWallet", error.message) : error;
     });
     return { ...made, notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };

@@ -21,6 +21,9 @@ export const AIRDROP = LAMPORTS_PER_SOL;
 export const AIRDROPS: readonly bigint[] = [AIRDROP, AIRDROP / 2n, AIRDROP / 4n, AIRDROP / 10n];
 
 type Settings = { url: string; keypair: string; [SAVED_CONFIRM_URL]?: string };
+type SettingsField = "url" | "keypair" | typeof SAVED_CONFIRM_URL;
+type SettingsProblem = { field: SettingsField | undefined; message: string };
+type SettingsRead = { saved: Partial<Settings>; problems: SettingsProblem[] };
 
 export type Files = {
   home: string;
@@ -37,7 +40,9 @@ export const settingsPath = (home: string) => `${settingsDir(home)}/config.json`
 export const defaultWallet = (home: string) => `${settingsDir(home)}/wallet.json`;
 export const ledgerBook = (home: string, path: string) => `${settingsDir(home)}/${path.replace(/[^A-Za-z0-9]+/g, "-")}.sales.json`;
 
-export const settingsBroken = (path: string) => `${path} is not a settings file this CLI wrote; delete it and run setup again`;
+const FIX_SETTINGS = "fix or remove it, or run setup, which keeps a copy of the old file";
+export const settingsBroken = (path: string, problem: string) => `${path} ${problem}; ${FIX_SETTINGS}`;
+const kindOf = (value: unknown) => (value === null ? "null" : Array.isArray(value) ? "a list" : typeof value);
 
 export const PUBLIC_FAUCET = "https://faucet.solana.com";
 export const FAUCET = `${PRODUCT_REPOSITORY}/issues/new?template=faucet.yml`;
@@ -126,32 +131,67 @@ export function expandHome(path: string, home: string): string {
 
 const set = (value: string | undefined) => (value === "" ? undefined : value);
 
-export async function withSettings(files: Files, given: Env): Promise<Env> {
-  const env = { ...given, [ENV_URL]: set(given[ENV_URL]), [ENV_KEYPAIR]: set(given[ENV_KEYPAIR]), [SAVED_CONFIRM_URL]: undefined };
+const SETTINGS_FIELDS: readonly SettingsField[] = ["url", "keypair", SAVED_CONFIRM_URL];
+
+async function readSettings(files: Files): Promise<SettingsRead> {
   const path = settingsPath(files.home);
   let text: string;
   try {
     text = await files.readText(path);
   } catch {
-    return env;
+    return { saved: {}, problems: [] };
   }
-  let saved: unknown;
+  let parsed: unknown;
   try {
-    saved = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
-    throw new UsageError(settingsBroken(path));
+    return { saved: {}, problems: [{ field: undefined, message: settingsBroken(path, "is not valid JSON") }] };
   }
-  if (
-    saved === null ||
-    typeof saved !== "object" ||
-    typeof (saved as Settings).url !== "string" ||
-    typeof (saved as Settings).keypair !== "string" ||
-    !["string", "undefined"].includes(typeof (saved as Settings)[SAVED_CONFIRM_URL])
-  ) {
-    throw new UsageError(settingsBroken(path));
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { saved: {}, problems: [{ field: undefined, message: settingsBroken(path, `holds ${kindOf(parsed)}, not a JSON object`) }] };
   }
-  const { url, keypair, [SAVED_CONFIRM_URL]: confirmUrl } = saved as Settings;
-  return { ...env, [ENV_URL]: env[ENV_URL] ?? url, [ENV_KEYPAIR]: env[ENV_KEYPAIR] ?? keypair, [SAVED_CONFIRM_URL]: confirmUrl };
+  const saved: Partial<Settings> = {};
+  const problems: SettingsProblem[] = [];
+  for (const field of SETTINGS_FIELDS) {
+    const value = (parsed as Record<string, unknown>)[field];
+    if (typeof value === "string") {
+      saved[field] = value;
+    } else if (value !== undefined) {
+      problems.push({ field, message: settingsBroken(path, `has a "${field}" field that must be text, not ${kindOf(value)}`) });
+    }
+  }
+  return { saved, problems };
+}
+
+export type SettingsUse = {
+  supplied?: readonly string[];
+  need?: readonly SettingsField[];
+  warn?: (line: string) => void;
+  mend?: boolean;
+};
+
+export async function withSettings(files: Files, given: Env, use: SettingsUse = {}): Promise<Env> {
+  const env = { ...given, [ENV_URL]: set(given[ENV_URL]), [ENV_KEYPAIR]: set(given[ENV_KEYPAIR]), [SAVED_CONFIRM_URL]: undefined };
+  const { saved, problems } = await readSettings(files);
+  const have = (field: SettingsField) =>
+    use.supplied?.includes(field) === true || (field === "url" && env[ENV_URL] !== undefined) || (field === "keypair" && env[ENV_KEYPAIR] !== undefined);
+  for (const problem of problems) {
+    if (use.mend === true) {
+      continue;
+    }
+    const fields = problem.field === undefined ? (use.need ?? ["url", "keypair"]) : [problem.field];
+    const blocked = fields.some((field) => (use.need === undefined || use.need.includes(field)) && !have(field));
+    if (blocked) {
+      throw new UsageError(problem.message);
+    }
+    use.warn?.(`warning: ${problem.message}; this command does not read it`);
+  }
+  return {
+    ...env,
+    [ENV_URL]: env[ENV_URL] ?? saved.url,
+    [ENV_KEYPAIR]: env[ENV_KEYPAIR] ?? saved.keypair,
+    [SAVED_CONFIRM_URL]: saved[SAVED_CONFIRM_URL],
+  };
 }
 
 const alreadyExists = (error: unknown) =>
@@ -215,13 +255,31 @@ export const savedDefault = (url: string) => `saved ${redactUrl(url)} as the def
 
 export const keptDefault = (saved: string) => `left the saved default RPC ${redactUrl(saved)} unchanged`;
 
-const savedConfirm = async (files: Files): Promise<string | undefined> => {
+const savedConfirm = async (files: Files): Promise<string | undefined> =>
+  (await withSettings(files, {}, { mend: true }))[SAVED_CONFIRM_URL];
+
+const backupName = (path: string) => `${path}.${new Date().toISOString().replace(/[^0-9TZ]/g, "")}.bak`;
+
+async function backedUp(files: Files, path: string, next: string): Promise<string | undefined> {
+  let old: string;
   try {
-    return (await withSettings(files, {}))[SAVED_CONFIRM_URL];
+    old = await files.readText(path);
   } catch {
     return undefined;
   }
-};
+  if (old === next) {
+    return undefined;
+  }
+  let copy = backupName(path);
+  for (let n = 1; await files.readText(copy).then(() => true, () => false); n += 1) {
+    copy = `${backupName(path)}${n}`;
+  }
+  await files.saveText(copy, old, false);
+  if ((await files.readText(copy)) !== old) {
+    throw new Error(`could not copy ${path} to ${copy}; setup stopped before writing`);
+  }
+  return copy;
+}
 
 export class SecondNodeRefused extends Error {}
 
@@ -266,10 +324,12 @@ export async function setup(
   if (apart.includes(signer.address)) {
     throw new ServerKeyNotWallet(serverKeyNotWallet(path));
   }
-  const saved = keepSavedUrl ? (await withSettings(files, {}))[ENV_URL] : undefined;
+  const saved = keepSavedUrl ? (await withSettings(files, {}, { mend: true }))[ENV_URL] : undefined;
   const confirm = confirmUrl ?? (await savedConfirm(files));
   const settings: Settings = { url: saved ?? url, keypair: path, ...(confirm === undefined ? {} : { [SAVED_CONFIRM_URL]: confirm }) };
-  await files.saveText(settingsPath(files.home), `${JSON.stringify(settings, null, 2)}\n`, false);
+  const text = `${JSON.stringify(settings, null, 2)}\n`;
+  const backup = await backedUp(files, settingsPath(files.home), text);
+  await files.saveText(settingsPath(files.home), text, false);
   let held = await lamportsOf(transport, signer.address);
   let refused = false;
   let got: bigint | undefined;
@@ -321,6 +381,7 @@ export async function setup(
     url: redactUrl(url),
     settings: saved === undefined ? savedDefault(url) : keptDefault(saved),
     ...(confirm === undefined ? {} : { confirm_url: redactUrl(confirm) }),
+    ...(backup === undefined ? {} : { settings_backup: backup }),
     sol,
     ...(explorer === undefined ? {} : { explorer }),
     ...(url === DEVNET_URL ? { hint: DEVNET_VIEW } : {}),

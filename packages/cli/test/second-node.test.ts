@@ -153,7 +153,7 @@ describe("the confirm-url setting", () => {
     expect(made.json()).not.toHaveProperty("confirm_url");
     expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).not.toHaveProperty(SAVED_CONFIRM_URL);
     h.files.set(SETTINGS, JSON.stringify({ url: "devnet", keypair: "k", [SAVED_CONFIRM_URL]: 7 }));
-    await expect(withSettings(runtime({}), {})).rejects.toThrow("is not a settings file this CLI wrote");
+    await expect(withSettings(runtime({}), {})).rejects.toThrow('"confirm-url" field that must be text, not number');
   });
 
   it("fills in --confirm-url for judge, committee release and mcp only, and never comes from the environment", async () => {
