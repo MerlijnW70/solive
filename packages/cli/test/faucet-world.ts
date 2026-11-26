@@ -39,6 +39,12 @@ const lockOf = (file) => {
   }
 };
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const meet = (phase) => {
+  const prefix = process.env.STUB_BARRIER.split("/").pop() + "." + phase + ".";
+  fs.writeFileSync(process.env.STUB_BARRIER + "." + phase + "." + process.pid, "");
+  const until = Date.now() + 200000;
+  while (fs.readdirSync(process.env.STUB_DIR).filter((name) => name.startsWith(prefix)).length < 2 && Date.now() < until) pause(10);
+};
 `;
 
 const GH = `#!/usr/bin/env node
@@ -114,11 +120,7 @@ try {
   release();
 }
 const body = argv[argv.indexOf("--body") + 1] ?? "";
-if (process.env.STUB_BARRIER && argv[1] === "comment" && body.startsWith("Sending ")) {
-  fs.writeFileSync(process.env.STUB_BARRIER + "." + process.pid, "");
-  const until = Date.now() + 200000;
-  while (fs.readdirSync(process.env.STUB_DIR).filter((name) => name.startsWith("barrier.")).length < 2 && Date.now() < until) pause(10);
-}
+if (process.env.STUB_BARRIER && argv[1] === "comment" && body.startsWith("Sending ")) meet("post");
 `;
 
 const CHAIN = `
@@ -179,6 +181,11 @@ if (command === "address") {
   const hash = flag("--blockhash");
   const memo = flag("--with-memo");
   if (argv.includes("--sign-only")) {
+    if (process.env.STUB_BARRIER) meet("sign");
+    if (process.env.STUB_HOLD) {
+      const until = Date.now() + 60000;
+      while (!fs.existsSync(process.env.STUB_HOLD) && Date.now() < until) pause(10);
+    }
     console.log(JSON.stringify({ blockhash: hash, signers: [process.env.STUB_PAYER + "=" + sigOf(hash, to, amount, memo)] }, null, 2));
     process.exit(0);
   }
