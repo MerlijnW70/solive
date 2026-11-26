@@ -109,8 +109,8 @@ describe("the judge docs on budgets and receipts", () => {
     const guide = doc("docs/judge.md");
     expect(guide).not.toContain("a fail or infra saves none");
     expect(guide).toContain(`Every fail saves a fail receipt in \`~/.config/intent-engine/${FAIL_RECEIPT_DIR}\`, and \`reject\` refuses without one. Infra and refusals save none.`);
-    expect(guide).toContain(`\`HOST_CALL_MS\` (${HOST_CALL_MS} ms)`);
-    expect(guide).toContain(`\`NODE_CASE_MS\` (${NODE_CASE_MS} ms)`);
+    expect(guide).toContain(`\`HOST_CALL_MS\` (${HOST_CALL_MS}, in milliseconds)`);
+    expect(guide).toContain(`\`NODE_CASE_MS\` (${NODE_CASE_MS}, in milliseconds)`);
     expect(guide).toContain("a whole number of milliseconds from " + CASE_MS_MIN + " to " + CASE_MS_MAX);
     expect(CASE_MS_RULE).toBe("a whole number of milliseconds from " + CASE_MS_MIN + " to " + CASE_MS_MAX);
     const internals = doc("docs/maintainers/judge-internals.md");

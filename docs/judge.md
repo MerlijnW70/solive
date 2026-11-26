@@ -315,7 +315,7 @@ A memory kill under the pin fails the case only when the container reached the p
 
 Under the memory the judge chose, a case that fills it ends as infra whatever it would have scored, by design: through a memory kill while it runs, or because its CPU time could not be read while its container sat at that limit. Under `node_memory` the same case fails once the container reached the pin, even when its CPU time could not be read; it is infra only when the counts themselves cannot be read.
 
-Each case has a budget of CPU time plus the time it waits by its own choice: `HOST_CALL_MS` (2000 ms) per call in the host engine, in `packages/cli/src/host-judge.ts`, and `NODE_CASE_MS` (5000 ms) per plain Node case from the moment it loads the delivery, in `packages/cli/src/node-judge.ts`. A case that uses its budget fails as `stopped`. The judge's CPU share and load do not count against it.
+Each case has a budget of CPU time plus the time it waits by its own choice: `HOST_CALL_MS` (2000, in milliseconds) per call in the host engine, in `packages/cli/src/host-judge.ts`, and `NODE_CASE_MS` (5000, in milliseconds) per plain Node case from the moment it loads the delivery, in `packages/cli/src/node-judge.ts`. A case that uses its budget fails as `stopped`. The judge's CPU share and load do not count against it.
 
 A case is stopped once it used twice its budget. One that answers rightly after using its budget but less than twice it fails, as on an idle judge, unless other work kept the case itself off its CPU for at least a quarter of the time it was ready to run, `DISPLACED_LIMIT`; then it is infra.
 
