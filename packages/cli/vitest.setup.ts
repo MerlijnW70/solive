@@ -1,7 +1,7 @@
 import { availableParallelism, totalmem } from "node:os";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const chosen = process.env["FC_SEED"] ?? "42";
 const WORKER_CAP = 8;
@@ -17,4 +17,17 @@ if (chosen !== "random") {
   fc.configureGlobal({ ...fc.readConfigureGlobal(), seed });
 }
 
-export default defineConfig({ test: { globalSetup: [fileURLToPath(new URL("./test/run-root-setup.ts", import.meta.url))], setupFiles: [fileURLToPath(import.meta.url), fileURLToPath(new URL("./test/faucet-setup.ts", import.meta.url))], maxWorkers: workers, execArgv: ["--expose-gc"] } });
+export const CPU_ALONE = ["test/host-judge-cpu.test.ts", "test/judge-node-band.test.ts"];
+
+export default defineConfig({
+  test: {
+    globalSetup: [fileURLToPath(new URL("./test/run-root-setup.ts", import.meta.url))],
+    setupFiles: [fileURLToPath(import.meta.url), fileURLToPath(new URL("./test/faucet-setup.ts", import.meta.url))],
+    maxWorkers: workers,
+    execArgv: ["--expose-gc"],
+    projects: [
+      { extends: true, test: { name: "shared", exclude: [...configDefaults.exclude, ...CPU_ALONE], sequence: { groupOrder: 0 } } },
+      { extends: true, test: { name: "cpu-alone", include: CPU_ALONE, fileParallelism: false, sequence: { groupOrder: 1 } } },
+    ],
+  },
+});

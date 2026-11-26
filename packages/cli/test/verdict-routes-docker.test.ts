@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client/node";
-import { EXIT_RETRY, INFRA_NEXT, oomInfra, timedOutInfra } from "../src/judge-errors.js";
+import { EXIT_RETRY, INFRA_NEXT, timedOutInfra } from "../src/judge-errors.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { judgeNode, NODE_ENGINE, OUT_OF_TURN, PROTOCOL_BROKEN } from "../src/node-judge.js";
 import { SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP } from "../src/sandbox.js";
@@ -15,6 +15,7 @@ import { announced, keyed } from "./announce.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { cli, funded, NOW, transport, world } from "./harness.js";
 import { boxed, job, paidTo, STARTUP_SECONDS, status } from "./judge-kit.js";
+import { chosenMemoryKills } from "./memory-kill-kit.js";
 
 const faults = vi.hoisted(() => ({ marks: [] as string[] }));
 
@@ -87,7 +88,8 @@ describe("judge --sandbox docker lets the container's own exit decide", () => {
     const bomb = "node -e 'const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1))'";
     const verdict = join(j.dir, "bomb.json");
     const killed = await cli(boxed(j, bomb, "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), keys);
-    expect([killed.code, killed.out, killed.err]).toEqual([EXIT_RETRY, "", infra(oomInfra("256m"))]);
+    expect([killed.code, killed.out]).toEqual([EXIT_RETRY, ""]);
+    expect(chosenMemoryKills("256m")).toContain(killed.err);
     expect(existsSync(verdict)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
