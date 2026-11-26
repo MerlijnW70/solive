@@ -40,8 +40,8 @@ const CLAIMS: readonly { doc: string; claim: string; source: string }[] = [
   { doc: "docs/mcp.md", claim: `up to ${sweepWords} after they end unfilled and ${paidDays} days after a fill`, source: "the daily cron in services/specs/vercel.json, UNPAID_GRACE_SECS and PAID_GRACE_SECS in services/specs/src/limits.ts" },
   { doc: "docs/mcp.md", claim: `the upload adds up to SPEC_READ_MS (${SPEC_READ_MS}, in milliseconds) to the send's answer`, source: "SPEC_READ_MS in packages/client/src/spec-sources.ts" },
   { doc: "docs/judge.md", claim: `DETAIL_BYTES (${DETAIL_BYTES}, in bytes)`, source: "DETAIL_BYTES in packages/cli/src/draw.ts" },
-  { doc: "docs/maintainers/operations.md", claim: `with a time ${retryHours} hours ahead`, source: "retry_secs in scripts/faucet.sh" },
-  { doc: "docs/maintainers/operations.md", claim: `After ${parks} such tries, ${parks * retryHours} hours in all`, source: "max_parks and retry_secs in scripts/faucet.sh" },
+  { doc: "docs/maintainers/operations.md", claim: `with a time \`retry_secs\` (${retryHours}, in hours) ahead`, source: "retry_secs in scripts/faucet.sh" },
+  { doc: "docs/maintainers/operations.md", claim: `After ${parks} such tries (${parks * retryHours}, in hours, in all)`, source: "max_parks and retry_secs in scripts/faucet.sh" },
 ];
 
 describe("the numbers the docs state", () => {

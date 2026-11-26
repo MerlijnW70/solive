@@ -402,7 +402,7 @@ journalctl -u solive-filler -n 20
 
 The issue faucet's budget is one chain of numbers. `scripts/faucet.sh` sends 0.5 SOL per request, stops after 50 requests a day, and keeps 1 SOL in reserve. A day at the cap costs 50 × 0.5 = 25 SOL, so the wallet needs 25 + 1 = 26 SOL to serve it. `TOPUP_TARGET` defaults to 26 SOL, and `TOPUP_FLOOR` to 14 SOL, the reserve plus a little over half a day at the cap. The weekly top-up thus restores one full day at the cap each week; a week at the cap would cost 7 × 25 = 175 SOL. `packages/cli/test/faucet-budget.test.ts` reads these values from the scripts.
 
-The issue faucet finds requests by one rule, kept in `scripts/faucet.sh` and `.github/workflows/faucet.yml` as the same two commands: open issues titled exactly `Devnet SOL` that lack the `faucet` label, and open issues with the `faucet` label that lack `faucet-sent`. When devnet cannot be reached for an address, the script leaves the request open and comments `Retry after:` with a time 3 hours ahead; every run before that time skips the request. Only comments by `github-actions` count. After 8 such tries, 24 hours in all, the script closes the request and asks for a new one.
+The issue faucet finds requests by one rule, kept in `scripts/faucet.sh` and `.github/workflows/faucet.yml` as the same two commands: open issues titled exactly `Devnet SOL` that lack the `faucet` label, and open issues with the `faucet` label that lack `faucet-sent`. When devnet cannot be reached for an address, the script leaves the request open and comments `Retry after:` with a time `retry_secs` (3, in hours) ahead; every run before that time skips the request. Only comments by `github-actions` count. After 8 such tries (24, in hours, in all), the script closes the request and asks for a new one.
 
 The issue faucet pays each request at most once. It signs the transfer offline with a fresh blockhash and the memo `faucet request <number>`. It then comments the signature, the time, the slot it signed after, the faucet wallet's newest finalized transaction as an anchor, and the blockhash's last valid block height. Only the run whose comment is the first new one goes on: it labels the request `faucet-pending`, comments that the transaction is on its way, and sends.
 
@@ -412,7 +412,7 @@ A transfer counts as never landed only on positive evidence. The finalized block
 
 Each record names the wallet that signed it. The script reads each wallet's history from the oldest anchor among that wallet's open records, so after a key change the old key's transfers are checked against the old key's history.
 
-That verdict must hold again on a run at least 2 hours later before the script sends anew; the first verdict leaves a comment with its time. A node can miss a landed transfer: when its long-term storage lags and the node restarted recently, both the status and the history can skip it, and the node reports no error. The second look covers only a lag shorter than 2 hours.
+That verdict must hold again on a run at least 2, in hours, later before the script sends anew; the first verdict leaves a comment with its time. A node can miss a landed transfer: when its long-term storage lags and the node restarted recently, both the status and the history can skip it, and the node reports no error. The second look covers only a lag shorter than 2, in hours.
 
 A longer lag can lead to a second landing. Its bound: a request ends after at most 3 sent transfers, so it receives at most 1.5 SOL. The daily cap counts such a request once, so the real daily bound is 50 × 1.5 = 75 SOL. The script adds no other evidence. The recipient's history comes from the same storage, and `minimumLedgerSlot` may come from another node behind the same load balancer, so neither proves more.
 
@@ -501,7 +501,7 @@ A hirer who never judges must not be able to take the worker's stakes. The worke
 
 Before it stakes, it previews the delivery, which seals the work url to the escrow's judge exactly as the delivery does. An escrow whose judge no delivery can be sealed to fails that preview, so the worker never claims it and records it as done. After the claim it previews again; when the preview does not say `protected`, it drops the claim and gets its stake back.
 
-When the delivery after a claim fails, the worker drops the claim in the same step, before any claim term can run out, and gets its stake back. When that drop fails too, it retries the delivery and the drop in later rounds, and the collect round drops the claim at the latest 60 seconds before the claim term ends.
+When the delivery after a claim fails, the worker drops the claim in the same step, before any claim term can run out, and gets its stake back. When that drop fails too, it retries the delivery and the drop in later rounds, and the collect round drops the claim at the latest 60, in seconds, before the claim term ends.
 
 It skips every other claim and logs the reason once: a stake without a review window, a review window above its cap, a stake above `DEMO_WORKER_MAX_STAKE_LAMPORTS`, or an escrow that ends too soon. Those terms never change, so it does not read that board again.
 
@@ -519,13 +519,13 @@ sudo systemctl start solive-demo-worker
 
 ### Collect and reclaim
 
-Every `DEMO_WORKER_COLLECT_INTERVAL` seconds it reads the board of each claim it holds, at most every 1800 seconds while a review runs:
+Every `DEMO_WORKER_COLLECT_INTERVAL` seconds it reads the board of each claim it holds, at most every 1800, in seconds, while a review runs:
 
 - A review that ended without a release or reject: it runs `claims collect`, which pays it the stake and the kill fee.
 - A claim no longer its own: a release, reject, cancel or someone else's collect settled it, and it stops tracking it.
 - A claim it holds with no review armed, whose delivery failed: it drops the claim and takes the stake back.
 
-A failed collect is retried after 60 seconds, then twice as long each time, up to an hour. The claims it holds live in `DEMO_WORKER_STATE`, written as soon as a claim is taken, so a restart keeps collecting. The chain decides each step, so a collect is never sent twice.
+A failed collect is retried after 60, in seconds, then twice as long each time, up to an hour. The claims it holds live in `DEMO_WORKER_STATE`, written as soon as a claim is taken, so a restart keeps collecting. The chain decides each step, so a collect is never sent twice.
 
 Every announcement locks rent until it closes. Every `DEMO_WORKER_RECLAIM_INTERVAL` seconds the collect round runs `reclaim`, which closes the worker's announcements that can close, and the delivery books left empty, and returns their rent. It counts the announcements that stay open, and starts no new job while that count is at `DEMO_WORKER_MAX_OPEN_DELIVERIES`; a claim it already holds is still delivered.
 
@@ -537,7 +537,7 @@ The worker writes `DEMO_WORKER_STATE` to a temporary file of its own, syncs it t
 
 ### Node use
 
-The fast path reads one demo spec hash at a time, outside the lock the rounds share, so a wait for the node never holds up the collect round. On a 429 the worker waits as long as the node's `Retry-After` asks, in whole seconds or as an HTTP date, or 30 seconds when the header is missing, negative, fractional or malformed, and every path waits with it. While the subscription is open, the fast path polls every `DEMO_WORKER_WATCHED_INTERVAL` seconds instead of every `DEMO_WORKER_FAST_INTERVAL`.
+The fast path reads one demo spec hash at a time, outside the lock the rounds share, so a wait for the node never holds up the collect round. On a 429 the worker waits as long as the node's `Retry-After` asks, in whole seconds or as an HTTP date, or 30, in seconds, when the header is missing, negative, fractional or malformed, and every path waits with it. While the subscription is open, the fast path polls every `DEMO_WORKER_WATCHED_INTERVAL` seconds instead of every `DEMO_WORKER_FAST_INTERVAL`.
 
 ### Health file
 
@@ -552,7 +552,7 @@ After every round the worker replaces `DEMO_WORKER_HEALTH`, default `~/demo-work
 | `stake_at_risk_lamports` | The stakes of the claims it holds. |
 | `claims_held` | How many claims it holds. |
 | `uncollected_lamports` | Stake and kill fee of reviews that ended and are not collected yet. |
-| `overdue_lamports` | Stake and kill fee owed for over 3600 seconds after a review ended, plus stakes of claims held 3600 seconds past their end with no review armed. |
+| `overdue_lamports` | Stake and kill fee owed for over 3600, in seconds, after a review ended, plus stakes of claims held 3600, in seconds, past their end with no review armed. |
 | `collected_lamports` | Everything `claims collect` paid it so far. |
 | `lost_lamports` | Stakes of claims that lapsed before a review armed, ever. |
 | `lost_recent_lamports` | Stakes lost within the breaker's window. |
@@ -630,7 +630,7 @@ WantedBy=multi-user.target
 
 The worker writes one JSON line per event; JSON escapes every control byte, so it never writes a NUL. An unclean stop of WSL can still leave a run of NUL bytes where the file system lost the end of the log. Before each start, `scripts/demo-worker-log.sh` writes a copy without them beside the log, with a line that says how many it removed, and renames it over the log. It always exits 0, and the `-` before its path makes systemd start the worker even if it fails. It leaves a log that is a symbolic link alone.
 
-The logrotate stanza at `/etc/logrotate.d/solive-demo-worker` bounds the log at about five rotations of 10 MB, rotating as the worker's user. systemd holds the log open and has no signal to reopen it, so the stanza copies and truncates. Lines the worker writes between the copy and the truncate are lost; that window is the time to copy at most 10 MB:
+The logrotate stanza at `/etc/logrotate.d/solive-demo-worker` bounds the log at about five rotations of 10, in megabytes, rotating as the worker's user. systemd holds the log open and has no signal to reopen it, so the stanza copies and truncates. Lines the worker writes between the copy and the truncate are lost; that window is the time to copy at most 10, in megabytes:
 
 ```text
 /home/dev/demo-worker.log {

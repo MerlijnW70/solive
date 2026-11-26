@@ -56,8 +56,8 @@ describe("the issue faucet's schedule in the runbook", () => {
     expect(RUNBOOK).not.toContain("faucet.yml` runs several times");
     const hours = Number(/^retry_secs=\$\(\((\d+) \* 3600\)\)$/m.exec(FAUCET)?.[1]);
     expect(hours).toBeGreaterThan(0);
-    expect(RUNBOOK).toContain(`with a time ${hours} hours ahead`);
+    expect(RUNBOOK).toContain(`with a time \`retry_secs\` (${hours}, in hours) ahead`);
     const tries = assigned(FAUCET, "max_parks");
-    expect(RUNBOOK).toContain(`After ${tries} such tries, ${tries * hours} hours in all, the script closes the request`);
+    expect(RUNBOOK).toContain(`After ${tries} such tries (${tries * hours}, in hours, in all), the script closes the request`);
   });
 });
