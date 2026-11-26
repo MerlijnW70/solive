@@ -58,6 +58,6 @@ describe("the issue faucet's schedule in the runbook", () => {
     expect(hours).toBeGreaterThan(0);
     expect(RUNBOOK).toContain(`with a time \`retry_secs\` (${hours}, in hours) ahead`);
     const tries = assigned(FAUCET, "max_parks");
-    expect(RUNBOOK).toContain(`After ${tries} such tries (${tries * hours}, in hours, in all), the script closes the request`);
+    expect(RUNBOOK).toContain(`After \`max_parks\` (${tries}) such tries (${tries * hours}, in hours, in all), the script closes the request`);
   });
 });
