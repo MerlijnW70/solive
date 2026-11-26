@@ -15,7 +15,8 @@ import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { servedActions } from "../src/agent/everyday.js";
 import { JOB_PROMPTS } from "../src/agent/mcp.js";
-import { DRAWS_CASES, JUDGED_FAIL, JUDGED_INFRA, JUDGED_PASS, NO_CASES, walletJudgeWork } from "../src/agent/wallet/judge-work.js";
+import { DRAWS_CASES, JUDGED_FAIL, JUDGED_INFRA, JUDGED_PASS, NO_CASES, specMoved, walletJudgeWork } from "../src/agent/wallet/judge-work.js";
+import { reviewRecordPath } from "../src/review-record.js";
 import { HOST_RUNNER } from "../src/host-judge.js";
 import { RUNNER, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
 import { EXIT_OK, main } from "../src/main.js";
@@ -203,6 +204,49 @@ describe("wallet_judge_work", () => {
     faults.marks.push(HOST_RUNNER);
     expect(await ok(judge, "wallet_judge_work", { intent: wrong })).toMatchObject({ verdict: "fail", next: JUDGED_FAIL });
     expect(status(intent)).toBe(IntentStatus.Open);
+  }, 120_000);
+
+  it("keeps a record that the spec it read has no judge-review block, so wallet_attest still pays when the url later serves edited bytes", async () => {
+    const { intent, nonce } = await delivered(SPEC, SOLUTION);
+    expect(await ok(judge, "wallet_judge_work", { intent })).toMatchObject({ verdict: "pass" });
+    const kept = JSON.parse(readFileSync(reviewRecordPath(judgeHome, intent), "utf8")) as Json[];
+    expect(kept).toEqual([expect.objectContaining({ intent, specSha256: sha(SPEC), review: null })]);
+    h.specPages.set(SPEC_URL, new TextEncoder().encode("# Job\n\nAn edited spec.\n"));
+    const attested = await ok(judge, "wallet_attest", await approved(judge, "wallet_attest", { owner: judgeWallet, nonce, delivered_sha256: sha(SOLUTION) }));
+    expect(attested).toMatchObject({ sent: true, pay_to: workerWallet });
+  }, 120_000);
+
+  it("saves no receipt or record when the escrow's spec sha256 changes while the work is judged", async () => {
+    const { intent } = await delivered(SPEC, SOLUTION);
+    const pinned = Uint8Array.from(Buffer.from(sha(SPEC), "hex"));
+    const moved = new Uint8Array(32).fill(0x11);
+    const served = h.specPages.get.bind(h.specPages);
+    let swapped = 0;
+    const swap = vi.spyOn(h.specPages, "get").mockImplementation((url: string) => {
+      if (url === WORK_URL) {
+        const held = h.svm.getAccount(intent);
+        if (held.exists) {
+          const data = new Uint8Array(held.data);
+          const at = Buffer.from(data).indexOf(Buffer.from(pinned));
+          if (at >= 0) {
+            swapped += 1;
+            data.set(moved, at);
+            h.svm.setAccount({ ...held, data });
+          }
+        }
+      }
+      return served(url);
+    });
+    try {
+      const judged = await ok(judge, "wallet_judge_work", { intent });
+      expect(swapped).toBe(1);
+      expect(judged).toMatchObject({ verdict: "pass", receipt_refused: specMoved(sha(SPEC), Buffer.from(moved).toString("hex")) });
+      expect(judged).not.toHaveProperty("receipt");
+    } finally {
+      swap.mockRestore();
+    }
+    expect(receipts()).toEqual([]);
+    expect(existsSync(reviewRecordPath(judgeHome, intent))).toBe(false);
   }, 120_000);
 
   it("refuses a spec without judge cases and says to use judge --sandbox docker, running and sending nothing", async () => {

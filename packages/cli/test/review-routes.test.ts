@@ -15,7 +15,7 @@ import { writeReceipt, type Route } from "../src/judge-receipt.js";
 import { REVIEW_FENCE } from "../src/review-block.js";
 import { parsedReview, reviewedBy } from "../src/review.js";
 import { CURRENT_PINS, reviewOverrideRefused, REVIEW_GATE_WORDS, unknownOverrideRefused, unknownReceiptRefused } from "../src/receipt-gate.js";
-import { NO_SPEC_READ, specDiffers } from "../src/review-gate.js";
+import { gateUnread, NO_SPEC_READ, specDiffers } from "../src/review-gate.js";
 import { keepReviewRecord } from "../src/review-record.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced as made, keyed } from "./announce.js";
@@ -239,6 +239,27 @@ describe("an unknown review gate on the wallet server's release paths", () => {
     const plain = await call(s.client, "wallet_committee_vote", { ...ballot, without_receipt: "checked by hand" });
     expect(plain).toMatchObject({ error: true, value: { code: "NoJudgeReceipt" } });
     expect(String(plain.value["hint"])).toContain(unknownOverrideRefused(NO_SPEC_READ));
+  });
+
+  it("wallet_attest answers a transient spec fetch failure as retryable SpecUnreadable and signs nothing, and a lasting one as NoJudgeReceipt", async () => {
+    const s = await setup();
+    const worker = await keyed();
+    const intent = await post(s, s.wallet);
+    const first = await made(intent, worker, WORK, WORK_URL);
+    await receipt(s, intent, s.wallet, first.announcement, routeOf({ signers: [s.r1.address, s.r2.address] }));
+    const release = { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK };
+    h.specPages.delete(SPEC_URL);
+    for (const args of [release, { ...release, without_receipt: `the ${REVIEW_GATE_WORDS} is skipped on purpose` }]) {
+      const down = await s.client.callTool({ name: tool("wallet_attest"), arguments: args as Record<string, unknown> });
+      expect(down.isError).toBe(true);
+      expect(down.structuredContent).toMatchObject({ code: "SpecUnreadable", retryable: true, hint: gateUnread(intent) });
+    }
+    h.specReplies.set(SPEC_URL, async () => new Response("gone", { status: 404 }));
+    const lasting = await call(s.client, "wallet_attest", release);
+    expect(lasting).toMatchObject({ error: true, value: { code: "NoJudgeReceipt", retryable: false } });
+    expect(String(lasting.value["hint"])).toContain("the review gate is unknown because the spec at");
+    h.specReplies.delete(SPEC_URL);
+    expect(statusOf(intent)).toBe(IntentStatus.Open);
   });
 
   it("wallet_attest keeps the review gate of a local record after the url is gone, and pays on a reviewed receipt", async () => {
