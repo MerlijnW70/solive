@@ -71,9 +71,11 @@ export function toJson(value: unknown): unknown {
   return value;
 }
 
+export const stays = (who: string, wrote: readonly string[]): string => `${who} had already ${wrote.join(", ")}, and that stays`;
+
 export class OutputMismatch extends Error {
   constructor(action: string, cause: InvalidInput, wrote: readonly string[] = []) {
-    super(`${action} produced output outside its schema: ${cause.message}${wrote.length === 0 ? "" : `; it had already ${wrote.join(", ")}, and that stays`}`);
+    super(wrote.length === 0 ? `${action} produced output outside its schema: ${cause.message}` : `${stays(action, wrote)}; it produced output outside its schema: ${cause.message}`);
     this.name = "OutputMismatch";
   }
 }

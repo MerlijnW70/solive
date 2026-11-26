@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, settingsPath, setup, SWAP_START, TEST_SWAP } from "../../wallet.js";
-import { type AgentContext, define } from "../actions.js";
+import { type AgentContext, define, stays } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { tool } from "../names.js";
@@ -75,10 +75,24 @@ export const walletSetup = define({
   run: async (ctx: AgentContext, _input, call: Call) => {
     const wallet = await testCluster(ctx);
     const apart = [ctx.agent?.signer.address, ctx.relay?.signer.address].filter((key): key is Address => key !== undefined);
-    const made = await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet, true), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
-      throw error instanceof ServerKeyNotWallet ? new AgentRefusal("KeyIsWallet", error.message) : error;
+    const files = {
+      ...wallet.files,
+      saveText: async (path: string, text: string, secret: boolean) => {
+        await wallet.files.saveText(path, text, secret);
+        if (path === settingsPath(wallet.files.home)) {
+          call.wrote.push(`saved ${path}`);
+        }
+      },
+    };
+    const made = await setup(ctx.transport, files, wallet.url, await savedKeypair(wallet, true), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
+      if (error instanceof ServerKeyNotWallet) {
+        throw new AgentRefusal("KeyIsWallet", error.message);
+      }
+      if (error instanceof Error && call.wrote.length > 0) {
+        error.message = `${stays("setup", call.wrote)}; ${error.message}`;
+      }
+      throw error;
     });
-    call.wrote.push(`saved ${settingsPath(wallet.files.home)}`);
     return { ...made, notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };
   },
 });

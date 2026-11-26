@@ -41,11 +41,10 @@ import {
   holdsEnough,
   LAMPORTS_PER_SOL,
   refusedEnough,
-  settingsPath,
   smallerAirdrop,
   SWAP_START,
 } from "../src/wallet.js";
-import { h, HOME, runtime, transport, world, type World } from "./harness.js";
+import { h, runtime, transport, world, type World } from "./harness.js";
 import { DEVNET_URL } from "../src/tokens.js";
 import { airdropped } from "./airdrop.js";
 
@@ -278,7 +277,7 @@ describe("setup --faucet", () => {
   it("fails with what the GitHub CLI said when it cannot file the request", async () => {
     const ran = await run(["setup", "--faucet"], [SIGNED_IN, { code: 1, output: "could not create issue: HTTP 404\n" }]);
     expect(ran.code).toBe(EXIT_FAILED);
-    expect(ran.err).toBe(`${ghFailed(1, "could not create issue: HTTP 404")}; setup had already saved ${settingsPath(HOME)}`);
+    expect(ran.err).toBe(ghFailed(1, "could not create issue: HTTP 404"));
     expect(h.sleeps).toEqual([]);
   });
 

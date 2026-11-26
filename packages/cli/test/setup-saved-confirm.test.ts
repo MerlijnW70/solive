@@ -5,8 +5,8 @@ import { callOf, claimsOf } from "../src/agent/claims.js";
 import { InvalidInput, amount, object } from "../src/agent/schema.js";
 import { walletSetup } from "../src/agent/wallet/account.js";
 import { redactUrl } from "../src/render.js";
-import { defaultWallet, settingsPath, setup } from "../src/wallet.js";
-import { funded, h, HOME, runtime, world } from "./harness.js";
+import { defaultWallet, settingsPath } from "../src/wallet.js";
+import { h, HOME, transport, world } from "./harness.js";
 import { call, connect, ok, preset } from "./agent-wallet-kit.js";
 import { takeMisses } from "./answer-guard.js";
 
@@ -49,15 +49,15 @@ describe("wallet_setup with a saved confirm-url", () => {
 });
 
 describe("a failure after setup wrote", () => {
-  it("names the settings file in the error when the node fails after the write", async () => {
-    const owner = await funded();
-    const live = runtime({ "owner.json": owner });
-    const real = live.transport("devnet");
-    const broken = { ...real, getAccount: async () => { throw new Error("node down"); } } as typeof real;
-    const failure = (await setup(broken, live, "devnet", "owner.json").then(() => new Error("no failure"), (error: unknown) => error)) as Error;
-    expect(failure.message).toContain("node down");
+  it("names the files it saved in the error when the node fails after the write", async () => {
+    h.through = { ...transport, getAccount: async () => { throw new Error("node down"); } };
+    const client = await served();
+    const failed = await call(client, "wallet_setup");
+    expect(failed.error).toBe(true);
+    const detail = String(failed.value["untrustedDetail"]);
+    expect(detail).toContain("node down");
     expect(h.files.has(SETTINGS)).toBe(true);
-    expect(failure.message).toContain(`setup had already saved ${SETTINGS}`);
+    expect(detail).toContain(`setup had already saved ${SETTINGS}, and that stays; node down`);
   });
 
   it("says the settings file was saved when the answer then fails its output check", async () => {
@@ -72,7 +72,7 @@ describe("a failure after setup wrote", () => {
     const detail = String(failed.value["untrustedDetail"]);
     expect(detail).toContain("outside its schema");
     expect(h.files.get(SETTINGS)).not.toBe(old);
-    expect(detail).toContain(`it had already saved ${SETTINGS}`);
+    expect(detail).toContain(`solive_wallet_setup had already saved ${SETTINGS}, and that stays; it produced output outside its schema`);
     expect((await takeMisses()).length).toBe(1);
   });
 
@@ -80,7 +80,7 @@ describe("a failure after setup wrote", () => {
     const lying = define({ name: "lying", title: "t", description: "d", effect: "submit", input: object({}), output: object({ n: amount() }), run: async (_ctx, _input, call) => { call.wrote.push("saved /a", "sent transaction b"); return { n: 5 }; } });
     const ctx = { transport: {} as never, relay: undefined, agent: undefined, claims: claimsOf() };
     const outcome = await invoke(lying, ctx, {});
-    expect(outcome).toMatchObject({ ok: false, problem: { untrustedDetail: expect.stringContaining("it had already saved /a, sent transaction b, and that stays") } });
+    expect(outcome).toMatchObject({ ok: false, problem: { untrustedDetail: expect.stringContaining("lying had already saved /a, sent transaction b, and that stays; it produced output outside its schema") } });
     expect(new OutputMismatch("x", new InvalidInput([])).message).not.toContain("already");
     expect(callOf().wrote).toEqual([]);
   });
