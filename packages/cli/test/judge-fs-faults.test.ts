@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
 import { CLEANUP_RETRIES, leftRunning, runCheck } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { artifactTooLarge, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES } from "../src/artifact.js";
+import { artifactTooLarge, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, SHRINK_ARTIFACT } from "../src/artifact.js";
 import { cli } from "./harness.js";
 import { job, type Job, judging, status, TIMEOUT_SECONDS } from "./judge-kit.js";
 
@@ -124,6 +124,7 @@ describe("intent-engine judge", () => {
       args[args.indexOf("--artifact") + 1] = artifact;
       const judged = await cli(args, keys);
       expect(judged).toMatchObject({ code: EXIT_USAGE, out: "", err: artifactTooLarge(resolve(artifact), over) });
+      expect(judged.err.endsWith(`nothing was run or paid; ${SHRINK_ARTIFACT}`)).toBe(true);
       expect(existsSync(marker)).toBe(false);
     }
     expect(opening.paths.filter((path) => path.startsWith(dir))).toEqual([]);

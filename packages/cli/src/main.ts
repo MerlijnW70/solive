@@ -71,6 +71,15 @@ export const readsOneNode = (command: Command): boolean =>
 
 const offline = (error: unknown) => error instanceof TypeError && error.message === "fetch failed";
 
+const PREFLIGHT_FAILURE = -32_002;
+
+export function preflightCause(error: unknown): string | undefined {
+  if (!(error instanceof Error) || (error as { context?: { __code?: unknown } }).context?.__code !== PREFLIGHT_FAILURE) {
+    return undefined;
+  }
+  return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : undefined;
+}
+
 function message(error: unknown, url: string | undefined, unset: boolean): string {
   if (unfundedSend(error)) {
     return SERVER_PROBLEMS.Unfunded.hint;
@@ -92,7 +101,7 @@ function message(error: unknown, url: string | undefined, unset: boolean): strin
   if (url !== undefined && offline(error)) {
     return unset ? NO_NODE_SET(redactUrl(url)) : unreachable(redactUrl(url));
   }
-  return printableLines(error instanceof Error ? error.message : String(error));
+  return printableLines(preflightCause(error) ?? (error instanceof Error ? error.message : String(error)));
 }
 
 export const debugOf = (argv: readonly string[]): boolean => argv.includes("--debug");

@@ -49,6 +49,9 @@ export const SYNC_FIRST_FIELD =
 
 export const SYNCED_NEXT = "the committee's key sync is sent and nothing is announced yet; call again with the same arguments, without send, to preview the announcement";
 
+export const announcedUnseen = (announcement: Address, signature: string): string =>
+  `the announcement landed in ${signature}, but the RPC node does not show ${announcement} yet, so its seq is unknown; ${tool("wallet_check_delivery")} lists it once the node does`;
+
 export const DELIVERED_NEEDED = "a proof escrow pays the first announcement that opens to the work it releases for, so give that work's sha256";
 
 export const MAX_LISTED = 64;
@@ -265,10 +268,10 @@ export const walletDeliver = define({
       const announced = preparedView(await prepare(ctx.transport, after.instructions, signer.address));
       const signature = await execute(ctx.transport, announced, signer);
       const found = await loadAnnouncement(ctx.transport, after.announcement);
-      return { ...done, signature, ...(found === null ? {} : { seq: found.seq }) };
+      return { ...done, signature, ...(found === null ? { next: announcedUnseen(after.announcement, signature) } : { seq: found.seq }) };
     }
     const found = await loadAnnouncement(ctx.transport, plan.announcement);
-    return { ...done, ...(found === null ? {} : { seq: found.seq }) };
+    return { ...done, ...(found === null ? { next: announcedUnseen(plan.announcement, String(done.signature)) } : { seq: found.seq }) };
   },
 });
 

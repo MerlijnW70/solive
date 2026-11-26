@@ -26,7 +26,7 @@ function claimHeldOf(remote: Remote, values: Values): Command {
 export function announceArgsOf(verb: "deliveries" | "refute" | "reclaim" | "claim-held" | "close-book", remote: Remote, values: Values): Command {
   switch (verb) {
     case "deliveries":
-      return { name: "deliveries", ...remote, intent: key(values, "intent"), judgeKeypair: values["judge-keypair"], ...encryptionKeypairOf(values) };
+      return { name: "deliveries", ...remote, intent: key(values, "intent"), judgeKeypair: values["judge-keypair"], ...encryptionKeypairOf(values), ...(values.compare === undefined ? {} : { compare: [...values.compare] }) };
     case "refute":
       return {
         name: "refute",

@@ -30,8 +30,10 @@ async function readEntry(path: string, full: string): Promise<CopiedEntry> {
 export const MAX_ARTIFACT_BYTES = 67108864;
 export const MAX_ARTIFACT_FILES = 10_000;
 
+export const SHRINK_ARTIFACT = "compress it into one file, such as a tar.gz, or deliver a smaller artifact, then announce that file's sha256 with deliver";
+
 export const artifactTooLarge = (path: string, over: string): string =>
-  `${path} ${over}, over the artifact limit of ${MAX_ARTIFACT_BYTES} bytes and ${MAX_ARTIFACT_FILES} files; nothing was run or paid`;
+  `${path} ${over}, over the artifact limit of ${MAX_ARTIFACT_BYTES} bytes and ${MAX_ARTIFACT_FILES} files; nothing was run or paid; ${SHRINK_ARTIFACT}`;
 
 export class ArtifactTooLarge extends UsageError {
   constructor(path: string, over: string) {

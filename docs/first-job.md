@@ -78,7 +78,7 @@ Announce it to the judge, with the job's `intent` in place of `<intent>`:
 intent-engine deliver --keypair worker.json --intent <intent> --artifact wrong.mjs --work-url https://example.org/wrong.mjs --yes
 ```
 
-`--work-url` tells the judge where to download the work. Here the judge already has the file, so the link is not opened. `deliver` prints `"sent": true`, the `signature` of the announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.
+`--work-url` tells the judge where to download the work. Here the judge already has the file, so the link is not opened. `deliver` exits 0 only once the announcement is on chain and prints `"sent": true`, the `signature` of the announcement, a `delivered` line with its seq, sha256, signature and announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.
 
 As the judge, check it, with the job's `nonce` in place of `<nonce>`:
 

@@ -47,7 +47,7 @@ import { createTerms, mandate, terms } from "./order-builders.js";
 import { isCommand, noSuchCommand, USAGE } from "./arg-usage.js";
 import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
-import { jobArgsOf } from "./job-args.js";
+import { jobArgsOf, jobCreateOf } from "./job-args.js";
 import { announceArgsOf } from "./arg-announce.js";
 import { reviewArgsOf } from "./arg-review.js";
 import type { Command, Env } from "./command-types.js";
@@ -64,7 +64,8 @@ export {
   SOLVER_NEEDS_FLOAT,
   WATCH_INTERVAL,
 } from "./arg-solve.js";
-export { ACCEPTS, GLOBAL_OPTIONS, type Side, SUB_ACCEPTS, TOKEN_SIDES, type Tokens } from "./arg-options.js";
+export { ACCEPTS, GLOBAL_OPTIONS, type Side, TOKEN_SIDES, type Tokens } from "./arg-options.js";
+export { SUB_ACCEPTS } from "./arg-sub-options.js";
 export { COMMANDS, SHAPES, USAGE, usageOf } from "./arg-usage.js";
 export {
   MAX_EVENT_LIMIT,
@@ -373,6 +374,8 @@ function parseCommand(argv: readonly string[], env: Env): Command {
     case "receipt":
     case "judge":
       return jobArgsOf(verb, sub, remote, values);
+    case "job":
+      return jobCreateOf(sub, remote, values);
     case "deliveries":
     case "refute":
     case "reclaim":

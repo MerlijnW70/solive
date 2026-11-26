@@ -137,6 +137,14 @@ export const OPTIONS = {
   "work-url": { type: "string" },
   spec: { type: "string" },
   artifact: { type: "string" },
+  "announce-wait": { type: "string" },
+  name: { type: "string" },
+  "worker-key": { type: "string" },
+  fund: { type: "string" },
+  "backup-dir": { type: "string" },
+  "keys-dir": { type: "string" },
+  "jobs-dir": { type: "string" },
+  compare: { type: "string", multiple: true },
   run: { type: "string" },
   "pay-to": { type: "string" },
   timeout: { type: "string" },
@@ -218,10 +226,10 @@ export const OPTIONS = {
 
 export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as const;
 
-export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "cosign", "seed", "encryption-keypair", "review"]);
+export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "cosign", "seed", "encryption-keypair", "review", "compare"]);
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "no-setup" | "sandbox-gpu" | "i-trust-this-work" | "no-publish-spec" | "allow-wrong-spec";
-export type Many = "max-fill" | "min-balance" | "vote" | "cosign" | "seed" | "encryption-keypair" | "review";
+export type Many = "max-fill" | "min-balance" | "vote" | "cosign" | "seed" | "encryption-keypair" | "review" | "compare";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
   [K in Many]?: string[] | undefined;
@@ -318,13 +326,14 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   events: ["url", "limit", "follow", "interval"],
   jobs: ["url", "attestor", "mint", "min-pay", "unclaimed"],
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "artifact", "sha256", "work-url", "fee-payer"],
-  deliveries: ["url", "intent", "judge-keypair", "encryption-keypair"],
+  deliveries: ["url", "intent", "judge-keypair", "encryption-keypair", "compare"],
+  job: ["url", "priority-fee", "keypair", "yes", "name", "spec", "worker-key", "amount", "fund", "expires-in", "backup-dir", "keys-dir", "jobs-dir", "no-publish-spec"],
   refute: ["url", "priority-fee", "keypair", "yes", "earlier", "paid", "work-url", "recipients", "weights", "fee-payer"],
   reclaim: ["url", "priority-fee", "keypair", "yes", "fee-payer"],
   "claim-held": ["url", "priority-fee", "keypair", "yes", "announcement", "index", "to", "fee-payer"],
   "close-book": ["url", "priority-fee", "keypair", "yes", "intent"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
-  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu", "i-trust-this-work", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair", "review"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu", "i-trust-this-work", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair", "review", "announce-wait"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [
@@ -425,81 +434,4 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "review-secs", "kill-fee", "secs", "seq", "workers"],
   reject: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "announcement", "sha256", "vote", "out", "encryption-keypair", "without-receipt"],
   profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key", "out"],
-};
-
-export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof OPTIONS)[]>> = {
-  mandate: {
-    grant: [
-      "url",
-      "priority-fee",
-      "keypair",
-      "yes",
-      "agent",
-      "id",
-      "input-mint",
-      "output-mint",
-      "kinds",
-      "per-intent",
-      "total",
-      "max-intents",
-      "max-ttl",
-      "valid-for",
-      "floor-out",
-      "floor-in",
-      "partner",
-      "partner-bps",
-      "agent-fee",
-      "units",
-    ],
-    show: ["url", "keypair", "agent", "id", "owner"],
-    revoke: ["url", "priority-fee", "keypair", "yes", "agent", "id"],
-    use: ["url", "priority-fee", "keypair", "yes", "owner", "id", "nonce", ...EXPIRY, ...MANDATE_ORDER, "units"],
-  },
-  signed: {
-    prepare: [
-      "url",
-      "keypair",
-      "yes",
-      "out",
-      "nonce",
-      "input-mint",
-      "output-mint",
-      "submit-within",
-      "relayer-fee",
-      ...EXPIRY,
-      ...ORDER,
-      "partner",
-      "partner-bps",
-      "units",
-    ],
-    submit: ["url", "keypair", "yes", "file"],
-  },
-  judge: {
-    digest: ["url", "owner", "nonce", "announcement", "sha256", "salt", "result"],
-  },
-  committee: {
-    create: ["url", "priority-fee", "keypair", "yes", "members", "threshold", "fee-wallet"],
-    show: ["url", "committee"],
-    vote: ["url", "keypair", "yes", "owner", "nonce", "sha256", "encryption-keypair", "result", "out", "recipients", "weights", "without-receipt"],
-    release: ["url", "priority-fee", "keypair", "yes", "vote", "cosign", "lookup-table", "confirm-url", "no-confirm-url"],
-  },
-  claims: {
-    show: ["url", "owner", "nonce"],
-    open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake", "review-secs", "kill-fee", "workers"],
-    list: ["url", "priority-fee", "keypair", "yes", "nonce", "workers"],
-    take: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
-    drop: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
-    settle: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
-    collect: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
-    standby: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
-    leave: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "seq"],
-    advance: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
-  },
-  solver: { float: ["url", "priority-fee", "keypair", "yes", "owner", "delegate", "mint", "mints", "amount", "units"] },
-  profile: {
-    show: ["url", "wallet"],
-    set: ["url", "priority-fee", "keypair", "yes", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key"],
-    close: ["url", "priority-fee", "keypair", "yes"],
-    "encryption-key": ["out"],
-  },
 };

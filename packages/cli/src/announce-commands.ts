@@ -2,7 +2,7 @@ import type { Address, TransactionPartialSigner } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { type AnnounceInput, type ReclaimBook, type RefuteInput, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { loadAnnouncement, loadDeliveryBook, mintOf, protectionLines, secretInputOf } from "@intent-engine/client/internal";
+import { type AnnouncementView, loadAnnouncement, loadDeliveryBook, mintOf, opensTo, protectionLines, secretInputOf } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, keptLines, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
@@ -15,6 +15,8 @@ import { transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { keptSecret, savedSecret, secretFor, secretsPath, signsMessages } from "./worker-secrets.js";
+import { keepDelivery, type OwnDelivery, ownDeliveries } from "./delivery-record.js";
+import { unfundedRefused } from "./wallet.js";
 
 type AnnounceCommand = Extract<Command, { name: "deliver" | "deliveries" | "refute" | "reclaim" | "claim-held" | "close-book" }>;
 
@@ -81,13 +83,62 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
     ],
   };
   if (plan.existing !== null) {
-    return { ...shown, seq: plan.existing.seq, state: plan.existing.state, sent: false, next: ALREADY_ANNOUNCED };
+    const signature = await creationOf(transport, plan.announcement);
+    const unkept = await keepDelivery(runtime, ownRecord(plan.intent, sha256, plan.announcement, plan.existing.seq, signature, plan.existing.slot, worker.address));
+    return {
+      ...shown,
+      sha256,
+      seq: plan.existing.seq,
+      state: plan.existing.state,
+      sent: false,
+      delivered: deliveredLine(plan.existing.seq, sha256, signature, plan.announcement),
+      ...(unkept === undefined ? {} : { warnings: [...shown.warnings, unkept] }),
+      next: ALREADY_ANNOUNCED,
+    };
   }
   if (!command.yes) {
     return previewed(transport, plan.setup.length > 0 ? plan.setup : plan.instructions, payer, shown, false);
   }
+  if (((await transport.getAccount(payer.address))?.lamports ?? 0n) === 0n) {
+    throw new FlowRefused(unfundedRefused(payer.address, command.url));
+  }
   const made = await client.announce(input);
-  return { ...shown, seq: made.seq, sent: true, signature: made.signature, ...(made.synced === null ? {} : { synced: made.synced }) };
+  const landed = await loadAnnouncement(transport, made.announcement);
+  const signature = made.signature ?? (await creationOf(transport, made.announcement));
+  const unkept = await keepDelivery(runtime, ownRecord(plan.intent, sha256, made.announcement, made.seq, signature, landed?.slot ?? 0n, worker.address));
+  return {
+    ...shown,
+    sha256,
+    seq: made.seq,
+    sent: true,
+    signature,
+    ...(made.synced === null ? {} : { synced: made.synced }),
+    delivered: deliveredLine(made.seq, sha256, signature, made.announcement),
+    ...(unkept === undefined ? {} : { warnings: [...shown.warnings, unkept] }),
+  };
+}
+
+export const deliveredLine = (seq: bigint, sha256: string, signature: string | null, announcement: Address): string =>
+  `seq=${seq} sha256=${sha256} signature=${signature ?? "unknown"} announcement=${announcement}`;
+
+const ownRecord = (intent: Address, sha256: string, announcement: Address, seq: bigint, signature: string | null, slot: bigint, worker: Address): OwnDelivery => ({
+  intent,
+  sha256,
+  announcement,
+  seq: seq.toString(),
+  signature,
+  slot: slot.toString(),
+  worker,
+});
+
+export const CREATION_LOOKBACK = 20;
+
+async function creationOf(transport: Transport, announcement: Address): Promise<string | null> {
+  if (transport.signaturesOf === undefined) {
+    return null;
+  }
+  const listed = await transport.signaturesOf(announcement, CREATION_LOOKBACK).catch(() => []);
+  return listed.filter(({ failed }) => !failed).at(-1)?.signature ?? null;
 }
 
 async function refute(command: Extract<AnnounceCommand, { name: "refute" }>, runtime: Runtime, transport: Transport): Promise<object> {
@@ -247,14 +298,67 @@ async function closeBook(command: Extract<AnnounceCommand, { name: "close-book" 
 
 export const URL_HIDDEN = "the work url is hidden; pass --judge-keypair <judge or member file> to show it";
 
+export const SHA_FROM_PAID = "paid";
+export const SHA_FROM_OWN = "this machine's deliver";
+export const COMPARE_NEEDS_KEY = "--compare opens only paid announcements without --judge-keypair or --encryption-keypair, which open the salts of the others";
+
+type Known = { sha256: string; from: string };
+
+async function knownWork(
+  announcements: readonly AnnouncementView[],
+  opened: readonly { announcement: AnnouncementView; salt: string }[],
+  own: readonly OwnDelivery[],
+  compared: readonly { path: string; sha256: string }[],
+): Promise<Map<Address, Known>> {
+  const salts = new Map(opened.map(({ announcement, salt }) => [announcement.address, Buffer.from(salt, "hex")] as const));
+  const known = new Map<Address, Known>();
+  for (const announcement of announcements) {
+    if (announcement.state === "paid") {
+      known.set(announcement.address, { sha256: hex(announcement.delivered), from: SHA_FROM_PAID });
+      continue;
+    }
+    const salt = salts.get(announcement.address);
+    for (const { path, sha256 } of compared) {
+      if (salt !== undefined && (await opensTo(announcement, Buffer.from(sha256, "hex"), salt))) {
+        known.set(announcement.address, { sha256, from: path });
+        break;
+      }
+    }
+    const mine = own.find((entry) => entry.announcement === announcement.address);
+    if (!known.has(announcement.address) && mine !== undefined && (salt === undefined || (await opensTo(announcement, Buffer.from(mine.sha256, "hex"), salt)))) {
+      known.set(announcement.address, { sha256: mine.sha256, from: SHA_FROM_OWN });
+    }
+  }
+  return known;
+}
+
 async function deliveries(command: Extract<AnnounceCommand, { name: "deliveries" }>, runtime: Runtime, transport: Transport): Promise<object> {
   const list = await createClient({ url: command.url, transport }).announcements(command.intent);
   const openers = [...(command.judgeKeypair === undefined ? [] : [await runtime.loadKeypair(command.judgeKeypair)]), ...(await loadEncryptionKeys(runtime, command.encryptionKeypairs))];
+  const compare = command.compare ?? [];
+  const compared = await Promise.all(compare.map(async (path) => ({ path, sha256: await artifactSha256(path) })));
   const opened = openers.length === 0 ? [] : await openedBy(list.announcements, openers);
+  const known = await knownWork(list.announcements, opened, await ownDeliveries(runtime, list.intent), compared);
   const view = listView(list);
   const urls = new Map(opened.flatMap(({ announcement, url }) => (url === null ? [] : [[announcement.address, url] as const])));
-  const hidden = openers.length === 0 && view.announcements.length > 0 ? { note: URL_HIDDEN } : {};
-  return { intent: command.intent, ...view, announcements: view.announcements.map((line) => ({ ...line, ...(urls.has(line.announcement) ? { url: urls.get(line.announcement) } : {}) })), ...hidden };
+  const notes = [
+    ...(openers.length === 0 && view.announcements.length > 0 ? [URL_HIDDEN] : []),
+    ...(openers.length === 0 && compare.length > 0 ? [COMPARE_NEEDS_KEY] : []),
+  ];
+  return {
+    intent: command.intent,
+    ...view,
+    announcements: view.announcements.map((line) => {
+      const work = known.get(line.announcement);
+      return {
+        ...line,
+        ...(work === undefined ? {} : { sha256: work.sha256, sha256_from: work.from }),
+        ...(urls.has(line.announcement) ? { url: urls.get(line.announcement) } : {}),
+      };
+    }),
+    ...(compared.length === 0 ? {} : { compared }),
+    ...(notes.length === 0 ? {} : { note: notes.join("; ") }),
+  };
 }
 
 export async function announceCommand(command: AnnounceCommand, runtime: Runtime, transport: Transport): Promise<object> {

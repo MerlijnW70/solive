@@ -238,8 +238,9 @@ describe("the first paid job guide", () => {
     expect(checked?.out["sha256"]).toBe(specHash?.out["sha256"]);
 
     expect([wrong?.code, wrong?.err]).toEqual([EXIT_OK, ""]);
-    expect(PAGE).toContain('`deliver` prints `"sent": true`, the `signature` of the announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.');
+    expect(PAGE).toContain('`deliver` exits 0 only once the announcement is on chain and prints `"sent": true`, the `signature` of the announcement, a `delivered` line with its seq, sha256, signature and announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.');
     expect(wrong?.out).toMatchObject({ intent, sent: true, signature: expect.any(String) });
+    expect(wrong?.out["delivered"]).toBe(`seq=${String(wrong?.out["seq"])} sha256=${String(wrong?.out["sha256"])} signature=${String(wrong?.out["signature"])} announcement=${String(wrong?.out["announcement"])}`);
     expect(wrong?.out["warnings"]).toEqual([expect.stringMatching(/^share neither the url nor the work until this announcement lands: the first announcement that opens to the work is paid/)]);
     expect(PAGE).toContain('`judge` prints `"verdict": "fail"`: the module returned 41 where the spec wants 42, so it sends nothing.');
     expect(files["wrong.mjs"]).toBe("export default () => 41;\n");

@@ -74,4 +74,10 @@ intent-engine deliveries --intent <intent> --judge-keypair <keypair>
 
 Without `--judge-keypair`, `deliveries` lists the announcements but hides the `url`, and says so. Download the spec and the work from their urls as in step 4, then judge with the command there, adding `--yes` to pay the worker when the verdict is `pass`.
 
+Each announcement shows its `sha256` and `sha256_from` when that is known: `paid` once a release paid it, `this machine's deliver` when `deliver` announced it from this machine, or the file of a `--compare` that opens it. Repeat `--compare` with the old and the new work of a fix round to see which seq holds which.
+
+When the node does not show the announcement of the work yet, `judge` polls for it up to `--announce-wait` seconds, then refuses and names the wait. If this machine's own `deliver` announced the work and the node still does not list it, `judge` names that announcement and exits 75.
+
+For a worker key you hand out yourself, `job create --name <job> --spec SPEC.md --worker-key <name> --amount 0.01 --backup-dir <folder>` makes the key, backs it up and reads the backup back before funding it, and creates the escrow with you as judge; a second run with the same name sends nothing.
+
 To do the same with your own spec, follow [Your first paid job](first-job.md).

@@ -42,6 +42,7 @@ import { addTo } from "./add-to.js";
 import { DEVNET_URL } from "./tokens.js";
 import { npmRegistry, plainRegistry } from "./npm-registry.js";
 import { newWallet, sendSol } from "./wallet-commands.js";
+import { jobCreate } from "./job-create.js";
 import { sandboxDoctor } from "./sandbox-doctor.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
@@ -186,6 +187,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "send-sol":
       return sendSol(command, runtime, transport);
+    case "job-create":
+      return jobCreate(command, runtime, transport);
     case "domain":
       return { genesisHash: await transport.genesisHash(), domain: await clusterDomain(transport) };
     case "show-config": {

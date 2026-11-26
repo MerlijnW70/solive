@@ -32,6 +32,7 @@ import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
 import { secondsLeft } from "./monotonic.js";
 import { type Reviewed, reviewedBy, reviewFailed, reviewGate, reviewsOf } from "./review.js";
 import { escrowFor, pinnedSpec } from "./judge-escrow.js";
+import { openingAfterWait, waitedRefusal } from "./judge-wait.js";
 
 export { escrowFor, pinnedSpec } from "./judge-escrow.js";
 export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, mayHaveLanded, notSent, SIGNAL_EXIT } from "./judge-errors.js";
@@ -203,12 +204,13 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     await memoryPinHeld(plan.sandbox.node, viper.cases.nodeMemory, plan.timeout);
   }
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
-  const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
+  const waited = await openingAfterWait(transport, runtime, { intent: address, sha256, keypair }, command.announceWait ?? 0, stop);
+  const { list, opening } = waited;
   if (isSdkError(opening, "first-opening-refused")) {
     if (opening.reason === "nothing-opens") {
       await resavedWork(transport, address, read, keypair, command.artifact);
     }
-    throw new JudgeDeferred(refusedOpening(opening, command.keypair, isDevice(signer), signer.address, list.announcements.length > 0));
+    throw waitedRefusal(opening, waited, refusedOpening(opening, command.keypair, isDevice(signer), signer.address, list.announcements.length > 0));
   }
   const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;
   const payTo = opening.worker;

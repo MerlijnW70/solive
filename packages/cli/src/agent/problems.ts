@@ -398,12 +398,16 @@ export function certificateCode(error: unknown, depth = 0): string | null {
 
 const ACCOUNT_NOT_FOUND = 7_050_003;
 
+const INVALID_ACCOUNT_FOR_FEE = 7_050_006;
+
+const UNFUNDED_CODES: ReadonlySet<unknown> = new Set([ACCOUNT_NOT_FOUND, INVALID_ACCOUNT_FOR_FEE]);
+
 export function unfundedSend(error: unknown, depth = 0): boolean {
   if (depth > CAUSE_DEPTH || error === null || typeof error !== "object") {
     return false;
   }
   const { context, cause } = error as { context?: { __code?: unknown }; cause?: unknown };
-  return context?.__code === ACCOUNT_NOT_FOUND || unfundedSend(cause, depth + 1);
+  return UNFUNDED_CODES.has(context?.__code) || unfundedSend(cause, depth + 1);
 }
 
 export const certificateHint = (url: string | undefined, code: string): string =>

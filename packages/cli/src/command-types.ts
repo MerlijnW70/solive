@@ -115,7 +115,7 @@ export type Command =
   | (Remote & { name: "events"; limit: number })
   | (Remote & { name: "jobs"; attestor: Address | undefined; mint: Address | undefined; minPay: string | undefined; unclaimed: boolean })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; workUrl: string; feePayer?: string | undefined } & ({ sha256: string } | { artifact: string }))
-  | (Remote & { name: "deliveries"; intent: Address; judgeKeypair: string | undefined; encryptionKeypairs?: string[] | undefined })
+  | (Remote & { name: "deliveries"; intent: Address; judgeKeypair: string | undefined; encryptionKeypairs?: string[] | undefined; compare?: string[] | undefined })
   | (Keyed & { name: "refute"; yes: boolean; earlier: Address; paid: Address; workUrl?: string | undefined; split?: Split | undefined; feePayer?: string | undefined })
   | (Keyed & { name: "reclaim"; yes: boolean; feePayer?: string | undefined })
   | (Keyed & { name: "claim-held"; yes: boolean; announcement?: Address | undefined; index?: number | undefined; to?: Address | undefined; feePayer?: string | undefined })
@@ -140,6 +140,7 @@ export type Command =
       encryptionKeypairs?: string[] | undefined;
       confirmUrl?: string | undefined;
       reviews?: string[] | undefined;
+      announceWait?: number | undefined;
     })
   | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; announcement: Address; sha256: string; salt: string; result: bigint | undefined })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
@@ -153,6 +154,20 @@ export type Command =
   | { name: "new-wallet"; out: string }
   | { name: "sandbox-doctor"; keypair: string | undefined; box: Box }
   | (Keyed & { name: "send-sol"; yes: boolean; to: Address; lamports: bigint })
+  | (Keyed & {
+      name: "job-create";
+      yes: boolean;
+      job: string;
+      spec: string;
+      workerKey: string;
+      amount: string;
+      fund: bigint;
+      expiresIn: string;
+      backupDir?: string | undefined;
+      keysDir?: string | undefined;
+      jobsDir?: string | undefined;
+      noPublishSpec: boolean;
+    })
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })
   | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })
