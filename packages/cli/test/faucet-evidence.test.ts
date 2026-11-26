@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { answers, HOUR, NOW, records, request, ROOT, sends, world } from "./faucet-world.js";
@@ -7,6 +7,15 @@ const ADDRESS = "4JUfAhAtwAccPT4T8cmsxQBpBwNiaUJgwWt5c5bsvKAo";
 const OTHER = "DyZVZ5Zp5kgXoCkUXLQKWf5J1ytwnWwzR7sKTYSkYaZw";
 const ambiguous = { STUB_SEND: "land-timeout", STUB_CONFIRM: "down" };
 const iso = (at: number) => new Date(at * 1000).toISOString().replace(".000", "");
+const signedAndHeld = async (faucet: ReturnType<typeof world>) => {
+  const run = faucet.start(NOW, { STUB_HOLD: join(faucet.dir, "hold") });
+  const end = Date.now() + 60_000;
+  while (!faucet.calls().some((call) => call.includes(" --sign-only "))) {
+    if (Date.now() > end) throw new Error("the held run never signed");
+    await new Promise((done) => setTimeout(done, 20));
+  }
+  return { run };
+};
 const sentToday = (count: number) =>
   Array.from({ length: count }, (_, at) => request(100 + at, OTHER, { labels: ["faucet", "faucet-sent"], state: "closed" as const, closedAt: iso(NOW - HOUR) }));
 
@@ -95,16 +104,48 @@ describe("the issue faucet counts attempts, closed requests and lost records hon
     expect(answers(faucet, 7)).toHaveLength(1);
   });
 
-  it("counts a transfer once as a try when a run that stepped aside recorded the same transaction after it was sent", () => {
+  it("counts a transfer once as a try when a run that stepped aside records the same transaction after the first run sent it", async () => {
     const faucet = world([request(7, ADDRESS)]);
-    faucet.run(NOW, { STUB_SEND: "lost-timeout" });
-    const late = records(faucet, 7)[0] ?? "";
-    faucet.edit((issues) => issues[0]?.comments.push({ author: "github-actions", body: late }));
+    const { run: late } = await signedAndHeld(faucet);
+    expect(faucet.run(NOW, { STUB_SEND: "lost-timeout" }).code).toBe(3);
+    writeFileSync(join(faucet.dir, "hold"), "");
+    expect((await late).code).toBe(3);
+    expect(records(faucet, 7)).toHaveLength(2);
+    expect(new Set(records(faucet, 7)).size).toBe(1);
+    expect(sends(faucet)).toHaveLength(1);
     for (const at of [3, 6, 9, 12, 15]) expect(faucet.run(NOW + at * HOUR, { STUB_SEND: "lost-timeout" }).out).not.toContain("tried 3 times");
     expect(sends(faucet)).toHaveLength(3);
-    expect(faucet.run(NOW + 18 * HOUR).out).toContain("tried 3 times");
+    expect(faucet.run(NOW + 18 * HOUR, { STUB_SEND: "lost-timeout" }).out).toContain("tried 3 times");
     expect(sends(faucet)).toHaveLength(3);
     expect(faucet.landed()).toEqual([]);
+  });
+
+  it("answers once when the first run's transfer lands before a run that stepped aside records the same transaction", async () => {
+    const faucet = world([request(7, ADDRESS)]);
+    const { run: late } = await signedAndHeld(faucet);
+    const first = faucet.run(NOW);
+    writeFileSync(join(faucet.dir, "hold"), "");
+    expect([first.code, (await late).code]).toEqual([0, 3]);
+    expect(faucet.landed()).toHaveLength(1);
+    expect(answers(faucet, 7)).toHaveLength(1);
+    expect(records(faucet, 7)).toHaveLength(2);
+    expect(faucet.run(NOW + HOUR).out).toBe("");
+    expect(faucet.landed()).toHaveLength(1);
+  });
+
+  it("records both runs and sends nothing when the second run starts after the first reached the barrier", async () => {
+    const faucet = world([request(7, ADDRESS)]);
+    const extra = { STUB_BARRIER: join(faucet.dir, "barrier") };
+    const first = faucet.start(NOW, extra);
+    const end = Date.now() + 60_000;
+    while (!readdirSync(faucet.dir).some((name) => name.startsWith("barrier."))) {
+      if (Date.now() > end) throw new Error("the first run never reached the barrier");
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    const runs = await Promise.all([first, faucet.start(NOW, extra)]);
+    expect(runs.map((r) => r.code)).toEqual([3, 3]);
+    expect(records(faucet, 7)).toHaveLength(2);
+    expect(sends(faucet)).toEqual([]);
   });
 
   it("counts a pending request its author closed toward the cap, then answers it", () => {
