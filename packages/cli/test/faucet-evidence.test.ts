@@ -95,6 +95,18 @@ describe("the issue faucet counts attempts, closed requests and lost records hon
     expect(answers(faucet, 7)).toHaveLength(1);
   });
 
+  it("counts a transfer once as a try when a run that stepped aside recorded the same transaction after it was sent", () => {
+    const faucet = world([request(7, ADDRESS)]);
+    faucet.run(NOW, { STUB_SEND: "lost-timeout" });
+    const late = records(faucet, 7)[0] ?? "";
+    faucet.edit((issues) => issues[0]?.comments.push({ author: "github-actions", body: late }));
+    for (const at of [3, 6, 9, 12, 15]) expect(faucet.run(NOW + at * HOUR, { STUB_SEND: "lost-timeout" }).out).not.toContain("tried 3 times");
+    expect(sends(faucet)).toHaveLength(3);
+    expect(faucet.run(NOW + 18 * HOUR).out).toContain("tried 3 times");
+    expect(sends(faucet)).toHaveLength(3);
+    expect(faucet.landed()).toEqual([]);
+  });
+
   it("counts a pending request its author closed toward the cap, then answers it", () => {
     const faucet = world([...sentToday(49), request(7, ADDRESS)]);
     expect(faucet.run(NOW, ambiguous).code).toBe(3);

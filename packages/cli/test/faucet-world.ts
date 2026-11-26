@@ -113,6 +113,12 @@ try {
 } finally {
   release();
 }
+const body = argv[argv.indexOf("--body") + 1] ?? "";
+if (process.env.STUB_BARRIER && argv[1] === "comment" && body.startsWith("Sending ")) {
+  fs.writeFileSync(process.env.STUB_BARRIER + "." + process.pid, "");
+  const until = Date.now() + 200000;
+  while (fs.readdirSync(process.env.STUB_DIR).filter((name) => name.startsWith("barrier.")).length < 2 && Date.now() < until) pause(10);
+}
 `;
 
 const CHAIN = `
@@ -173,11 +179,6 @@ if (command === "address") {
   const hash = flag("--blockhash");
   const memo = flag("--with-memo");
   if (argv.includes("--sign-only")) {
-    if (process.env.STUB_BARRIER) {
-      fs.writeFileSync(process.env.STUB_BARRIER + "." + process.pid, "");
-      const until = Date.now() + 200000;
-      while (fs.readdirSync(process.env.STUB_DIR).filter((name) => name.startsWith("barrier.")).length < 2 && Date.now() < until) pause(10);
-    }
     console.log(JSON.stringify({ blockhash: hash, signers: [process.env.STUB_PAYER + "=" + sigOf(hash, to, amount, memo)] }, null, 2));
     process.exit(0);
   }

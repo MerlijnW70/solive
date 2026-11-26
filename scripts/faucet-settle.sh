@@ -35,10 +35,11 @@ deliver() {
 }
 
 tries() {
-  local entry sig total=0
+  local entry sig total=0 counted=" "
   for entry in "${records[@]}"; do
     sig="${entry%% *}"
-    if [[ "$markers" == *" $sig "* ]]; then
+    if [[ "$markers" == *" $sig "* && "$counted" != *" $sig "* ]]; then
+      counted+="$sig "
       total=$((total + 1))
     fi
   done
