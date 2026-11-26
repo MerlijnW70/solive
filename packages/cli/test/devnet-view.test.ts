@@ -39,7 +39,7 @@ describe("the devnet explorer link", () => {
 
   it("is left out of setup on mainnet and on another node, with no hint", async () => {
     for (const url of [CLUSTERS["mainnet-beta"] ?? "", "http://flag"]) {
-      const made = (await setup(transport, runtime({}), url, defaultWallet(HOME))) as Record<string, string>;
+      const made = (await setup(transport, runtime({}), url, defaultWallet(HOME))) as unknown as Record<string, string>;
       expect("explorer" in made).toBe(false);
       expect("hint" in made).toBe(false);
     }

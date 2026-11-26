@@ -70,7 +70,9 @@ describe("the local worker's guards", () => {
     const keys = workerFiles();
     const stale = await server(limit, { saleBook: { ...saleBook, read: async () => [] } });
     const before = lamportsOf(wallet);
-    expect((await call(stale, "wallet_worker", await approved(stale, "wallet_worker", { intent }))).value).toMatchObject({ code: "WalletHourLimit" });
+    const refused = (await call(stale, "wallet_worker", await approved(stale, "wallet_worker", { intent }))).value;
+    expect(refused).toMatchObject({ code: "WalletHourLimit" });
+    expect(refused).not.toHaveProperty("wrote");
     expect(workerFiles()).toEqual(keys);
     expect(sales()).toHaveLength(1);
     expect(lamportsOf(wallet)).toBe(before);

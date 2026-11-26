@@ -24,7 +24,7 @@ import { RUN_FENCE } from "../../judge-run.js";
 import { fenceMentions } from "../../spec-blocks.js";
 import { REVIEW_FENCE } from "../../review-block.js";
 import { keptReceipt } from "../../judge-receipt.js";
-import { keepReviewRecord, reviewRecordPath } from "../../review-record.js";
+import { keepReviewRecord } from "../../review-record.js";
 import type { Call } from "../claims.js";
 import { secondsLeft } from "../../monotonic.js";
 
@@ -139,8 +139,7 @@ async function runReceipt(ctx: AgentContext, call: Call, intent: Address, specSh
     return { receiptRefused: "this server has no wallet, so no receipt was saved" };
   }
   const cluster = await ctx.transport.genesisHash();
-  await keepReviewRecord(home, { cluster, intent, specSha256, review: null });
-  call.wrote.push(`saved ${reviewRecordPath(home, intent)}`);
+  await keepReviewRecord(home, { cluster, intent, specSha256, review: null }, (path) => call.wrote.push(`saved ${path}`));
   const receipt = await keptReceipt(home, { ...ran, outcome, cluster, route });
   if (receipt.receipt !== undefined) {
     call.wrote.push(`saved ${receipt.receipt}`);

@@ -157,6 +157,7 @@ export const REFUSAL_FIELDS: { readonly [K in keyof Required<Problem>]: Source }
   logs: LOGS,
   signature: SIGNATURE,
   untrustedDetail: { from: ["payer", "worker", "rpc node", "program"], rule: "sanitized" },
+  wrote: "own",
 };
 
 export function sourceOf(name: string, path: string): Source | undefined {

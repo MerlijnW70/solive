@@ -304,6 +304,25 @@ async function checkedSecond(transport: Transport, confirm: Transport, url: stri
   }
 }
 
+export type SetupAnswer = {
+  address: Address;
+  keypair: string;
+  created: boolean;
+  url: string;
+  settings: string;
+  confirm_url?: string;
+  settings_backup?: string;
+  sol: string;
+  explorer?: string;
+  hint?: string;
+  airdrop?: string;
+  faucet_request?: string;
+  faucet?: { lamports?: string; signature?: string; refused?: string };
+  why?: string;
+  next: string;
+  other_ways?: string[];
+};
+
 export async function setup(
   transport: Transport,
   files: Files,
@@ -317,7 +336,7 @@ export async function setup(
   faucet?: FaucetRun,
   instant?: InstantRun,
   apart: readonly Address[] = [],
-): Promise<object> {
+): Promise<SetupAnswer> {
   const kept: { backup?: string; written: boolean } = { written: false };
   try {
     return await setupAt(transport, files, url, keypair, keepSavedUrl, confirmUrl, confirmTransport, start, smallStart, faucet, instant, apart, kept);
@@ -343,7 +362,7 @@ async function setupAt(
   instant?: InstantRun,
   apart: readonly Address[] = [],
   kept: { backup?: string; written: boolean } = { written: false },
-): Promise<object> {
+): Promise<SetupAnswer> {
   if (confirmUrl !== undefined && confirmTransport !== undefined) {
     await checkedSecond(transport, confirmTransport, confirmUrl);
   }

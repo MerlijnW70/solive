@@ -294,7 +294,9 @@ export async function returnLeftovers(ctx: AgentContext, worker: Address, send: 
       return done;
     }
     await wallet.files.removeFile(keypair);
+    call.wrote.push(`deleted ${keypair}`);
     await wallet.files.removeFile(jobFile);
+    call.wrote.push(`deleted ${jobFile}`);
     return { ...done, key_deleted: true };
   };
   const batches = bookBatches(books.closing);

@@ -216,13 +216,15 @@ export const walletWorker = define({
     const job = workerJobPath(dir, key.address);
     const record: WorkerJob = { intent, owner: held.owner, nonce: held.nonce.toString(), mint: held.inputMint };
     await wallet.files.saveText(keypair, key.text, true);
+    call.wrote.push(`saved ${keypair}`);
     await wallet.files.saveText(job, JSON.stringify(record), false);
-    call.wrote.push(`saved ${keypair}`, `saved ${job}`);
+    call.wrote.push(`saved ${job}`);
     const path = limited(guard) ? await bookOf(wallet) : undefined;
     const sale: Sale = { id: randomUUID(), mint: NATIVE_MINT, at: now, amount: funding.total };
     const unmake = async () => {
       await wallet.files.removeFile?.(keypair);
       await wallet.files.removeFile?.(job);
+      call.wrote = call.wrote.filter((entry) => entry !== `saved ${keypair}` && entry !== `saved ${job}`);
     };
     if (path !== undefined) {
       try {
