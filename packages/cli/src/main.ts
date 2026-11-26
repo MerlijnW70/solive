@@ -8,7 +8,7 @@ import { Kind } from "@intent-engine/core";
 import { isSdkError } from "@intent-engine/client";
 import { openUsb, pinnedFetch, readKeyFile, systemLookup } from "@intent-engine/client/node";
 import { changesFrom, intentNotifications, limitedTransport, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
-import { type Command, DEFAULT_URL, ENV_URL, outputOf, parse, UsageError } from "./args.js";
+import { type Command, DEFAULT_URL, ENV_URL, outputOf, parse, takesSavedConfirm, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { EXIT_REFUSED, EXIT_RETRY, JudgeInfraError, JudgeInterrupted, JudgeRefused, ReleaseUncertain } from "./judge-errors.js";
@@ -16,7 +16,7 @@ import { exitOfVerdict } from "./verdict-model.js";
 import { watchJudge } from "./judge-watch.js";
 import { addToLines, printable, printableLines, redactUrl, render, renderText } from "./render.js";
 import { withSettings } from "./wallet.js";
-import { ENV_KEYPAIR } from "./clusters.js";
+import { ENV_KEYPAIR, SAVED_CONFIRM_URL } from "./clusters.js";
 import { certificateCode, certificateHint, maybeSentHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
@@ -152,12 +152,28 @@ export function exitOfError(error: unknown, judging: boolean, argv: readonly str
   return missingNamed(error, argv) ? EXIT_USAGE : EXIT_REFUSED;
 }
 
+const FLAG_FIELDS: readonly (readonly [string, string])[] = [
+  ["--url", "url"],
+  ["--keypair", "keypair"],
+  ["--confirm-url", "confirm-url"],
+  ["--no-confirm-url", "confirm-url"],
+];
+
+const flagged = (argv: readonly string[]): string[] =>
+  FLAG_FIELDS.filter(([flag]) => argv.some((arg) => arg === flag || arg.startsWith(`${flag}=`))).map(([, field]) => field);
+
 export async function main(argv: readonly string[], runtime: Runtime, io: Io): Promise<number> {
   let url: string | undefined;
   let unset = false;
   let judging = false;
   try {
-    const settings = await withSettings(runtime, runtime.env);
+    const settings = await withSettings(runtime, runtime.env, {
+      supplied: flagged(argv),
+      warn: (line) => process.stderr.write(`${line}
+`),
+      need: takesSavedConfirm(argv[0], argv[1]) ? ["url", "keypair", SAVED_CONFIRM_URL] : ["url", "keypair"],
+      mend: argv[0] === "setup",
+    });
     const command = parse(argv, settings);
     judging = command.name === "judge";
     const live = debugOf(argv) ? debugged(runtime, io.err) : runtime;

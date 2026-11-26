@@ -262,7 +262,7 @@ export function onlyAccepted(verb: string | undefined, sub: string | undefined, 
 
 export const MISSING_KEYPAIR = "missing --keypair";
 
-export const NO_WALLET = `${MISSING_KEYPAIR}, and no wallet is set here; run intent-engine setup to make one, or pass --keypair <file>`;
+export const NO_WALLET = `${MISSING_KEYPAIR}, and no keypair is set here: the settings file has no keypair field and neither INTENT_ENGINE_KEYPAIR nor --keypair gives one; run intent-engine setup to set it, or pass --keypair <file>`;
 
 export const PASS_KEYPAIR = `${MISSING_KEYPAIR}; this command never uses the saved wallet, so pass --keypair <file>`;
 

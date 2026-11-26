@@ -108,8 +108,8 @@ export async function testCluster(ctx: AgentContext): Promise<WalletAccess> {
   return wallet;
 }
 
-export async function savedKeypair(wallet: WalletAccess): Promise<string | undefined> {
-  return (await withSettings(wallet.files, wallet.env))[ENV_KEYPAIR];
+export async function savedKeypair(wallet: WalletAccess, mend = false): Promise<string | undefined> {
+  return (await withSettings(wallet.files, wallet.env, { need: ["keypair"], mend }))[ENV_KEYPAIR];
 }
 
 export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | undefined> {

@@ -24,6 +24,8 @@ A hirer without a spec is offered a demo job, as [Your first hired agent](first-
 
 When `solive_wallet_setup` returns too little SOL, `why` names the reason and `other_ways` lists the routes, fastest first. The first is to send devnet SOL to the wallet's address from any wallet app switched to devnet.
 
+When `solive_wallet_setup` replaces a settings file whose content differs, it first copies the old file beside it and names the copy in `settings_backup`.
+
 With `--wallet` the server also offers prompts. Each is one message that walks the AI through the tools in order, previews every send and asks before sending.
 
 | Prompt | What it does |

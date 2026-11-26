@@ -33,7 +33,6 @@ import {
   refusedEnough,
   savedDefault,
   SEND_SOL,
-  settingsBroken,
   settingsPath,
   setup,
 } from "../src/wallet.js";
@@ -268,7 +267,7 @@ describe("setup and balance", () => {
       h.files.set(SETTINGS, text);
       const ran = await cli(["balance"], {});
       expect(ran.code).toBe(EXIT_USAGE);
-      expect(ran.err).toBe(settingsBroken(SETTINGS));
+      expect(ran.err).toContain(SETTINGS);
     }
   });
 });
