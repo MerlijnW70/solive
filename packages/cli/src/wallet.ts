@@ -322,8 +322,8 @@ export async function setup(
   try {
     return await setupAt(transport, files, url, keypair, keepSavedUrl, confirmUrl, confirmTransport, start, smallStart, faucet, instant, apart, kept);
   } catch (error) {
-    if (kept.written && error instanceof Error) {
-      error.message = `${error.message}; setup had already saved ${settingsPath(files.home)}${kept.backup === undefined ? "" : `; the previous settings file is kept at ${kept.backup}`}`;
+    if (kept.written && kept.backup !== undefined && error instanceof Error) {
+      error.message = `${error.message}; the previous settings file is kept at ${kept.backup}`;
     }
     throw error;
   }
