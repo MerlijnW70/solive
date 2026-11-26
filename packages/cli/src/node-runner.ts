@@ -20,10 +20,11 @@ export const UNPREPARED = "unprepared";
 
 export const SAME_UID = "the plain Node launcher runs under the uid its cases would run under, so a case could reach it, and no case was run";
 
-import { displacedShare } from "./verdict-model.js";
+import { displacedShare, sampleGapMs, sampleMeanMs, waitedAt } from "./verdict-model.js";
 
 export const NODE_LAUNCHER = `
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const caseFile = process.argv[2];
@@ -129,6 +130,11 @@ const release = async (before) => {
   }
 };
 const displacedShare = ${displacedShare};
+const waitedAt = ${waitedAt};
+const sampleGapMs = ${sampleGapMs};
+const sampleMeanMs = ${sampleMeanMs};
+const pause = new Int32Array(new SharedArrayBuffer(4));
+const unit = () => (randomBytes(6).readUIntBE(0, 6) + 1) / 2 ** 48;
 const charged = (clock) => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - config.caseMs);
 const settle = async () => {
   const until = performance.now() + config.settleMs;
@@ -197,7 +203,15 @@ const runCase = (token, json, zeros) =>
     let unread = false;
     let base = null;
     let sampler;
+    let share = 1;
+    let weight = 0;
+    let due = 0;
+    let dropped = 0;
     let exited = false;
+    const halt = () => {
+      clearTimeout(sampler);
+      clearImmediate(sampler);
+    };
     const stopBy = (cause) => {
       if (exited) return;
       clock.stoppedBy ??= cause;
@@ -205,7 +219,7 @@ const runCase = (token, json, zeros) =>
       child.kill("SIGKILL");
     };
     const read = (final) => {
-      if (from === null) return;
+      if (from === null) return false;
       const now = performance.now();
       const state = final ? lastState : taskState();
       const cpu = usage();
@@ -213,14 +227,13 @@ const runCase = (token, json, zeros) =>
       if (state === null || cpu === null) {
         if (final) unread = true;
         else if (now - last >= config.missMs) clock.metered = false;
-        return;
+        return false;
       }
-      if (state === lastState && state === "idle") clock.idleMs += now - last;
-      if (state === lastState && state === "disk") clock.ioMs += now - last;
+      if (!final) Object.assign(clock, waitedAt(clock, state, lastState, weight, dropped));
       last = now;
       lastState = state;
       clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
-      if (final) return;
+      if (final) return true;
       const vol = voluntary(child.pid);
       if (vol !== null && vol === lastVol && lastRaw !== null) {
         bound ??= { spanMs: 0, usedMs: 0 };
@@ -233,14 +246,33 @@ const runCase = (token, json, zeros) =>
       lastVol = vol;
       lastRaw = cpu;
       lastAt = at;
+      return true;
+    };
+    const plan = (costMs) => {
+      weight = sampleMeanMs(costMs, share, config.sampleLoad, config.sampleFewestMs, config.sampleMs);
+      return due + sampleGapMs(unit(), weight);
     };
     const tick = () => {
-      sampler = setTimeout(() => {
-        if (exited) return;
-        read(false);
-        if (charged(clock) >= config.killMs || !clock.metered) stopBy("budget");
-        else tick();
-      }, config.sampleMs);
+      if (exited) return;
+      const left = due - performance.now();
+      if (left > 3) {
+        sampler = setTimeout(tick, Math.floor(left) - 2);
+        return;
+      }
+      if (left > 0) Atomics.wait(pause, 0, 0, left);
+      const began = performance.now();
+      const fresh = read(false);
+      if (charged(clock) >= config.killMs || !clock.metered) {
+        stopBy("budget");
+        return;
+      }
+      if (fresh) dropped = 0;
+      const next = plan(performance.now() - began);
+      const behind = performance.now() - next;
+      if (!fresh) dropped += next - due;
+      if (behind > config.sampleMs) dropped += behind;
+      due = behind > config.sampleMs ? next + behind : next;
+      sampler = setImmediate(tick);
     };
     child.stdio[${STARTED_FD}].once("data", () => {
       const cpu = usage();
@@ -251,6 +283,9 @@ const runCase = (token, json, zeros) =>
       lastVol = voluntary(child.pid);
       lastRaw = cpu;
       throttledFrom = throttles();
+      share = quota()?.cap ?? 1;
+      due = performance.now();
+      due = plan(0);
       clock.started = true;
       if (!exited) tick();
     });
@@ -269,7 +304,7 @@ const runCase = (token, json, zeros) =>
     child.stdin.end(JSON.stringify({ token, json, zeros, path: config.path, uid: config.uid, gid: config.gid }));
     child.once("exit", (exitCode, endedBy) => {
       clearTimeout(timer);
-      clearTimeout(sampler);
+      halt();
       read(true);
       exited = true;
       base = from;
@@ -280,7 +315,7 @@ const runCase = (token, json, zeros) =>
     });
     child.once("error", (error) => {
       clearTimeout(timer);
-      clearTimeout(sampler);
+      halt();
       sweep();
       done({ token, out: "", code: null, signal: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });

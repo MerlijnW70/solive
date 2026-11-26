@@ -56,6 +56,21 @@ export function displacedShare(stretches: readonly Stretch[], cap: number, margi
   return room > 0 ? Math.min(1, lost / room) : 0;
 }
 
+export type Waits = { idleMs: number; ioMs: number };
+
+export function waitedAt(waits: Waits, state: string, before: string, weightMs: number, skippedMs: number): Waits {
+  const credit = (kind: string) => (state === kind ? weightMs + (before === kind ? skippedMs : 0) : 0);
+  return { idleMs: waits.idleMs + credit("idle"), ioMs: waits.ioMs + credit("disk") };
+}
+
+export function sampleGapMs(unit: number, meanMs: number): number {
+  return Math.log(1 / unit) * meanMs;
+}
+
+export function sampleMeanMs(costMs: number, cap: number, load: number, fewestMs: number, mostMs: number): number {
+  return Math.min(mostMs, Math.max(fewestMs, (costMs * load) / cap));
+}
+
 export const chargedMs = (clock: CaseClock, budgetMs: number): number => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - budgetMs);
 
 export type Timing = "within" | "band" | "over" | "spent" | "starved";
