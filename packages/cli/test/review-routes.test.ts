@@ -14,7 +14,9 @@ import { REVIEW_CHANGED, REVIEW_OTHER } from "../src/agent/wallet/review.js";
 import { writeReceipt, type Route } from "../src/judge-receipt.js";
 import { REVIEW_FENCE } from "../src/review-block.js";
 import { parsedReview, reviewedBy } from "../src/review.js";
-import { CURRENT_PINS, reviewOverrideRefused, REVIEW_GATE_WORDS } from "../src/receipt-gate.js";
+import { CURRENT_PINS, reviewOverrideRefused, REVIEW_GATE_WORDS, unknownOverrideRefused, unknownReceiptRefused } from "../src/receipt-gate.js";
+import { NO_SPEC_READ, specDiffers } from "../src/review-gate.js";
+import { keepReviewRecord } from "../src/review-record.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced as made, keyed } from "./announce.js";
 import { cli, creation, funded, h, HOME, NOW, ownerSigned, transport, world } from "./harness.js";
@@ -178,6 +180,81 @@ describe("the review gate on the wallet server's release paths", () => {
     const s = await setup();
     const intent = await post(s, s.wallet);
     expect(await ok(s.client, "get_spec", { intent })).toMatchObject({ matches: true, judge_review: { reviewers: [s.r1.address, s.r2.address], threshold: 2 } });
+  });
+});
+
+describe("an unknown review gate on the wallet server's release paths", () => {
+  const unblocked = (text: string) => text.slice(0, text.indexOf(`\`\`\`${REVIEW_FENCE}`));
+
+  it("wallet_attest refuses a receipt and an override that does not name the review gate when the url now serves the spec without its block", async () => {
+    const s = await setup();
+    const worker = await keyed();
+    const intent = await post(s, s.wallet);
+    const edited = unblocked(s.text);
+    h.specPages.set(SPEC_URL, encoded(edited));
+    const first = await made(intent, worker, WORK, WORK_URL);
+    const release = { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK };
+    const why = specDiffers(SPEC_URL, sha(edited));
+    const plain = await call(s.client, "wallet_attest", { ...release, without_receipt: "the hirer checked this by hand" });
+    expect(plain).toMatchObject({ error: true, value: { code: "NoJudgeReceipt" } });
+    expect(String(plain.value["hint"])).toContain(unknownOverrideRefused(why));
+    await receipt(s, intent, s.wallet, first.announcement, routeOf());
+    const receipted = await call(s.client, "wallet_attest", release);
+    expect(receipted).toMatchObject({ error: true, value: { code: "NoJudgeReceipt" } });
+    expect(String(receipted.value["hint"])).toContain(unknownReceiptRefused(why));
+    const named = await ok(s.client, "wallet_attest", { ...release, without_receipt: `the ${REVIEW_GATE_WORDS} is skipped on purpose` });
+    expect(named["unchecked"]["warning"]).toMatch(/^the review gate was not checked: the spec at https:\/\/example\.org\/jobs\/reviewed\.md now has sha256 /);
+    expect(statusOf(intent)).toBe(IntentStatus.Open);
+  });
+
+  it("wallet_attest, wallet_attest_split and wallet_committee_vote treat an escrow without a spec url as unknown, not ungated", async () => {
+    const s = await setup();
+    const worker = await keyed();
+    const intent = await post(s, s.wallet, false);
+    const first = await made(intent, worker, WORK, WORK_URL);
+    await receipt(s, intent, s.wallet, first.announcement, routeOf());
+    const release = { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK };
+    for (const [name, args] of [
+      ["wallet_attest", release],
+      ["wallet_attest", { ...release, without_receipt: "the hirer checked this by hand" }],
+      ["wallet_attest_split", { ...release, recipients: [{ wallet: worker.address, weight: 10_000 }], without_receipt: "the hirer checked this by hand" }],
+    ] as const) {
+      const refused = await call(s.client, name, args);
+      expect(refused, name).toMatchObject({ error: true, value: { code: "NoJudgeReceipt" } });
+      expect(String(refused.value["hint"])).toContain(`the review gate is unknown because ${NO_SPEC_READ}`);
+    }
+    expect(await ok(s.client, "wallet_attest", { ...release, without_receipt: `no ${REVIEW_GATE_WORDS}: the hirer read the spec by hand` })).toMatchObject({ sent: false, unchecked: { warning: expect.stringMatching(/^the review gate was not checked: this escrow publishes no spec url/) } });
+  });
+
+  it("wallet_committee_vote refuses an unnamed override on an escrow without a spec url", async () => {
+    const s = await setup();
+    const members = sortMembers([s.wallet, address()]);
+    const payer = await funded();
+    const created = await cli(["committee", "create", "--url", "devnet", "--keypair", "payer.json", "--members", members.join(","), "--threshold", "2", "--fee-wallet", payer.address, "--yes"], { "payer.json": payer });
+    const committee = created.json()["committee"] as Address;
+    const worker = await keyed();
+    const intent = await post(s, committee, false);
+    await made(intent, worker, WORK, WORK_URL);
+    const ballot = { owner: s.w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK };
+    const plain = await call(s.client, "wallet_committee_vote", { ...ballot, without_receipt: "checked by hand" });
+    expect(plain).toMatchObject({ error: true, value: { code: "NoJudgeReceipt" } });
+    expect(String(plain.value["hint"])).toContain(unknownOverrideRefused(NO_SPEC_READ));
+  });
+
+  it("wallet_attest keeps the review gate of a local record after the url is gone, and pays on a reviewed receipt", async () => {
+    const s = await setup();
+    const worker = await keyed();
+    const intent = await post(s, s.wallet, false);
+    const pins = { reviewers: [s.r1.address, s.r2.address], threshold: 2 };
+    expect(await keepReviewRecord(HOME, { cluster: await transport.genesisHash(), intent, specSha256: sha(s.text), review: pins })).toBeUndefined();
+    const first = await made(intent, worker, WORK, WORK_URL);
+    const release = { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK };
+    const plain = await call(s.client, "wallet_attest", { ...release, without_receipt: "the hirer checked this by hand" });
+    expect(String(plain.value["hint"])).toContain(reviewOverrideRefused(pins));
+    await receipt(s, intent, s.wallet, first.announcement, routeOf({ signers: [s.r1.address, s.r2.address] }));
+    const shown = await ok(s.client, "wallet_attest", release);
+    expect(shown).not.toHaveProperty("unchecked");
+    expect(await ok(s.client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true, pay_to: worker.address });
   });
 });
 

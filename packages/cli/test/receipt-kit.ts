@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import { writeReceipt } from "../src/judge-receipt.js";
 import { CURRENT_PINS } from "../src/receipt-gate.js";
+import { keepReviewRecord } from "../src/review-record.js";
 import { HOME } from "./harness-state.js";
 import { transport } from "./harness-transport.js";
 
@@ -8,6 +9,7 @@ export type Judged = { owner: Address; nonce: bigint; intent: Address; specSha25
 
 export async function judgedBy(judges: readonly Address[], at: Judged, home: string = HOME): Promise<void> {
   const cluster = await transport.genesisHash();
+  await keepReviewRecord(home, { cluster, intent: at.intent, specSha256: at.specSha256, review: null });
   for (const judge of judges) {
     await writeReceipt(home, { ...at, judge, cluster, outcome: "pass", route: { sandbox: "viper", command: "viper", engine: CURRENT_PINS } });
   }

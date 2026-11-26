@@ -24,6 +24,7 @@ import { RUN_FENCE } from "../../judge-run.js";
 import { fenceMentions } from "../../spec-blocks.js";
 import { REVIEW_FENCE } from "../../review-block.js";
 import { keptReceipt } from "../../judge-receipt.js";
+import { keepReviewRecord } from "../../review-record.js";
 import { secondsLeft } from "../../monotonic.js";
 
 export const ARTIFACT_PATH_LIMIT = 200;
@@ -123,13 +124,16 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
 
 async function runReceipt(ctx: AgentContext, intent: Address, sha256: string, announcement: Address, outcome: "pass" | "fail") {
   const [signer, { held, params }] = await Promise.all([signerOf(ctx), proofEscrow(ctx, intent, "wallet_receipt")]);
-  const ran = { judge: signer.address, owner: held.owner, nonce: held.nonce, intent, specSha256: Buffer.from(params.specHash).toString("hex"), deliveredSha256: sha256, announcement };
+  const specSha256 = Buffer.from(params.specHash).toString("hex");
+  const ran = { judge: signer.address, owner: held.owner, nonce: held.nonce, intent, specSha256, deliveredSha256: sha256, announcement };
   const route = { sandbox: "viper", command: "viper", engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT } } as const;
   const home = ctx.wallet?.files.home;
   if (home === undefined) {
     return { receiptRefused: "this server has no wallet, so no receipt was saved" };
   }
-  return keptReceipt(home, { ...ran, outcome, cluster: await ctx.transport.genesisHash(), route });
+  const cluster = await ctx.transport.genesisHash();
+  await keepReviewRecord(home, { cluster, intent, specSha256, review: null });
+  return keptReceipt(home, { ...ran, outcome, cluster, route });
 }
 
 type Fetched = { intent: Address; announcement: Address; worker: Address; sha256: string; opens_commitment: boolean; untrusted_text?: string; first?: { worker: Address; announcement: Address }; next: string };

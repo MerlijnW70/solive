@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { type Address, createNoopSigner, type Instruction, type MessagePartialSigner, type TransactionPartialSigner, type TransactionSigner } from "@solana/kit";
 import { type CommitteeVote, formatAmount, Kind } from "@intent-engine/core";
 import { buildCreateCommittee, decodeParams, findIntentPda, isSaltHex, isSha256Hex, signCommitteeVote, signMessageBytes } from "@intent-engine/core/internal";
-import { type BallotInput, type CommitteeBallot, isSdkError, type Transport } from "@intent-engine/client";
+import { type BallotInput, type CommitteeBallot, defaultSpecSources, isSdkError, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import {
   confirmOnBoth,
@@ -275,7 +275,7 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
   const target: Ballot = { owner: command.owner, nonce: command.nonce, announcement: opening.announcement, sha256: opening.sha256, salt: opening.salt, result: command.result };
   const skipped = opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) };
   const at = { owner: command.owner, nonce: command.nonce, intent, deliveredSha256: opening.sha256, announcement: opening.announcement };
-  const gate = await gateAt(transport, runtime.specFetch, intent, openers, { lookup: runtime.lookup, rpcUrl: command.url });
+  const gate = await gateAt(transport, runtime.specFetch, intent, openers, { lookup: runtime.lookup, rpcUrl: command.url }, defaultSpecSources());
   const authority = await cliAuthority(runtime, transport, at, [member.address], command.withoutReceipt, gate);
   if (command.split !== undefined) {
     const { recipients, weights } = command.split;

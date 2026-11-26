@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type FailReceipt, keptReceipt, type Receipt, ReceiptRefused, receiptsDir, writeFailReceipt, writeReceipt } from "../src/judge-receipt.js";
-import { authorize, CURRENT_PINS, type Target } from "../src/receipt-gate.js";
+import { authorize, CURRENT_PINS, type Target, UNGATED } from "../src/receipt-gate.js";
 
 const homes: string[] = [];
 
@@ -58,11 +58,11 @@ describe("the receipt of a failing judge run", () => {
     const failed = await home();
     await writeFailReceipt(failed, fail);
     expect(await authorize(failed, target, [pass.judge], undefined, {}, "fail")).toEqual({ by: "receipt", judge: pass.judge });
-    expect((await refusal(() => authorize(failed, target, [pass.judge], undefined))).problem).toBe("missing");
+    expect((await refusal(() => authorize(failed, target, [pass.judge], undefined, {}, "pass", UNGATED))).problem).toBe("missing");
     const passed = await home();
     await writeReceipt(passed, pass);
     expect((await refusal(() => authorize(passed, target, [pass.judge], undefined, {}, "fail"))).why).toContain("failed the work");
-    expect(await authorize(passed, target, [pass.judge], undefined)).toEqual({ by: "receipt", judge: pass.judge });
+    expect(await authorize(passed, target, [pass.judge], undefined, {}, "pass", UNGATED)).toEqual({ by: "receipt", judge: pass.judge });
   });
 
   it("lives apart from the pass receipts, so a fail never leaves a file where a signature looks", async () => {

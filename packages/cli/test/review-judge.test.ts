@@ -12,7 +12,9 @@ import { EXIT_REFUSED } from "../src/judge-errors.js";
 import { FAIL_RECEIPT_KIND, readReceipt, writeReceipt } from "../src/judge-receipt.js";
 import { REVIEW_FENCE } from "../src/review-block.js";
 import { parsedReview, REVIEW_NOT_GATED, reviewJson, reviewSha256, signedReview, type Statement } from "../src/review.js";
-import { REVIEW_GATE_WORDS } from "../src/receipt-gate.js";
+import { REVIEW_GATE_WORDS, reviewOverrideRefused, unknownOverrideRefused, unknownReceiptRefused } from "../src/receipt-gate.js";
+import { specDiffers } from "../src/review-gate.js";
+import { reviewRecordOf } from "../src/review-record.js";
 import { REVIEW_ADD_ALONE } from "../src/arg-review.js";
 import { REVIEW_NOT_SIGNED } from "../src/review-commands.js";
 import { announced, keyed } from "./announce.js";
@@ -229,7 +231,7 @@ async function panel() {
   await writeFile(review, reviewJson(await signedReview(r2, statement, (await signedReview(r1, statement)).signatures)));
   const judging = (member: string, ...more: string[]) => ["judge", "--keypair", member, "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--run", "true", "--sandbox", "none", "--i-trust-this-work", ...more];
   const vote = (member: string, ...more: string[]) => ["committee", "vote", "--keypair", member, "--owner", w.owner.address, "--nonce", "0", "--result", "1", "--sha256", sha("42\n"), ...more];
-  return { w, keys, committee, intent, made, review, judging, vote, members, statement };
+  return { w, keys, committee, intent, made, review, judging, vote, members, statement, spec, r1, r2 };
 }
 
 describe("a committee on a review-gated spec", () => {
@@ -267,6 +269,56 @@ describe("a committee on a review-gated spec", () => {
     const named = await cli(p.vote("m1.json", "--without-receipt", `skipping the ${REVIEW_GATE_WORDS} on purpose`, "--yes"), p.keys);
     expect(named.code).toBe(EXIT_OK);
     expect(named.err).toContain("WARNING: the review gate was skipped");
+    const judged = await cli(p.judging("m1.json", "--review", p.review), p.keys);
+    expect(judged.code).toBe(EXIT_OK);
+    const voted = await cli(p.vote("m1.json", "--yes"), p.keys);
+    expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
+  });
+});
+
+describe("committee vote when the review gate cannot read the pinned spec", () => {
+  const unblocked = (text: string) => text.slice(0, text.indexOf(`\`\`\`${REVIEW_FENCE}`));
+
+  it("refuses an override that does not name the review gate, and a receipt, when the url now serves the spec without its block", async () => {
+    const p = await panel();
+    const member = p.members[1] as KeyPairSigner;
+    const edited = unblocked(await readFile(p.spec, "utf8"));
+    h.specPages.set(SPEC_URL, new TextEncoder().encode(edited));
+    const why = specDiffers(SPEC_URL, sha(edited));
+    const override = await cli(p.vote("m1.json", "--without-receipt", "the member checked it by hand", "--yes"), p.keys);
+    expect(override.code).toBe(EXIT_FAILED);
+    expect(override.err).toContain(unknownOverrideRefused(why));
+    await writeReceipt(HOME, {
+      outcome: "pass",
+      cluster: await transport.genesisHash(),
+      judge: member.address,
+      owner: p.w.owner.address,
+      nonce: 0n,
+      intent: p.intent,
+      specSha256: p.statement.specSha256,
+      deliveredSha256: p.statement.deliveredSha256,
+      announcement: p.made.announcement,
+      route: { sandbox: "none", command: "true" },
+    });
+    const receipted = await cli(p.vote("m1.json", "--yes"), p.keys);
+    expect(receipted.code).toBe(EXIT_FAILED);
+    expect(receipted.err).toContain(unknownReceiptRefused(why));
+    const named = await cli(p.vote("m1.json", "--without-receipt", `skipping the ${REVIEW_GATE_WORDS}: the url was edited`, "--yes"), p.keys);
+    expect(named.code).toBe(EXIT_OK);
+    expect(named.err).toContain("WARNING: the review gate was not checked: the spec at");
+  });
+
+  it("keeps the review gate a local judge run recorded after the url is deleted, and votes on the reviewed receipt", async () => {
+    const p = await panel();
+    const refused = await cli(p.judging("m1.json"), p.keys);
+    expect(refused.code).toBe(EXIT_REFUSED);
+    const held = { reviewers: [p.r1.address, p.r2.address], threshold: 2 };
+    expect(await reviewRecordOf(HOME, p.statement.cluster, p.intent, p.statement.specSha256)).toEqual({ pins: held });
+    h.engineLog = [];
+    h.specPages.delete(SPEC_URL);
+    const override = await cli(p.vote("m1.json", "--without-receipt", "the member checked it by hand", "--yes"), p.keys);
+    expect(override.code).toBe(EXIT_FAILED);
+    expect(override.err).toContain(reviewOverrideRefused(held));
     const judged = await cli(p.judging("m1.json", "--review", p.review), p.keys);
     expect(judged.code).toBe(EXIT_OK);
     const voted = await cli(p.vote("m1.json", "--yes"), p.keys);

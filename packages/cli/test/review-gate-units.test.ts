@@ -2,7 +2,11 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana
 import { beforeAll, describe, expect, it } from "vitest";
 import { MAX_REVIEWERS, readReviewBlock, REVIEW_FENCE, type ReviewPins } from "../src/review-block.js";
 import { type Binding, parsedReview, type Review, reviewedBy, reviewJson, reviewMessage, ReviewRefused, reviewSha256, signedReview, type Statement, statementOf } from "../src/review.js";
-import { authorize, reviewMismatch, reviewOverrideRefused, REVIEW_GATE_WORDS, type Target } from "../src/receipt-gate.js";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { authorize, NOT_READ, reviewMismatch, reviewOverrideRefused, REVIEW_GATE_WORDS, type Target, UNGATED, unknownOverrideRefused, unknownReceiptRefused, withRecord } from "../src/receipt-gate.js";
+import { keepReviewRecord, reviewRecordOf, reviewRecordPath } from "../src/review-record.js";
 import { ReceiptRefused } from "../src/judge-receipt.js";
 
 const encoded = (text: string) => new TextEncoder().encode(text);
@@ -182,11 +186,76 @@ describe("the receipt gate for a review-gated escrow", () => {
     const named = await authorize(home, target(), [a.address], `skip the ${REVIEW_GATE_WORDS}: the reviewer lost their key`, {}, "pass", { pins });
     expect(named).toMatchObject({ by: "override" });
     expect(named.by === "override" ? named.unchecked.warning : "").toMatch(/^the review gate was skipped: no signed review by 2 of the reviewers/);
-    const plain = await authorize(home, target(), [a.address], "the hirer checked it by hand", {}, "pass", undefined);
+    const plain = await authorize(home, target(), [a.address], "the hirer checked it by hand", {}, "pass", UNGATED);
     expect(plain.by === "override" ? plain.unchecked.warning : "").not.toContain(REVIEW_GATE_WORDS);
   });
 
   it("refuses anything at all for an escrow whose spec has a malformed block", async () => {
     expect(await refusal(() => authorize("/nonexistent", target(), [a.address], `${REVIEW_GATE_WORDS} skipped`, {}, "pass", { problem: "the spec's judge-review block is bad" }))).toContain("nothing can be signed");
+  });
+});
+
+describe("the receipt gate when the review gate is unknown", () => {
+  const target = (): Target => ({ cluster: at.cluster, owner: a.address, nonce: at.nonce, intent: at.intent, specSha256: at.specSha256, deliveredSha256: at.deliveredSha256, announcement: b.address });
+  const why = "the spec at https://example.org/spec.md could not be read";
+
+  it("refuses a receipt and an override that does not name the review gate, saying why the gate is unknown", async () => {
+    const home = "/nonexistent-home-for-unknown-gates";
+    expect(await refusal(() => authorize(home, target(), [a.address], "the hirer checked it by hand", {}, "pass", { unknown: why }))).toBe(unknownOverrideRefused(why));
+    expect(await refusal(() => authorize(home, target(), [a.address], undefined, {}, "pass", { unknown: why }))).toBe(unknownReceiptRefused(why));
+    expect(unknownOverrideRefused(why)).not.toContain("\n");
+    const named = await authorize(home, target(), [a.address], `the ${REVIEW_GATE_WORDS} cannot read the spec`, {}, "pass", { unknown: why });
+    expect(named.by === "override" ? named.unchecked.warning : "").toMatch(new RegExp(`^the review gate was not checked: ${why}; signed without a judge receipt`));
+  });
+
+  it("is unknown when no gate is given, and a fail authorization ignores the gate", async () => {
+    const home = "/nonexistent-home-for-unknown-gates";
+    expect(await refusal(() => authorize(home, target(), [a.address], "the hirer checked it by hand"))).toBe(unknownOverrideRefused(NOT_READ));
+    expect(await authorize(home, target(), [a.address], "the check is known to fail", {}, "fail")).toMatchObject({ by: "override" });
+  });
+
+  it("lets a local record decide only toward the stricter gate", () => {
+    const gated = { pins };
+    const problem = { problem: "the spec's judge-review block is bad" };
+    const unknown = { unknown: why };
+    expect(withRecord(undefined, unknown)).toEqual(unknown);
+    expect(withRecord(gated, UNGATED)).toEqual(gated);
+    expect(withRecord(gated, unknown)).toEqual(gated);
+    expect(withRecord(problem, gated)).toEqual(problem);
+    expect(withRecord(gated, problem)).toEqual(problem);
+    expect(withRecord({ ungated: true }, unknown)).toEqual(UNGATED);
+    expect(withRecord({ ungated: true }, gated)).toEqual(gated);
+    expect(withRecord({ unknown: "the record is bad" }, UNGATED)).toEqual({ unknown: "the record is bad" });
+    expect(withRecord({ unknown: "the record is bad" }, gated)).toEqual(gated);
+  });
+});
+
+describe("the local review gate record", () => {
+  const home = () => mkdtemp(join(tmpdir(), "review-record-"));
+
+  it("is kept per cluster, escrow and spec sha256, and a gated record is never replaced by an ungated one", async () => {
+    const at2 = await home();
+    const record = { cluster: at.cluster, intent, specSha256: at.specSha256 };
+    expect(await reviewRecordOf(at2, at.cluster, intent, at.specSha256)).toBeUndefined();
+    expect(await keepReviewRecord(at2, { ...record, review: pins })).toBeUndefined();
+    expect(await keepReviewRecord(at2, { ...record, review: null })).toBeUndefined();
+    expect(await reviewRecordOf(at2, at.cluster, intent, at.specSha256)).toEqual({ pins });
+    expect(await reviewRecordOf(at2, "another-cluster", intent, at.specSha256)).toBeUndefined();
+    expect(await reviewRecordOf(at2, at.cluster, intent, "c3".repeat(32))).toBeUndefined();
+    expect(await keepReviewRecord(at2, { ...record, specSha256: "c3".repeat(32), review: null })).toBeUndefined();
+    expect(await reviewRecordOf(at2, at.cluster, intent, "c3".repeat(32))).toEqual({ ungated: true });
+    expect(await keepReviewRecord(at2, { ...record, specSha256: "d4".repeat(32), review: { problem: "bad" } })).toBeUndefined();
+    expect(await reviewRecordOf(at2, at.cluster, intent, "d4".repeat(32))).toEqual({ problem: "bad" });
+  });
+
+  it("reads as unknown, and refuses a new record, when the file is not a list of records", async () => {
+    const at2 = await home();
+    expect(await keepReviewRecord(at2, { cluster: at.cluster, intent, specSha256: at.specSha256, review: null })).toBeUndefined();
+    const path = reviewRecordPath(at2, intent);
+    for (const text of ["not json", JSON.stringify([{ cluster: at.cluster, intent, specSha256: at.specSha256, review: { reviewers: [], threshold: 1 } }])]) {
+      await writeFile(path, text);
+      expect(await reviewRecordOf(at2, at.cluster, intent, at.specSha256)).toMatchObject({ unknown: expect.stringContaining(path) });
+      expect(await keepReviewRecord(at2, { cluster: at.cluster, intent, specSha256: at.specSha256, review: pins })).toContain("could not be written");
+    }
   });
 });

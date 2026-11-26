@@ -32,7 +32,7 @@ import {
 } from "@intent-engine/client/internal";
 import { capturing, skippedSummary } from "../../announcement-views.js";
 import { TOKEN_NAMES } from "../../tokens.js";
-import { type AgentContext, define, specReach } from "../actions.js";
+import { type AgentContext, define, specReach, specReadOf } from "../actions.js";
 import type { Call } from "../claims.js";
 import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
@@ -87,7 +87,7 @@ export const uncheckedOutput = optional(
 
 export async function walletAuthority(ctx: AgentContext, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined): Promise<Authority> {
   try {
-    const gate = await gateAt(ctx.transport, ctx.fetch ?? fetch, at.intent, await walletOpeners(ctx), specReach(ctx));
+    const gate = await gateAt(ctx.transport, ctx.fetch ?? fetch, at.intent, await walletOpeners(ctx), specReach(ctx), specReadOf(ctx).sources);
     return await authorizeEscrow(ctx.wallet?.files.home, ctx.transport, at, judges, override, "pass", gate);
   } catch (error) {
     throw error instanceof ReceiptRefused ? new AgentRefusal("NoJudgeReceipt", `${error.why}; ${WALLET_RECEIPT_NEXT}`) : error;

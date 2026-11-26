@@ -19,7 +19,7 @@ import type { Runtime } from "../src/runtime.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, h, HOME, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
 import { readReceipt } from "../src/judge-receipt.js";
-import { authorize } from "../src/receipt-gate.js";
+import { authorize, UNGATED } from "../src/receipt-gate.js";
 import { EXIT_REFUSED } from "../src/judge-errors.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
@@ -144,7 +144,7 @@ describe("intent-engine judge --watch", () => {
     await expect(readReceipt(HOME, at(wrong.announcement, WRONG))).rejects.toMatchObject({ problem: "missing" });
     expect(await readReceipt(HOME, at(right.announcement, CORRECT))).toMatchObject({ outcome: "pass", owner: j.w.owner.address, nonce: 0n, specSha256: sha(SPEC), route: { sandbox: "viper" } });
     const target = { cluster, owner: j.w.owner.address, nonce: 0n, intent: j.intent, specSha256: sha(SPEC), deliveredSha256: sha(CORRECT), announcement: right.announcement };
-    expect(await authorize(HOME, target, [j.judge.address], undefined)).toEqual({ by: "receipt", judge: j.judge.address });
+    expect(await authorize(HOME, target, [j.judge.address], undefined, {}, "pass", UNGATED)).toEqual({ by: "receipt", judge: j.judge.address });
     expect(status(j.intent)).toBe(IntentStatus.Open);
   }, 60_000);
 

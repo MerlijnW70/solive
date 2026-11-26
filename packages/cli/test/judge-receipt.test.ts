@@ -15,7 +15,7 @@ import {
   type Stored,
   writeReceipt,
 } from "../src/judge-receipt.js";
-import { authorize, boundApproval, CURRENT_PINS, EMPTY_REASON, mismatchOf, type Target } from "../src/receipt-gate.js";
+import { authorize, boundApproval, CURRENT_PINS, EMPTY_REASON, mismatchOf, type Target, UNGATED } from "../src/receipt-gate.js";
 import { settingsDir } from "../src/wallet.js";
 import { parse } from "../src/args.js";
 import { EMPTY_OVERRIDE } from "../src/trust-args.js";
@@ -174,7 +174,7 @@ describe("the receipt store", () => {
     await writeFile(path, sealReceipt(key, { ...base, outcome: "fail" }), { mode: 0o600 });
     const read = await readReceipt(at, base);
     expect(mismatchOf(read, targetOf(base), [judge])).toContain("outcome fail");
-    expect((await refusal(() => authorize(at, targetOf(base), [judge], undefined))).why).toContain("outcome fail");
+    expect((await refusal(() => authorize(at, targetOf(base), [judge], undefined, {}, "pass", UNGATED))).why).toContain("outcome fail");
   });
 
   it.skipIf(!unix)("refuses a receipt that is a symbolic link, and a receipt directory that is one", async () => {
@@ -258,16 +258,16 @@ describe("the gate", () => {
   it("authorizes with a matching receipt and refuses everything else", async () => {
     const at = await home();
     await writeReceipt(at, base);
-    expect(await authorize(at, targetOf(base), [judge], undefined)).toEqual({ by: "receipt", judge });
-    expect(await authorize(at, targetOf(base), [other, judge], undefined)).toEqual({ by: "receipt", judge });
-    expect((await refusal(() => authorize(at, { ...targetOf(base), specSha256: "c3".repeat(32) }, [judge], undefined))).why).toContain("the spec sha256");
-    expect((await refusal(() => authorize(at, targetOf(base), [other], undefined))).problem).toBe("missing");
+    expect(await authorize(at, targetOf(base), [judge], undefined, {}, "pass", UNGATED)).toEqual({ by: "receipt", judge });
+    expect(await authorize(at, targetOf(base), [other, judge], undefined, {}, "pass", UNGATED)).toEqual({ by: "receipt", judge });
+    expect((await refusal(() => authorize(at, { ...targetOf(base), specSha256: "c3".repeat(32) }, [judge], undefined, {}, "pass", UNGATED))).why).toContain("the spec sha256");
+    expect((await refusal(() => authorize(at, targetOf(base), [other], undefined, {}, "pass", UNGATED))).problem).toBe("missing");
   });
 
   it("takes the override only with a reason, records it and binds it into the approval", async () => {
     const at = await home();
-    expect((await refusal(() => authorize(at, targetOf(base), [judge], "  "))).why).toBe(EMPTY_REASON);
-    const granted = await authorize(at, targetOf(base), [judge], "a reviewed manual check‮");
+    expect((await refusal(() => authorize(at, targetOf(base), [judge], "  ", {}, "pass", UNGATED))).why).toBe(EMPTY_REASON);
+    const granted = await authorize(at, targetOf(base), [judge], "a reviewed manual check‮", {}, "pass", UNGATED);
     expect(granted).toEqual({ by: "override", unchecked: { reason: expect.stringContaining("a reviewed manual check"), warning: expect.stringContaining(base.deliveredSha256) } });
     if (granted.by !== "override") {
       throw new Error("no override");
