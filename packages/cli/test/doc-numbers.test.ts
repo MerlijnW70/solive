@@ -76,7 +76,8 @@ describe("the numbers the docs state", () => {
   });
 });
 
-const UNIT_FORM = /\b\d[\d_.]*, in (?:milliseconds|seconds|minutes|hours|days|bytes|megabytes|kilobytes)\b/g;
+const NUMBER_IN_WORD = /\b\d[\d_.]*,\s+in\s+(\w+)/gi;
+const NOT_A_UNIT = new Set(["the", "two", "batches"]);
 
 const docFiles = (dir: string): string[] =>
   readdirSync(`${ROOT}/${dir}`, { withFileTypes: true }).flatMap((entry) => {
@@ -88,10 +89,13 @@ const docFiles = (dir: string): string[] =>
   });
 
 describe("the unit form in the docs", () => {
-  it("has a pin for every number written as N, in unit", () => {
-    const found = docFiles("docs").flatMap((doc) => (read(doc).match(UNIT_FORM) ?? []).map((text) => ({ doc, text })));
-    expect(found.length).toBeGreaterThan(0);
-    const unpinned = found.filter(({ doc, text }) => !CLAIMS.some((claim) => claim.doc === doc && claim.claim.includes(text)));
+  it("has a pin for every number written as N, in a word, once per occurrence", () => {
+    const docs = docFiles("docs");
+    expect(docs.length).toBeGreaterThan(0);
+    const unpinned = docs.flatMap((doc) => {
+      const left = CLAIMS.filter((claim) => claim.doc === doc).reduce((text, { claim }) => text.replace(claim, ""), read(doc));
+      return [...left.matchAll(NUMBER_IN_WORD)].filter((hit) => !NOT_A_UNIT.has((hit[1] ?? "").toLowerCase())).map((hit) => `${doc}: ${hit[0]}`);
+    });
     expect(unpinned).toEqual([]);
   });
 });
