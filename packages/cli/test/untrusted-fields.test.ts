@@ -146,8 +146,9 @@ describe("the inventory of text other parties control", () => {
   });
 
   it("lists every field a refusal can carry, with untrustedDetail and logs reduced", () => {
-    expect(Object.keys(REFUSAL_FIELDS).sort()).toEqual(["code", "hint", "issues", "logs", "program", "programError", "retryable", "signature", "untrustedDetail"]);
+    expect(Object.keys(REFUSAL_FIELDS).sort()).toEqual(["code", "hint", "issues", "logs", "program", "programError", "retryable", "signature", "untrustedDetail", "wrote"]);
     expect(REFUSAL_FIELDS.hint).toBe("own");
+    expect(REFUSAL_FIELDS.wrote).toBe("own");
     expect(REFUSAL_FIELDS.untrustedDetail).toMatchObject({ rule: "sanitized" });
     expect(REFUSAL_FIELDS.logs).toMatchObject({ rule: "sanitized" });
     expect(REFUSAL_FIELDS.signature).toEqual({ from: ["rpc node"], rule: "checked" });

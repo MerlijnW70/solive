@@ -103,7 +103,7 @@ export async function reviewRecordOf(home: string, cluster: string, intent: Addr
 
 const sameReview = (one: Recorded, two: Recorded): boolean => JSON.stringify(one) === JSON.stringify(two);
 
-export async function keepReviewRecord(home: string, record: SpecRecord): Promise<string | undefined> {
+export async function keepReviewRecord(home: string, record: SpecRecord, written?: (path: string) => void): Promise<string | undefined> {
   const path = reviewRecordPath(home, record.intent);
   try {
     const kept = await keptRecords(path);
@@ -119,6 +119,7 @@ export async function keepReviewRecord(home: string, record: SpecRecord): Promis
     const next = `${path}.${process.pid}.tmp`;
     await writeFile(next, `${JSON.stringify([...kept.records.filter((entry) => !same(entry) || entry.review !== null), record], null, 2)}\n`, { mode: FILE_MODE });
     await rename(next, path);
+    written?.(path);
     return undefined;
   } catch (error) {
     return recordUnwritten(path, messageOf(error));

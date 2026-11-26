@@ -71,11 +71,9 @@ export function toJson(value: unknown): unknown {
   return value;
 }
 
-export const stays = (who: string, wrote: readonly string[]): string => `${who} had already ${wrote.join(", ")}, and that stays`;
-
 export class OutputMismatch extends Error {
-  constructor(action: string, cause: InvalidInput, wrote: readonly string[] = []) {
-    super(wrote.length === 0 ? `${action} produced output outside its schema: ${cause.message}` : `${stays(action, wrote)}; it produced output outside its schema: ${cause.message}`);
+  constructor(action: string, cause: InvalidInput) {
+    super(`${action} produced output outside its schema: ${cause.message}`);
     this.name = "OutputMismatch";
   }
 }
@@ -115,13 +113,14 @@ export async function invoke(action: AnyAction, ctx: AgentContext, raw: unknown)
     try {
       action.output.read(value, "");
     } catch (error) {
-      throw error instanceof InvalidInput ? new OutputMismatch(action.name, error, call.wrote) : error;
+      throw error instanceof InvalidInput ? new OutputMismatch(action.name, error) : error;
     }
     return { ok: true, value: value as Record<string, unknown> };
   } catch (error) {
     for (const undo of call.undo.reverse()) {
       undo();
     }
-    return { ok: false, problem: problemOf(error, ctx.url ?? ctx.wallet?.url) };
+    const problem = problemOf(error, ctx.url ?? ctx.wallet?.url);
+    return { ok: false, problem: call.wrote.length === 0 ? problem : { ...problem, wrote: [...call.wrote] } };
   }
 }

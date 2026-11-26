@@ -1,13 +1,13 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, settingsPath, setup, SWAP_START, TEST_SWAP } from "../../wallet.js";
-import { type AgentContext, define, stays } from "../actions.js";
+import { balances, defaultMints, explorerLink, FUND_BELOW, ServerKeyNotWallet, setup, type SetupAnswer, SWAP_START, TEST_SWAP } from "../../wallet.js";
+import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { listIntents, SOL_DECIMALS } from "../read.js";
-import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
+import { account, amount, type Infer, choice, flag, list, object, optional, text } from "../schema.js";
 import { prepareCancel } from "../settle.js";
 import { STATUS } from "../../accounts.js";
 import { updateOf } from "../../update-notice.js";
@@ -39,6 +39,38 @@ const updateShape = optional(
   ),
 );
 
+const setupOutput = object({
+  address: account(),
+  keypair: text("the file holding the wallet's key on this machine"),
+  created: flag("true when this call made the wallet"),
+  url: text("the RPC node this server uses, as scheme, host and port only"),
+  confirm_url: optional(text("the second RPC node the settings file keeps for confirming reads, as scheme, host and port only; present only when the file holds one")),
+  settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
+  settings_backup: optional(text("the copy of the previous settings file, made when this call replaced one with different content")),
+  sol: text("SOL the wallet holds"),
+  explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")),
+  hint: optional(text("a reminder, on devnet only, of where devnet SOL shows")),
+  airdrop: optional(text("SOL the node's airdrop sent; less than asked when it refused a larger airdrop")),
+  faucet: optional(
+    object({
+      lamports: optional(text("lamports the instant faucet sent, asked before the node's airdrop")),
+      signature: optional(text("the transaction that carried them")),
+      refused: optional(text("untrusted, with hidden characters reduced: why the instant faucet sent nothing")),
+    }),
+  ),
+  why: optional(text("why the wallet holds too little SOL: the instant faucet is out of SOL, its rate limit applies, or the node refused the airdrop")),
+  next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
+  other_ways: optional(list(text(), 4, "ways to get SOL, fastest first, when the wallet holds too little to start")),
+  notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
+  update: updateShape,
+});
+
+type SetupDeclared = keyof Infer<typeof setupOutput>;
+
+const setupKeysDeclared: [Exclude<keyof SetupAnswer, SetupDeclared | "faucet_request">] extends [never] ? true : never = true;
+
+void setupKeysDeclared;
+
 export const walletSetup = define({
   name: tool("wallet_setup"),
   title: "Set up the wallet",
@@ -47,31 +79,7 @@ export const walletSetup = define({
   effect: "submit",
   destructive: false,
   input: object({}),
-  output: object({
-    address: account(),
-    keypair: text("the file holding the wallet's key on this machine"),
-    created: flag("true when this call made the wallet"),
-    url: text("the RPC node this server uses, as scheme, host and port only"),
-    confirm_url: optional(text("the second RPC node the settings file keeps for confirming reads, as scheme, host and port only; present only when the file holds one")),
-    settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
-    settings_backup: optional(text("the copy of the previous settings file, made when this call replaced one with different content")),
-    sol: text("SOL the wallet holds"),
-    explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")),
-    hint: optional(text("a reminder, on devnet only, of where devnet SOL shows")),
-    airdrop: optional(text("SOL the node's airdrop sent; less than asked when it refused a larger airdrop")),
-    faucet: optional(
-      object({
-        lamports: optional(text("lamports the instant faucet sent, asked before the node's airdrop")),
-        signature: optional(text("the transaction that carried them")),
-        refused: optional(text("untrusted, with hidden characters reduced: why the instant faucet sent nothing")),
-      }),
-    ),
-    why: optional(text("why the wallet holds too little SOL: the instant faucet is out of SOL, its rate limit applies, or the node refused the airdrop")),
-    next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
-    other_ways: optional(list(text(), 4, "ways to get SOL, fastest first, when the wallet holds too little to start")),
-    notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
-    update: updateShape,
-  }),
+  output: setupOutput,
   run: async (ctx: AgentContext, _input, call: Call) => {
     const wallet = await testCluster(ctx);
     const apart = [ctx.agent?.signer.address, ctx.relay?.signer.address].filter((key): key is Address => key !== undefined);
@@ -79,17 +87,12 @@ export const walletSetup = define({
       ...wallet.files,
       saveText: async (path: string, text: string, secret: boolean) => {
         await wallet.files.saveText(path, text, secret);
-        if (path === settingsPath(wallet.files.home)) {
-          call.wrote.push(`saved ${path}`);
-        }
+        call.wrote.push(`saved ${path}`);
       },
     };
     const made = await setup(ctx.transport, files, wallet.url, await savedKeypair(wallet, true), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env }, apart).catch((error: unknown) => {
       if (error instanceof ServerKeyNotWallet) {
         throw new AgentRefusal("KeyIsWallet", error.message);
-      }
-      if (error instanceof Error && call.wrote.length > 0) {
-        error.message = `${stays("setup", call.wrote)}; ${error.message}`;
       }
       throw error;
     });

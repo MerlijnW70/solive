@@ -17,6 +17,7 @@ export type Problem = {
   logs?: string[];
   signature?: string;
   untrustedDetail?: string;
+  wrote?: string[];
 };
 
 type Entry = { retryable: boolean; hint: string };
@@ -378,6 +379,7 @@ export const refusalText = (problem: Problem): string =>
     `${problem.code}: ${problem.hint}`,
     ...(problem.issues ?? []).map(issueText),
     ...(problem.untrustedDetail === undefined ? [] : [`untrusted detail: ${JSON.stringify(untrusted(problem.untrustedDetail))}`]),
+    ...(problem.wrote === undefined || problem.wrote.length === 0 ? [] : [`this call had already changed local files, and that stays: ${problem.wrote.join(", ")}`]),
   ].join("; ");
 
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);

@@ -49,15 +49,52 @@ describe("wallet_setup with a saved confirm-url", () => {
 });
 
 describe("a failure after setup wrote", () => {
-  it("names the files it saved in the error when the node fails after the write", async () => {
-    h.through = { ...transport, getAccount: async () => { throw new Error("node down"); } };
+  const failing = async (error: Error) => {
+    h.through = { ...transport, getAccount: async () => { throw error; } };
     const client = await served();
     const failed = await call(client, "wallet_setup");
     expect(failed.error).toBe(true);
-    const detail = String(failed.value["untrustedDetail"]);
-    expect(detail).toContain("node down");
     expect(h.files.has(SETTINGS)).toBe(true);
-    expect(detail).toContain(`setup had already saved ${SETTINGS}, and that stays; node down`);
+    return failed.value;
+  };
+
+  it.each([
+    ["Failed", new Error("node down")],
+    ["Unreachable", new TypeError("fetch failed")],
+    ["RateLimited", new Error("429 Too Many Requests")],
+  ])("names every file saved in wrote, whatever the code: %s", async (code, error) => {
+    const problem = await failing(error);
+    expect(problem["code"]).toBe(code);
+    expect(problem["wrote"]).toEqual([`saved ${WALLET}`, `saved ${SETTINGS}`]);
+  });
+
+  it("lists the new key, the backup copy and then the settings file when it replaced a different one", async () => {
+    h.files.set(SETTINGS, JSON.stringify({ url: "devnet", keypair: WALLET, extra: 1 }));
+    const problem = await failing(new TypeError("fetch failed"));
+    const wrote = problem["wrote"] as string[];
+    expect(wrote).toHaveLength(3);
+    expect(wrote[0]).toBe(`saved ${WALLET}`);
+    expect(wrote[1]?.startsWith(`saved ${SETTINGS}.`) && wrote[1].endsWith(".bak")).toBe(true);
+    expect(wrote[2]).toBe(`saved ${SETTINGS}`);
+  });
+
+  it("keeps wrote whole at realistic Windows path lengths and leaves the schema mismatch text first", async () => {
+    const long = ["C:", "Users", "someone-with-a-long-name", "AppData", "Roaming", "intent-engine", ...Array<string>(12).fill("nested"), "config.json"].join(String.fromCharCode(92));
+    const lying = define({
+      name: "lying",
+      title: "t",
+      description: "d",
+      effect: "submit",
+      input: object({}),
+      output: object({ n: amount() }),
+      run: async (_ctx, _input, call) => {
+        call.wrote.push(`saved ${long}`, `saved ${long}.bak`, `deleted ${long}.key`);
+        return { n: 5 };
+      },
+    });
+    const outcome = await invoke(lying, { transport: {} as never, relay: undefined, agent: undefined, claims: claimsOf() }, {});
+    expect(outcome).toMatchObject({ ok: false, problem: { wrote: [`saved ${long}`, `saved ${long}.bak`, `deleted ${long}.key`] } });
+    expect((outcome as { problem: { untrustedDetail: string } }).problem.untrustedDetail).toBe("lying produced output outside its schema: n: must be a whole number written as a decimal string");
   });
 
   it("says the settings file was saved when the answer then fails its output check", async () => {
@@ -69,19 +106,18 @@ describe("a failure after setup wrote", () => {
     });
     const failed = await call(client, "wallet_setup");
     expect(failed.error).toBe(true);
-    const detail = String(failed.value["untrustedDetail"]);
-    expect(detail).toContain("outside its schema");
+    expect(String(failed.value["untrustedDetail"])).toContain("outside its schema");
     expect(h.files.get(SETTINGS)).not.toBe(old);
-    expect(detail).toContain(`solive_wallet_setup had already saved ${SETTINGS}, and that stays; it produced output outside its schema`);
+    expect((failed.value["wrote"] as string[]).at(-1)).toBe(`saved ${SETTINGS}`);
     expect((await takeMisses()).length).toBe(1);
   });
 
-  it("lists in a mismatch error what the action wrote, and nothing when it wrote nothing", async () => {
-    const lying = define({ name: "lying", title: "t", description: "d", effect: "submit", input: object({}), output: object({ n: amount() }), run: async (_ctx, _input, call) => { call.wrote.push("saved /a", "sent transaction b"); return { n: 5 }; } });
-    const ctx = { transport: {} as never, relay: undefined, agent: undefined, claims: claimsOf() };
-    const outcome = await invoke(lying, ctx, {});
-    expect(outcome).toMatchObject({ ok: false, problem: { untrustedDetail: expect.stringContaining("lying had already saved /a, sent transaction b, and that stays; it produced output outside its schema") } });
-    expect(new OutputMismatch("x", new InvalidInput([])).message).not.toContain("already");
+  it("records nothing for a call that wrote nothing", async () => {
+    const lying = define({ name: "lying", title: "t", description: "d", effect: "read", input: object({}), output: object({ n: amount() }), run: async () => ({ n: 5 }) });
+    const outcome = await invoke(lying, { transport: {} as never, relay: undefined, agent: undefined, claims: claimsOf() }, {});
+    expect(outcome).toMatchObject({ ok: false });
+    expect(outcome).not.toHaveProperty("problem.wrote");
+    expect(new OutputMismatch("x", new InvalidInput([])).message).toBe("x produced output outside its schema: ");
     expect(callOf().wrote).toEqual([]);
   });
 });

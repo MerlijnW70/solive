@@ -26,7 +26,7 @@ When `solive_wallet_setup` returns too little SOL, `why` names the reason and `o
 
 When `solive_wallet_setup` replaces a settings file whose content differs, it first copies the old file beside it and names the copy in `settings_backup`.
 
-When that file holds a `confirm-url`, setup keeps it and names it in `confirm_url`, as scheme, host and port only. If a step after the write fails, the error names the file setup had already saved.
+When that file holds a `confirm-url`, setup keeps it and names it in `confirm_url`, as scheme, host and port only. Any failed call that had already changed local files, such as setup after its write, lists them in `wrote` (`saved <path>`, `deleted <path>`) whatever the error code, and those changes stay.
 
 With `--wallet` the server also offers prompts. Each is one message that walks the AI through the tools in order, previews every send and asks before sending.
 
