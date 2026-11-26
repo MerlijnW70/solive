@@ -1,12 +1,10 @@
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
-import { type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
-import { decodeParams } from "@intent-engine/core/internal";
+import { type DeliveryOpener } from "@intent-engine/core";
 import { type CommitteeView, FirstOpeningRefused, isSdkError, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { chainTime, confirmOnBoth, deviceJudgeReady, firstOpeningIn, isDevice, loadCommittee, loadIntent, messageOnly } from "@intent-engine/client/internal";
+import { confirmOnBoth, deviceJudgeReady, firstOpeningIn, isDevice, messageOnly } from "@intent-engine/client/internal";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
@@ -28,11 +26,14 @@ import { type SimulatedRelease, simulateRelease } from "./release-simulation.js"
 import { type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
-import { isResaved, RESAVED, resavedFrom } from "./resaved.js";
+import { RESAVED, resavedFrom } from "./resaved.js";
 import { type Cases, casesOf, casePinsRead, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
 import { secondsLeft } from "./monotonic.js";
+import { type Reviewed, reviewedBy, reviewFailed, reviewGate, reviewsOf } from "./review.js";
+import { escrowFor, pinnedSpec } from "./judge-escrow.js";
 
+export { escrowFor, pinnedSpec } from "./judge-escrow.js";
 export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, mayHaveLanded, notSent, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
 export {
@@ -88,6 +89,7 @@ export type Verdict = {
   next?: string;
   cleanup?: string;
   receiptRefused?: string;
+  review?: Reviewed;
 };
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
@@ -138,41 +140,6 @@ export const FEE_PAYER_IS_JUDGE = "--fee-payer is the judge's own key; name anot
 export const resultOutside = (result: bigint, intent: Address, min: bigint, max: bigint): string =>
   `--result ${result} lies outside the results intent ${intent} accepts, ${min} to ${max}; nothing was run or paid`;
 
-export async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
-  const { address, intent } = await loadIntent(transport, owner, nonce);
-  const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
-  if (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0)) {
-    throw new JudgeRefused(`intent ${address} is not a proof escrow: an AttestedResult intent that commits a spec hash`);
-  }
-  if (intent.status !== IntentStatus.Open || intent.expiresAt <= (await chainTime(transport))) {
-    throw new JudgeRefused(`intent ${address} is no longer open`);
-  }
-  const committee = params.attestor === judge ? null : await loadCommittee(transport, params.attestor);
-  if (params.attestor !== judge && committee === null) {
-    throw new JudgeRefused(`intent ${address} names ${params.attestor} as its judge, not ${judge}`);
-  }
-  if (committee !== null && !committee.members.includes(judge)) {
-    throw new JudgeRefused(`intent ${address} names committee ${params.attestor} as its judge, and ${judge} is not one of its members`);
-  }
-  return {
-    address,
-    attestor: params.attestor,
-    committee,
-    specHash: hex(params.specHash),
-    minResult: params.minResult,
-    maxResult: params.maxResult,
-  };
-}
-
-export async function pinnedSpec(spec: string, intent: Address, specHash: string): Promise<Buffer> {
-  const bytes = await readFile(resolve(spec));
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (sha256 !== specHash) {
-    throw new JudgeRefused(`--spec ${spec} has sha256 ${sha256}, but intent ${intent} commits ${specHash}${isResaved(bytes, specHash) ? `; ${RESAVED}` : ""}`);
-  }
-  return bytes;
-}
-
 const haltedBy = (stop: AbortSignal | undefined): InterruptSignal | undefined => (stop?.aborted !== true ? undefined : stop.reason === "SIGTERM" ? "SIGTERM" : "SIGINT");
 
 export const workResaved = (artifact: string, sha256: string, announced: string): string =>
@@ -218,6 +185,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
   }
   const specBytes = await pinnedSpec(command.spec, address, specHash);
+  const gate = reviewGate(specBytes, command.reviews);
   const plan = runPlan(specBytes, command);
   const viper = plan.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
   const artifact = resolve(command.artifact);
@@ -226,6 +194,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     throw new JudgeRefused(`--sandbox viper judges one module file, and --artifact ${command.artifact} is a directory; nothing was run or paid`);
   }
   const sha256 = read.sha256;
+  const review = gate === undefined ? undefined : await reviewedBy(await reviewsOf(command.reviews ?? []), { cluster: await transport.genesisHash(), intent: address, nonce: command.nonce, specSha256: specHash, deliveredSha256: sha256 }, gate);
   const check = await checkFilesOf(command.check, plan);
   if (plan.pinned !== undefined || viper?.cases.nodeMemory !== undefined || viper?.cases.nodeCpus !== undefined) {
     await sandboxReady(plan.sandbox, dockerEnv(process.env));
@@ -280,6 +249,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
       feePayer,
       skipped: skippedLines(opening),
       home: runtime.home,
+      review,
     };
     return await checkAndSettle(command, transport, signer, signals, judged);
   } finally {
@@ -370,6 +340,7 @@ type Judged = {
   feePayer: TransactionPartialSigner | undefined;
   skipped: SkippedLine[];
   home: string;
+  review: Reviewed | undefined;
 };
 
 async function checkAndSettle(
@@ -377,7 +348,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, plan, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped, home }: Judged,
+  { address, attestor, committee, specHash, plan, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped, home, review }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = plan;
   let check: Check = { exitCode: null, timedOut: false };
@@ -388,7 +359,9 @@ async function checkAndSettle(
   let cleanup: string | undefined;
   let ruled: Ruling | undefined;
   const plainNode = sandbox.kind === "viper" ? sandbox.node : undefined;
-  if (viper !== undefined) {
+  if (review?.verdict === "fail") {
+    ruled = { outcome: "fail", reason: reviewFailed(review) };
+  } else if (viper !== undefined) {
     const [entry] = read.entries;
     const module = entry?.bytes ?? new Uint8Array();
     const run = runOf(viper.cases);
@@ -423,7 +396,8 @@ async function checkAndSettle(
   if (passed && confirm !== undefined) {
     await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, payees: [payTo], keypair });
   }
-  const ran = { judge: signer.address, owner: command.owner, nonce: command.nonce, intent: address, specSha256: specHash, deliveredSha256: sha256, announcement, route: routeOfPlan(plan) };
+  const route = { ...routeOfPlan(plan), ...(review === undefined ? {} : { review: { sha256: review.sha256, signers: review.signers } }) };
+  const ran = { judge: signer.address, owner: command.owner, nonce: command.nonce, intent: address, specSha256: specHash, deliveredSha256: sha256, announcement, route };
   const kept = passed || outcome === "fail" ? await keptReceipt(home, { ...ran, outcome: passed ? "pass" : "fail", cluster: await transport.genesisHash() }) : undefined;
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
@@ -486,6 +460,7 @@ async function checkAndSettle(
     ...(passed && committee === null && !command.yes ? { next: digest === undefined ? NOT_SENT : DEVICE_PREVIEW } : {}),
     ...(cleanup !== undefined ? { cleanup } : {}),
     ...(skipped.length === 0 ? {} : { skipped }),
+    ...(review === undefined ? {} : { review }),
   };
   const written = command.verdict;
   if (written !== undefined) {

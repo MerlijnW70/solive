@@ -51,6 +51,7 @@ import { confirmedRelease, DELIVERED_NEEDED, notAttestor } from "./delivery.js";
 import { ReceiptRefused } from "../../judge-receipt.js";
 import { type Authority, authorizeEscrow, boundApproval, OVERRIDE_INPUT, recorded, type Target } from "../../receipt-gate.js";
 import { execute } from "../../flows.js";
+import { gateAt } from "../../review-gate.js";
 import { attestTooLarge, fitted, packedRelease, type Parts, RELEASE_TAIL, SETUP_SEPARATE, STAND_IN, standIn } from "./release-size.js";
 
 export const RESULT_MEANS =
@@ -86,7 +87,8 @@ export const uncheckedOutput = optional(
 
 export async function walletAuthority(ctx: AgentContext, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined): Promise<Authority> {
   try {
-    return await authorizeEscrow(ctx.wallet?.files.home, ctx.transport, at, judges, override);
+    const gate = await gateAt(ctx.transport, ctx.fetch ?? fetch, at.intent, await walletOpeners(ctx), specReach(ctx));
+    return await authorizeEscrow(ctx.wallet?.files.home, ctx.transport, at, judges, override, "pass", gate);
   } catch (error) {
     throw error instanceof ReceiptRefused ? new AgentRefusal("NoJudgeReceipt", `${error.why}; ${WALLET_RECEIPT_NEXT}`) : error;
   }

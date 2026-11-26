@@ -2,7 +2,7 @@
 
 # MCP tools
 
-This page lists 58 tools: 32 wallet tools and 26 others. `intent-engine mcp` serves the 26 others over stdio. With `--wallet` it serves only the 37 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_worker`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_judge_work`, `solive_wallet_reject`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves all 58, the 32 wallet tools listed first.
+This page lists 59 tools: 33 wallet tools and 26 others. `intent-engine mcp` serves the 26 others over stdio. With `--wallet` it serves only the 37 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_worker`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_judge_work`, `solive_wallet_reject`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves all 59, the 33 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -397,6 +397,25 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `intent` | address | yes | the proof escrow's intent address |
 | `announcement` | address | no | the announcement whose work to judge, as solive_wallet_check_delivery lists it; default the earliest one this wallet opens |
 | `artifact` | string | no | the path of a local work file on this machine, judged instead of fetching the work; refused unless its sha256 is the one announced |
+
+## solive_wallet_review
+
+Served only with `--wallet --all-tools`.
+
+Signs, as a reviewer a spec's judge-review block names, a review binding the escrow, spec and work to pay or fail and a reason. The judge passes it to CLI judge --review. Pass an earlier review as review to co-sign. Sends nothing. Previews only; after the user says yes, call with send: true and its approval.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work reviewed, as solive_wallet_fetch_work shows it |
+| `outcome` | `pay`, `fail` | yes | pay when the work meets the spec, fail when it does not |
+| `reason` | string | yes | why, in a reason of 1 to 200 characters with no control or hidden character; it is part of what is signed |
+| `review` | string | no | an earlier review file's JSON of the same statement, to add this wallet's signature to it |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true signs the review; leave out to preview |
 
 ## solive_wallet_reject
 

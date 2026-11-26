@@ -45,6 +45,12 @@ export type ConfigChange = {
 export type Command =
   | { name: "pda"; owner: Address; nonce: bigint }
   | { name: "hash"; artifact: string }
+  | (Keyed & {
+      name: "review";
+      yes: boolean;
+      out: string;
+      statement: { add: string } | { owner: Address; nonce: bigint; work: { sha256: string } | { artifact: string }; outcome: "pay" | "fail"; reason: string };
+    })
   | (Remote & { name: "seal"; file: string; to: Address[]; out: string })
   | { name: "unseal"; file: string; keypair: string | undefined; out: string; encryptionKeypairs?: string[] | undefined }
   | (Remote & { name: "spec"; intent: Address; keypair: string | undefined; out: string | undefined })
@@ -133,6 +139,7 @@ export type Command =
       feePayer?: string | undefined;
       encryptionKeypairs?: string[] | undefined;
       confirmUrl?: string | undefined;
+      reviews?: string[] | undefined;
     })
   | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; announcement: Address; sha256: string; salt: string; result: bigint | undefined })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })

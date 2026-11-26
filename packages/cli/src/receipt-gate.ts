@@ -7,6 +7,7 @@ import { intentAt } from "@intent-engine/client/internal";
 import { FAIL_RECEIPT_KIND, RECEIPT_KIND, readReceipt, type ReceiptOutcome, ReceiptRefused, type Route, type StoreOptions, type Stored } from "./judge-receipt.js";
 import { sanitized } from "./untrusted-text.js";
 import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
+import { REVIEW_FENCE, type ReviewPins } from "./review-block.js";
 
 export const OVERRIDE_FLAG = "--without-receipt";
 export const OVERRIDE_INPUT = "without_receipt";
@@ -28,6 +29,27 @@ export const uncheckedWarning = (target: Target, reason: string, want: ReceiptOu
   `signed without a judge receipt: nothing checked that a judge run on this machine ${want === "pass" ? "passed" : "failed"} the work with sha256 ${target.deliveredSha256}, announced in ${target.announcement}, against the spec ${target.specSha256} of escrow ${target.intent}; the reason given: ${reason}`;
 
 const differs = (field: string, held: string, want: string): string => `the judge receipt records ${field} ${held}, not ${want}`;
+
+export const REVIEW_GATE_WORDS = "review gate";
+
+export type Gate = { pins: ReviewPins } | { problem: string } | undefined;
+
+const reviewersOf = (pins: ReviewPins): string => `${pins.threshold} of the reviewers ${pins.reviewers.join(", ")}`;
+
+export const reviewOverrideRefused = (pins: ReviewPins): string =>
+  `this escrow's spec has a ${REVIEW_FENCE} block that needs a signed review by ${reviewersOf(pins)}, so a signature without a receipt needs a reason that names the ${REVIEW_GATE_WORDS}, with those words`;
+
+export const reviewSkipped = (pins: ReviewPins): string => `the ${REVIEW_GATE_WORDS} was skipped: no signed review by ${reviewersOf(pins)} was checked`;
+
+export const unreviewedReceipt = (pins: ReviewPins): string =>
+  `the judge receipt records no signed review by ${reviewersOf(pins)}, which this escrow's spec needs in its ${REVIEW_FENCE} block`;
+
+export function reviewMismatch(route: Route, pins: ReviewPins): string | undefined {
+  const signers = new Set(route.review?.signers.filter((signer) => pins.reviewers.includes(signer)) ?? []);
+  return route.review === undefined || signers.size < pins.threshold ? unreviewedReceipt(pins) : undefined;
+}
+
+const gateProblem = (gate: Gate): string | undefined => (gate !== undefined && "problem" in gate ? `${gate.problem}, so nothing can be signed for this escrow` : undefined);
 
 function routeMismatch(route: Route, pins: Pins): string | undefined {
   if (route.sandbox === "viper" && route.engine === undefined) {
@@ -71,19 +93,30 @@ export function mismatchOf(receipt: Stored, target: Target, judges: readonly Add
   return routeMismatch(receipt.route, pins);
 }
 
-export async function authorize(home: string, target: Target, judges: readonly Address[], override: string | undefined, options: StoreOptions = {}, want: ReceiptOutcome = "pass"): Promise<Authority> {
+export async function authorize(home: string, target: Target, judges: readonly Address[], override: string | undefined, options: StoreOptions = {}, want: ReceiptOutcome = "pass", gate: Gate = undefined): Promise<Authority> {
+  const problem = want === "pass" ? gateProblem(gate) : undefined;
+  if (problem !== undefined) {
+    throw new ReceiptRefused("tampered", problem);
+  }
+  const pins = want === "pass" && gate !== undefined && "pins" in gate ? gate.pins : undefined;
   if (override !== undefined) {
     const reason = sanitized(override.trim(), REASON_LIMIT);
     if (reason === "") {
       throw new ReceiptRefused("missing", EMPTY_REASON);
     }
-    return { by: "override", unchecked: { reason, warning: uncheckedWarning(target, reason, want) } };
+    if (pins === undefined) {
+      return { by: "override", unchecked: { reason, warning: uncheckedWarning(target, reason, want) } };
+    }
+    if (!reason.toLowerCase().includes(REVIEW_GATE_WORDS)) {
+      throw new ReceiptRefused("missing", reviewOverrideRefused(pins));
+    }
+    return { by: "override", unchecked: { reason, warning: `${reviewSkipped(pins)}; ${uncheckedWarning(target, reason, want)}` } };
   }
   let worst: ReceiptRefused | undefined;
   for (const judge of judges) {
     try {
       const receipt = await readReceipt(home, { cluster: target.cluster, judge, intent: target.intent, announcement: target.announcement, deliveredSha256: target.deliveredSha256 }, options, want === "fail" ? FAIL_RECEIPT_KIND : RECEIPT_KIND);
-      const mismatch = mismatchOf(receipt, target, [judge], CURRENT_PINS, want);
+      const mismatch = mismatchOf(receipt, target, [judge], CURRENT_PINS, want) ?? (pins === undefined ? undefined : reviewMismatch(receipt.route, pins));
       if (mismatch === undefined) {
         return { by: "receipt", judge };
       }
@@ -115,12 +148,12 @@ export async function proofSpecOf(transport: Transport, intent: Address): Promis
   return params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0) ? undefined : getBase16Decoder().decode(params.specHash).toLowerCase();
 }
 
-export async function authorizeEscrow(home: string | undefined, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined, want: ReceiptOutcome = "pass"): Promise<Authority> {
+export async function authorizeEscrow(home: string | undefined, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined, want: ReceiptOutcome = "pass", gate: Gate = undefined): Promise<Authority> {
   const specSha256 = await proofSpecOf(transport, at.intent);
   if (home === undefined || specSha256 === undefined) {
     throw new ReceiptRefused("missing", `escrow ${at.intent} is not an open proof escrow this wallet judges, so no judge receipt can match it`);
   }
-  return authorize(home, { ...at, specSha256, cluster: await transport.genesisHash() }, judges, override, {}, want);
+  return authorize(home, { ...at, specSha256, cluster: await transport.genesisHash() }, judges, override, {}, want, gate);
 }
 
 export const CLI_RECEIPT_NEXT = `run judge on this work first, which saves a receipt when the check passes, or pass ${OVERRIDE_FLAG} <reason> to sign without one; nothing was signed or sent`;

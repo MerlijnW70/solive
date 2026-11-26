@@ -20,6 +20,7 @@ import { walletReclaim, walletRefute } from "./wallet/refute.js";
 import { walletClaimHeld } from "./wallet/held.js";
 import { walletWorker } from "./wallet/worker.js";
 import { walletReject } from "./wallet/reject.js";
+import { walletReview } from "./wallet/review.js";
 
 export {
   walletGuard,
@@ -111,6 +112,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletCheckDelivery,
   walletFetchWork,
   walletJudgeWork,
+  walletReview,
   walletReject,
   walletRefute,
   walletReclaim,

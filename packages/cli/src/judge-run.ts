@@ -3,6 +3,7 @@ import { type PinnedRun, readRunBlock, runBlockProblem } from "@intent-engine/cl
 import type { CheckFiles } from "./artifact.js";
 import { JudgeRefused } from "./judge-errors.js";
 import { casePinsRead } from "./viper.js";
+import { readReviewBlock, type ReviewPins } from "./review-block.js";
 
 export {
   BOTH_BLOCKS,
@@ -53,14 +54,21 @@ export const shownRun = (pinned: PinnedRun): ShownRun => ({
   check_sha256: pinned.checkSha256 ?? null,
 });
 
-export const runProblem = (spec: Uint8Array): string | undefined => runBlockProblem(spec) ?? casePinsRead(spec).problem;
+const reviewRead = (spec: Uint8Array) => readReviewBlock(spec);
 
-export type RunRead = { judge_run?: ShownRun; judge_run_refused?: string; node_memory?: string; node_cpus?: string; case_ms?: number };
+export const runProblem = (spec: Uint8Array): string | undefined => {
+  const review = reviewRead(spec);
+  return runBlockProblem(spec) ?? casePinsRead(spec).problem ?? ("problem" in review ? review.problem : undefined);
+};
+
+export type RunRead = { judge_run?: ShownRun; judge_run_refused?: string; node_memory?: string; node_cpus?: string; case_ms?: number; judge_review?: ReviewPins; judge_review_refused?: string };
 
 export function runRead(spec: Uint8Array): RunRead {
-  const problem = runProblem(spec);
+  const review = reviewRead(spec);
+  const reviewed = "problem" in review ? { judge_review_refused: review.problem } : review.pins === undefined ? {} : { judge_review: review.pins };
+  const problem = runBlockProblem(spec) ?? casePinsRead(spec).problem;
   if (problem !== undefined) {
-    return { judge_run_refused: problem };
+    return { judge_run_refused: problem, ...reviewed };
   }
   const pinned = pinnedRunOf(spec);
   const pins = casePinsRead(spec).pins ?? {};
@@ -69,5 +77,6 @@ export function runRead(spec: Uint8Array): RunRead {
     ...(pins.nodeMemory === undefined ? {} : { node_memory: pins.nodeMemory }),
     ...(pins.nodeCpus === undefined ? {} : { node_cpus: pins.nodeCpus }),
     ...(pins.caseMs === undefined ? {} : { case_ms: pins.caseMs }),
+    ...reviewed,
   };
 }

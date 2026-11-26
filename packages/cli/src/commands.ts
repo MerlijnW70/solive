@@ -49,6 +49,7 @@ import { floatCommand } from "./float-commands.js";
 import { closeLegacy } from "./legacy-commands.js";
 import { cliCancel } from "./cancel-steps.js";
 import { rejectCommand } from "./fair-commands.js";
+import { reviewCommand } from "./review-commands.js";
 import { migrate } from "./migrate-commands.js";
 import { newerVersion, updateOf } from "./update-notice.js";
 
@@ -254,6 +255,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "judge-digest":
       return judgeDigest(command, transport);
+    case "review":
+      return reviewCommand(command, runtime, transport);
     case "committee-create":
     case "committee-show":
     case "committee-vote":

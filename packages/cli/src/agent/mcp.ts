@@ -120,7 +120,7 @@ export const TOOL_GROUPS: readonly (readonly [string, readonly string[]])[] = [
     ["wallet_fetch_work", "wallet_judge_work", "wallet_attest", "wallet_reject", "wallet_attest_split", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release"].map(tool),
   ],
   ["Work", ["find_jobs", "get_spec", "wallet_claim", "get_claims", "wallet_deliver", "wallet_check_delivery", "wallet_refute", "wallet_reclaim"].map(tool)],
-  ["Trust", ["get_reputation", "get_profile", "wallet_profile", "wallet_feedback"].map(tool)],
+  ["Trust", ["get_reputation", "get_profile", "wallet_profile", "wallet_feedback", "wallet_review"].map(tool)],
   ["Read", ["get_config", "get_intent", "list_intents", "get_balances"].map(tool)],
   ["Unsigned", ["prepare_create", "prepare_cancel", "prepare_deliver", "check_delivery", "find_crank_work", "prepare_crank"].map(tool)],
   ["Relay", ["prepare_signed_intent", "preview_signed_intent", "submit_signed_intent"].map(tool)],

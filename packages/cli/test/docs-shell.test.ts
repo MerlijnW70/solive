@@ -41,7 +41,7 @@ describe("shell forms", () => {
       }
     }
     const named = new Set(shellSpecific.map((page) => page.split(/[\\/]/).pop()));
-    expect([...named].sort()).toEqual(["ai.md", "judge.md", "mandate.md", "private-jobs.md", "quickstart.md", "solver.md"]);
+    expect([...named].sort()).toEqual(["ai.md", "judge.md", "mandate.md", "private-jobs.md", "quickstart.md", "review.md", "solver.md"]);
     expect(missing).toEqual([]);
     expect(wrong).toEqual([]);
 

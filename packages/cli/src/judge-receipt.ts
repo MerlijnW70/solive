@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { type Address, isAddress } from "@solana/kit";
 import type { PinnedRun } from "./judge-run.js";
 import type { Plan } from "./run-plan.js";
+import type { ReviewSeal } from "./review.js";
 import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 import { settingsDir } from "./wallet.js";
 
@@ -28,7 +29,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const DECIMAL = /^(0|[1-9][0-9]{0,19})$/;
 const SANDBOXES = ["docker", "viper", "none"] as const;
 
-export type Route = { sandbox: (typeof SANDBOXES)[number]; command: string; image?: string; judgeRun?: PinnedRun; engine?: { wasmSha256: string; commit: string } };
+export type Route = { sandbox: (typeof SANDBOXES)[number]; command: string; image?: string; judgeRun?: PinnedRun; engine?: { wasmSha256: string; commit: string }; review?: ReviewSeal };
 
 export const routeOfPlan = (plan: Plan): Route => ({
   sandbox: plan.sandbox.kind,
@@ -206,6 +207,7 @@ const routeBody = (route: Route) => ({
   ...(route.image === undefined ? {} : { image: route.image }),
   ...(route.judgeRun === undefined ? {} : { judge_run: route.judgeRun }),
   ...(route.engine === undefined ? {} : { engine: { wasm_sha256: route.engine.wasmSha256, commit: route.engine.commit } }),
+  ...(route.review === undefined ? {} : { review: { sha256: route.review.sha256, signers: route.review.signers } }),
 });
 
 const bodyOf = (receipt: Stored, kind: ReceiptKind = RECEIPT_KIND) => ({
@@ -270,7 +272,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const sameKeys = (value: Record<string, unknown>, allowed: readonly string[], required: readonly string[]): boolean =>
   Object.keys(value).every((key) => allowed.includes(key)) && required.every((key) => key in value);
 
-const ROUTE_KEYS = ["sandbox", "command", "image", "judge_run", "engine"] as const;
+const ROUTE_KEYS = ["sandbox", "command", "image", "judge_run", "engine", "review"] as const;
 const RUN_KEYS = ["image", "run", "timeout", "checkSha256", "memory", "cpus"] as const;
 const BODY_KEYS = ["kind", "version", "outcome", "cluster", "judge", "owner", "nonce", "intent", "spec_sha256", "delivered_sha256", "announcement", "route"] as const;
 
@@ -282,17 +284,26 @@ function runOf(value: unknown): PinnedRun | undefined {
   return strings && typeof value["timeout"] === "number" && Number.isSafeInteger(value["timeout"]) ? (value as PinnedRun) : undefined;
 }
 
+function reviewOf(value: unknown): ReviewSeal | undefined {
+  if (!isObject(value) || !sameKeys(value, ["sha256", "signers"], ["sha256", "signers"]) || typeof value["sha256"] !== "string" || !SHA256.test(value["sha256"])) {
+    return undefined;
+  }
+  const signers = value["signers"];
+  return Array.isArray(signers) && signers.length > 0 && signers.every((one) => typeof one === "string" && isAddress(one)) ? { sha256: value["sha256"], signers: signers as Address[] } : undefined;
+}
+
 function routeOf(value: unknown): Route | undefined {
   if (!isObject(value) || !sameKeys(value, ROUTE_KEYS, ["sandbox", "command"])) {
     return undefined;
   }
-  const { sandbox, command, image, judge_run: judgeRun, engine } = value;
+  const { sandbox, command, image, judge_run: judgeRun, engine, review } = value;
   if (!SANDBOXES.includes(sandbox as Route["sandbox"]) || typeof command !== "string" || (image !== undefined && typeof image !== "string")) {
     return undefined;
   }
   const run = judgeRun === undefined ? undefined : runOf(judgeRun);
   const pins = isObject(engine) && sameKeys(engine, ["wasm_sha256", "commit"], ["wasm_sha256", "commit"]) && typeof engine["wasm_sha256"] === "string" && typeof engine["commit"] === "string" ? engine : undefined;
-  if ((judgeRun !== undefined && run === undefined) || (engine !== undefined && pins === undefined)) {
+  const seal = review === undefined ? undefined : reviewOf(review);
+  if ((judgeRun !== undefined && run === undefined) || (engine !== undefined && pins === undefined) || (review !== undefined && seal === undefined)) {
     return undefined;
   }
   return {
@@ -301,6 +312,7 @@ function routeOf(value: unknown): Route | undefined {
     ...(image === undefined ? {} : { image: image as string }),
     ...(run === undefined ? {} : { judgeRun: run }),
     ...(pins === undefined ? {} : { engine: { wasmSha256: pins["wasm_sha256"] as string, commit: pins["commit"] as string } }),
+    ...(seal === undefined ? {} : { review: seal }),
   };
 }
 

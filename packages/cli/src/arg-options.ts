@@ -187,6 +187,10 @@ export const OPTIONS = {
   committee: { type: "string" },
   vote: { type: "string", multiple: true },
   cosign: { type: "string", multiple: true },
+  review: { type: "string", multiple: true },
+  outcome: { type: "string" },
+  reason: { type: "string" },
+  add: { type: "string" },
   "without-receipt": { type: "string" },
   worker: { type: "string" },
   reader: { type: "string" },
@@ -214,10 +218,10 @@ export const OPTIONS = {
 
 export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as const;
 
-export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "cosign", "seed", "encryption-keypair"]);
+export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "cosign", "seed", "encryption-keypair", "review"]);
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "no-setup" | "sandbox-gpu" | "i-trust-this-work" | "no-publish-spec" | "allow-wrong-spec";
-export type Many = "max-fill" | "min-balance" | "vote" | "cosign" | "seed" | "encryption-keypair";
+export type Many = "max-fill" | "min-balance" | "vote" | "cosign" | "seed" | "encryption-keypair" | "review";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
   [K in Many]?: string[] | undefined;
@@ -251,6 +255,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   pda: ["owner", "nonce"],
   lookup: ["url", "signature", "valid-until"],
   hash: ["artifact"],
+  review: ["url", "keypair", "yes", "owner", "nonce", "artifact", "sha256", "outcome", "reason", "add", "out"],
   seal: ["url", "file", "to", "out"],
   unseal: ["file", "keypair", "encryption-keypair", "out"],
   spec: ["url", "intent", "keypair", "out"],
@@ -319,7 +324,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "claim-held": ["url", "priority-fee", "keypair", "yes", "announcement", "index", "to", "fee-payer"],
   "close-book": ["url", "priority-fee", "keypair", "yes", "intent"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
-  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu", "i-trust-this-work", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu", "i-trust-this-work", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair", "review"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [

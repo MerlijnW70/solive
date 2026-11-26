@@ -33,7 +33,8 @@ import type { Runtime } from "./runtime.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { TOKEN_NAMES } from "./tokens.js";
 import { ReceiptRefused } from "./judge-receipt.js";
-import { type Authority, authorizeEscrow, cliRefusal, recorded, type Target } from "./receipt-gate.js";
+import { type Authority, authorizeEscrow, cliRefusal, type Gate, recorded, type Target } from "./receipt-gate.js";
+import { gateAt } from "./review-gate.js";
 
 export const VOTE_KIND = "committee-vote";
 
@@ -92,9 +93,9 @@ async function invitedPayee(runtime: Runtime, transport: Transport, url: string,
   });
 }
 
-async function cliAuthority(runtime: Runtime, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined): Promise<Authority> {
+async function cliAuthority(runtime: Runtime, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined, gate: Gate): Promise<Authority> {
   try {
-    return await authorizeEscrow(runtime.home, transport, at, judges, override);
+    return await authorizeEscrow(runtime.home, transport, at, judges, override, "pass", gate);
   } catch (error) {
     throw error instanceof ReceiptRefused ? new FlowRefused(cliRefusal(error)) : error;
   }
@@ -274,7 +275,8 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
   const target: Ballot = { owner: command.owner, nonce: command.nonce, announcement: opening.announcement, sha256: opening.sha256, salt: opening.salt, result: command.result };
   const skipped = opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) };
   const at = { owner: command.owner, nonce: command.nonce, intent, deliveredSha256: opening.sha256, announcement: opening.announcement };
-  const authority = await cliAuthority(runtime, transport, at, [member.address], command.withoutReceipt);
+  const gate = await gateAt(transport, runtime.specFetch, intent, openers, { lookup: runtime.lookup, rpcUrl: command.url });
+  const authority = await cliAuthority(runtime, transport, at, [member.address], command.withoutReceipt, gate);
   if (command.split !== undefined) {
     const { recipients, weights } = command.split;
     const shares = recipients.map((wallet, i) => ({ wallet, weight: weights[i] ?? 0 }));

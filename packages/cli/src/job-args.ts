@@ -111,6 +111,7 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "judge", sub: s
         ...feePayerOf(values, keypair),
         ...encryptionKeypairOf(values),
         ...confirmUrlOf(values, remote.url),
+        ...(values.review === undefined ? {} : { reviews: values.review }),
       };
     }
   }

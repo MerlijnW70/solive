@@ -22,6 +22,7 @@ import { combine, engineOutcome, type Stop } from "../../verdict-model.js";
 import { sanitized } from "../../untrusted-text.js";
 import { RUN_FENCE } from "../../judge-run.js";
 import { fenceMentions } from "../../spec-blocks.js";
+import { REVIEW_FENCE } from "../../review-block.js";
 import { keptReceipt } from "../../judge-receipt.js";
 import { secondsLeft } from "../../monotonic.js";
 
@@ -36,6 +37,8 @@ export const VERDICTS = ["pass", "wrong", "not-primitive", "threw", "stopped", "
 export const NO_CASES = `this spec has no judge-cases block this tool can run; save the spec and the work and judge them with the CLI command judge --sandbox docker`;
 
 export const PINNED_RUN = "this spec pins its check in a judge-run block, a Docker check this tool does not run; save the spec and the work and judge them with the CLI command judge, which runs exactly the pinned check";
+
+export const REVIEW_GATED = "this spec has a judge-review block, so it pays only on a review its reviewers signed, which this tool does not take; save the spec, the work and the review files and judge them with the CLI command judge --review; nothing was run";
 
 export const DRAWS_CASES = "this spec draws its cases from a finalized block, which this tool does not wait for; judge it with the CLI command judge --sandbox viper";
 
@@ -99,6 +102,9 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
   }
   if (spec.text === undefined) {
     throw new AgentRefusal("NoJudgeCases", NO_CASES);
+  }
+  if (fenceMentions(spec.text, REVIEW_FENCE) > 0) {
+    throw new AgentRefusal("ReviewRequired", REVIEW_GATED);
   }
   if (fenceMentions(spec.text, RUN_FENCE) > 0) {
     throw new AgentRefusal("NoJudgeCases", PINNED_RUN);

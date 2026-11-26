@@ -49,6 +49,7 @@ import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
 import { announceArgsOf } from "./arg-announce.js";
+import { reviewArgsOf } from "./arg-review.js";
 import type { Command, Env } from "./command-types.js";
 import { boxOf, SANDBOX_NEEDS_DOCTOR } from "./sandbox.js";
 
@@ -211,6 +212,9 @@ function parseCommand(argv: readonly string[], env: Env): Command {
     case "hash":
       noSub(sub);
       return { name: "hash", artifact: required(values, "artifact") };
+    case "review":
+      noSub(sub);
+      return reviewArgsOf(remote, values);
     case "seal":
       noSub(sub);
       return { name: "seal", ...remote, file: required(values, "file"), to: addressList(required(values, "to"), "to"), out: required(values, "out") };

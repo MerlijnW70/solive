@@ -22,6 +22,7 @@ export default {
           { text: "Build in TypeScript", link: "/sdk" },
           { text: "Run a solver", link: "/solver" },
           { text: "Judge work", link: "/judge" },
+          { text: "Require a signed review", link: "/review" },
         ],
       },
       {

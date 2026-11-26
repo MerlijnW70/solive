@@ -10,6 +10,7 @@ import { holdSignals } from "./check-process.js";
 import { type Announced, DeliveryUnfit, DeliveryUnreadable, type Fetched, fetchDelivery } from "./delivery-fetch.js";
 import { infraSkipped, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, JudgeUnreadable, unreadableSkipped } from "./judge-errors.js";
 import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, pinnedSpec, type Verdict } from "./judge.js";
+import { reviewGate } from "./review.js";
 import { messageSigner } from "./ledger-keys.js";
 import { rpcFailed } from "./rpc-failure.js";
 import { nodeHostHeld } from "./node-judge.js";
@@ -136,6 +137,7 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
     await deviceJudgeReady(transport, signer.address, address).catch(historyRefused);
   }
   const specBytes = await pinnedSpec(command.spec, address, specHash);
+  reviewGate(specBytes, command.reviews);
   const plan = runPlan(specBytes, command);
   if (plan.pinned !== undefined) {
     await checkFilesOf(command.check, plan);
