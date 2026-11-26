@@ -8,12 +8,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
 import { ENV_KEYPAIR } from "../src/args.js";
 import { CHECK_OUTPUT_LIMIT, outputCut } from "../src/check-output.js";
-import { EXIT_RETRY, INFRA_NEXT, oomInfra } from "../src/judge-errors.js";
+import { EXIT_RETRY } from "../src/judge-errors.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { containerArgs, NO_ISOLATION, NONE_NEEDS_TRUST, SANDBOX_IMAGE, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, TRUST_ONLY_WITH_NONE } from "../src/sandbox.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { cli } from "./harness.js";
 import { boxed, job, type Job, judging, status } from "./judge-kit.js";
+import { chosenMemoryKills } from "./memory-kill-kit.js";
 
 const PLANTED_ENV = ["INTENT_ENGINE_KEYPAIR", "SOLANA_KEYPAIR", "JUDGE_SECRET", "AWS_SECRET_ACCESS_KEY"] as const;
 
@@ -142,7 +143,8 @@ describe("the judge keeps keys and the host out of the docker sandbox", () => {
     const verdict = join(j.dir, "verdict.json");
     const bomb = `node -e 'const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1))'`;
     const run = await cli(boxed(j, bomb, "--sandbox-memory", "256m", "--verdict", verdict, "--yes"), keys);
-    expect([run.code, run.out, run.err]).toEqual([EXIT_RETRY, "", `infrastructure error, not a verdict: ${oomInfra("256m")}; ${INFRA_NEXT}`]);
+    expect([run.code, run.out]).toEqual([EXIT_RETRY, ""]);
+    expect(chosenMemoryKills("256m")).toContain(run.err);
     expect(existsSync(verdict)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });

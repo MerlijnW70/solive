@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
 import { readArtifact } from "../src/artifact.js";
-import { EXIT_REFUSED, EXIT_RETRY, INFRA_NEXT, oomInfra, oomInfraUnpinned } from "../src/judge-errors.js";
+import { EXIT_REFUSED, EXIT_RETRY } from "../src/judge-errors.js";
 import { checkFilesSha256, RUN_OVERHEAD_SECONDS } from "../src/judge-run.js";
 import { checkDiffers, differs } from "../src/run-plan.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
@@ -14,6 +14,7 @@ import { SANDBOX_IMAGE, SANDBOX_MEMORY } from "../src/sandbox.js";
 import { oomPinned, ranPastPin } from "../src/verdict-model.js";
 import { cli } from "./harness.js";
 import { boxed, job, type Job, paidTo, status } from "./judge-kit.js";
+import { chosenMemoryKills } from "./memory-kill-kit.js";
 
 const DOCKER_UP = spawnSync("docker", ["version"], { stdio: "ignore" }).status === 0;
 const LIVE = { timeout: 180_000 } as const;
@@ -21,7 +22,6 @@ const CHECK = 'import { readFileSync } from "node:fs";\nprocess.exit(readFileSyn
 const RUN = "test -x check/check.mjs && node check/check.mjs";
 const BOMB = "node -e 'const kept = []; for (;;) kept.push(Buffer.alloc(16 << 20, 1))'";
 const specWith = (fields: object) => `# Answer\n\nanswer.txt holds 42.\n\n\`\`\`judge-run\n${JSON.stringify(fields)}\n\`\`\`\n`;
-const infra = (reason: string) => `infrastructure error, not a verdict: ${reason}; ${INFRA_NEXT}`;
 
 async function pinnedJob(fields: object, check = CHECK): Promise<{ j: Job; check: string; verdict: string }> {
   const probeCheck = join(await mkdtemp(join(tmpdir(), "pinned-check-")), "check.mjs");
@@ -85,7 +85,8 @@ describe("judge under a judge-run block, in a real Docker container", () => {
 
     const chosen = await pinnedJob({ image: SANDBOX_IMAGE, run: BOMB, timeout: 120 });
     const stalled = await cli(boxed(chosen.j, BOMB, "--check", chosen.check, "--verdict", chosen.verdict, "--yes"), { "judge.json": chosen.j.judge });
-    expect([stalled.code, stalled.out, stalled.err]).toEqual([EXIT_RETRY, "", infra(oomInfraUnpinned(SANDBOX_MEMORY))]);
+    expect([stalled.code, stalled.out]).toEqual([EXIT_RETRY, ""]);
+    expect(chosenMemoryKills(SANDBOX_MEMORY, true)).toContain(stalled.err);
     expect(existsSync(chosen.verdict)).toBe(false);
     expect(status(chosen.j.intent)).toBe(IntentStatus.Open);
   });
@@ -122,6 +123,7 @@ describe("judge under a judge-run block, in a real Docker container", () => {
     const failed = await cli(boxed(j, "sleep 2; exit 4", "--timeout", "30"), { "judge.json": j.judge });
     expect([failed.code, failed.json()["exitCode"]]).toEqual([EXIT_FAILED, 4]);
     const stalled = await cli(boxed(j, BOMB, "--sandbox-memory", "64m"), { "judge.json": j.judge });
-    expect([stalled.code, stalled.err]).toEqual([EXIT_RETRY, infra(oomInfra("64m"))]);
+    expect(stalled.code).toBe(EXIT_RETRY);
+    expect(chosenMemoryKills("64m")).toContain(stalled.err);
   });
 });
