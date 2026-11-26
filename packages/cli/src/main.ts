@@ -169,10 +169,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
   try {
     const settings = await withSettings(runtime, runtime.env, {
       supplied: flagged(argv),
-      warn: (line) => process.stderr.write(`${line}
-`),
-      need: takesSavedConfirm(argv[0], argv[1]) ? ["url", "keypair", SAVED_CONFIRM_URL] : ["url", "keypair"],
-      mend: argv[0] === "setup",
+      warn: (line) => process.stderr.write(`${line}\n`),
+      need: takesSavedConfirm(argv[0], argv[1]) || argv[0] === "setup" ? ["url", "keypair", SAVED_CONFIRM_URL] : ["url", "keypair"],
+      mend: argv[0] === "setup" && flagged(argv).includes("keypair"),
     });
     const command = parse(argv, settings);
     judging = command.name === "judge";

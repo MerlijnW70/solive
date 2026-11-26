@@ -16,6 +16,7 @@ import { isSdkError, LedgerError } from "@intent-engine/client";
 import { ledgerSigner, messageHash, openUsb } from "@intent-engine/client/node";
 import { type DeviceSigner, isLedgerPath, neverLanded, refusedUnsent } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
+import { SAVED_CONFIRM_URL } from "../../clusters.js";
 import { encryptionKeyFile } from "../../delivery-shared.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { rpcFailed } from "../../rpc-failure.js";
@@ -108,8 +109,8 @@ export async function testCluster(ctx: AgentContext): Promise<WalletAccess> {
   return wallet;
 }
 
-export async function savedKeypair(wallet: WalletAccess, mend = false): Promise<string | undefined> {
-  return (await withSettings(wallet.files, wallet.env, { need: ["keypair"], mend }))[ENV_KEYPAIR];
+export async function savedKeypair(wallet: WalletAccess, whole = false): Promise<string | undefined> {
+  return (await withSettings(wallet.files, wallet.env, { need: whole ? ["url", "keypair", SAVED_CONFIRM_URL] : ["keypair"] }))[ENV_KEYPAIR];
 }
 
 export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | undefined> {

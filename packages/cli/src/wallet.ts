@@ -22,7 +22,7 @@ export const AIRDROPS: readonly bigint[] = [AIRDROP, AIRDROP / 2n, AIRDROP / 4n,
 
 type Settings = { url: string; keypair: string; [SAVED_CONFIRM_URL]?: string };
 type SettingsField = "url" | "keypair" | typeof SAVED_CONFIRM_URL;
-type SettingsProblem = { field: SettingsField | undefined; message: string };
+type SettingsProblem = { field: SettingsField | undefined; why: string };
 type SettingsRead = { saved: Partial<Settings>; problems: SettingsProblem[] };
 
 export type Files = {
@@ -40,7 +40,7 @@ export const settingsPath = (home: string) => `${settingsDir(home)}/config.json`
 export const defaultWallet = (home: string) => `${settingsDir(home)}/wallet.json`;
 export const ledgerBook = (home: string, path: string) => `${settingsDir(home)}/${path.replace(/[^A-Za-z0-9]+/g, "-")}.sales.json`;
 
-const FIX_SETTINGS = "fix or remove it, or run setup, which keeps a copy of the old file";
+const FIX_SETTINGS = "fix the file, or run setup --keypair <file>, which keeps a copy of the old file";
 export const settingsBroken = (path: string, problem: string) => `${path} ${problem}; ${FIX_SETTINGS}`;
 const kindOf = (value: unknown) => (value === null ? "null" : Array.isArray(value) ? "a list" : typeof value);
 
@@ -145,10 +145,10 @@ async function readSettings(files: Files): Promise<SettingsRead> {
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { saved: {}, problems: [{ field: undefined, message: settingsBroken(path, "is not valid JSON") }] };
+    return { saved: {}, problems: [{ field: undefined, why: "is not valid JSON" }] };
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { saved: {}, problems: [{ field: undefined, message: settingsBroken(path, `holds ${kindOf(parsed)}, not a JSON object`) }] };
+    return { saved: {}, problems: [{ field: undefined, why: `holds ${kindOf(parsed)}, not a JSON object` }] };
   }
   const saved: Partial<Settings> = {};
   const problems: SettingsProblem[] = [];
@@ -157,7 +157,7 @@ async function readSettings(files: Files): Promise<SettingsRead> {
     if (typeof value === "string") {
       saved[field] = value;
     } else if (value !== undefined) {
-      problems.push({ field, message: settingsBroken(path, `has a "${field}" field that must be text, not ${kindOf(value)}`) });
+      problems.push({ field, why: `has a "${field}" field that must be text, not ${kindOf(value)}` });
     }
   }
   return { saved, problems };
@@ -175,16 +175,18 @@ export async function withSettings(files: Files, given: Env, use: SettingsUse = 
   const { saved, problems } = await readSettings(files);
   const have = (field: SettingsField) =>
     use.supplied?.includes(field) === true || (field === "url" && env[ENV_URL] !== undefined) || (field === "keypair" && env[ENV_KEYPAIR] !== undefined);
-  for (const problem of problems) {
-    if (use.mend === true) {
-      continue;
-    }
+  const path = settingsPath(files.home);
+  const ignored: string[] = [];
+  for (const problem of use.mend === true ? [] : problems) {
     const fields = problem.field === undefined ? (use.need ?? ["url", "keypair"]) : [problem.field];
     const blocked = fields.some((field) => (use.need === undefined || use.need.includes(field)) && !have(field));
     if (blocked) {
-      throw new UsageError(problem.message);
+      throw new UsageError(settingsBroken(path, problem.why));
     }
-    use.warn?.(`warning: ${problem.message}; this command does not read it`);
+    ignored.push(problem.why);
+  }
+  if (ignored.length > 0) {
+    use.warn?.(`warning: ${path} ${ignored.join(", and ")}; this command does not read it`);
   }
   return {
     ...env,
@@ -260,7 +262,7 @@ const savedConfirm = async (files: Files): Promise<string | undefined> =>
 
 const backupName = (path: string) => `${path}.${new Date().toISOString().replace(/[^0-9TZ]/g, "")}.bak`;
 
-async function backedUp(files: Files, path: string, next: string): Promise<string | undefined> {
+async function backedUp(files: Files, path: string, next: string): Promise<{ copy: string; unread: string[] } | undefined> {
   let old: string;
   try {
     old = await files.readText(path);
@@ -278,7 +280,7 @@ async function backedUp(files: Files, path: string, next: string): Promise<strin
   if ((await files.readText(copy)) !== old) {
     throw new Error(`could not copy ${path} to ${copy}; setup stopped before writing`);
   }
-  return copy;
+  return { copy, unread: (await readSettings(files)).problems.map((problem) => problem.why) };
 }
 
 export class SecondNodeRefused extends Error {}
@@ -316,6 +318,32 @@ export async function setup(
   instant?: InstantRun,
   apart: readonly Address[] = [],
 ): Promise<object> {
+  const kept: { backup?: string; written: boolean } = { written: false };
+  try {
+    return await setupAt(transport, files, url, keypair, keepSavedUrl, confirmUrl, confirmTransport, start, smallStart, faucet, instant, apart, kept);
+  } catch (error) {
+    if (kept.written && kept.backup !== undefined && error instanceof Error) {
+      error.message = `${error.message}; the previous settings file is kept at ${kept.backup}`;
+    }
+    throw error;
+  }
+}
+
+async function setupAt(
+  transport: Transport,
+  files: Files,
+  url: string,
+  keypair: string | undefined,
+  keepSavedUrl = false,
+  confirmUrl?: string,
+  confirmTransport?: Transport,
+  start = CLI_START,
+  smallStart = start,
+  faucet?: FaucetRun,
+  instant?: InstantRun,
+  apart: readonly Address[] = [],
+  kept: { backup?: string; written: boolean } = { written: false },
+): Promise<object> {
   if (confirmUrl !== undefined && confirmTransport !== undefined) {
     await checkedSecond(transport, confirmTransport, confirmUrl);
   }
@@ -328,8 +356,16 @@ export async function setup(
   const confirm = confirmUrl ?? (await savedConfirm(files));
   const settings: Settings = { url: saved ?? url, keypair: path, ...(confirm === undefined ? {} : { [SAVED_CONFIRM_URL]: confirm }) };
   const text = `${JSON.stringify(settings, null, 2)}\n`;
-  const backup = await backedUp(files, settingsPath(files.home), text);
+  const backed = await backedUp(files, settingsPath(files.home), text);
+  const backup = backed?.copy;
+  if (backup !== undefined) {
+    kept.backup = backup;
+  }
   await files.saveText(settingsPath(files.home), text, false);
+  kept.written = true;
+  if (backed !== undefined && backed.unread.length > 0) {
+    faucet?.note(`warning: ${settingsPath(files.home)} ${backed.unread.join(", and ")}; setup replaced it and kept the old text at ${backed.copy}`);
+  }
   let held = await lamportsOf(transport, signer.address);
   let refused = false;
   let got: bigint | undefined;
