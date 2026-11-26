@@ -98,6 +98,28 @@ describe("a broken settings file", () => {
     }
   });
 
+  it("folds every ignored problem into exactly one stderr line that names the file and each field", async () => {
+    const owner = await funded();
+    h.files.set(SETTINGS, JSON.stringify({ url: 1, keypair: 2, "confirm-url": 3 }));
+    const ran = await cli(["balance", "--keypair", "k.json", "--url", "devnet"], { "k.json": owner });
+    expect(ran.code).toBe(EXIT_OK);
+    const lines = warned.join("").split("\n").filter((line) => line !== "");
+    expect(lines).toHaveLength(1);
+    for (const field of ["url", "keypair", "confirm-url"]) {
+      expect(lines[0]).toContain(`"${field}" field that must be text`);
+    }
+    expect(lines[0]).toContain(SETTINGS);
+  });
+
+  it("words a file that is not JSON or not an object in one fixed way", async () => {
+    h.files.set(SETTINGS, "{ \"url\": \"devnet\", }");
+    await expect(withSettings(runtime({}), {})).rejects.toThrow(`${SETTINGS} is not valid JSON; fix the file`);
+    h.files.set(SETTINGS, "[]");
+    await expect(withSettings(runtime({}), {})).rejects.toThrow(`${SETTINGS} holds a list, not a JSON object; fix the file`);
+    h.files.set(SETTINGS, "7");
+    await expect(withSettings(runtime({}), {})).rejects.toThrow(`${SETTINGS} holds number, not a JSON object; fix the file`);
+  });
+
   it("reads the saved confirm-url only for the commands that take it", async () => {
     h.files.set(SETTINGS, JSON.stringify({ url: "devnet", keypair: "k.json", "confirm-url": 3 }));
     const need = ["url", "keypair", "confirm-url"] as const;
@@ -138,11 +160,44 @@ describe("setup keeps a backup", () => {
     expect([...h.files.keys()].filter((name) => name.endsWith(".bak"))).toEqual([]);
   });
 
-  it("repairs a broken file and keeps its text in the backup", async () => {
-    h.files.set(SETTINGS, "{ broken");
-    const made = (await cli(["setup"], {})).json();
-    expect(h.files.get(made["settings_backup"] as string)).toBe("{ broken");
-    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ keypair: WALLET });
+  it("refuses a file it cannot read, with or without a custom keypair on it, unless --keypair is passed", async () => {
+    const owner = await funded();
+    const trailing = '{ "url": "devnet", "keypair": "owner.json", }';
+    for (const text of [trailing, JSON.stringify({ url: "devnet", keypair: 5 }), JSON.stringify({ url: "devnet", keypair: "owner.json", "confirm-url": 9 })]) {
+      h.files.set(SETTINGS, text);
+      const ran = await cli(["setup"], { "owner.json": owner });
+      expect(ran.code).toBe(EXIT_USAGE);
+      expect(ran.err).toContain(SETTINGS);
+      expect(h.files.get(SETTINGS)).toBe(text);
+      expect([...h.files.keys()].filter((name) => name.endsWith(".bak"))).toEqual([]);
+    }
+  });
+
+  it("proceeds with --keypair, keeps the old text in a backup and names it on stderr", async () => {
+    const owner = await funded();
+    const trailing = '{ "url": "devnet", "keypair": "owner.json", }';
+    h.files.set(SETTINGS, trailing);
+    const made = (await cli(["setup", "--keypair", "owner.json"], { "owner.json": owner })).json();
+    const backup = made["settings_backup"] as string;
+    expect(h.files.get(backup)).toBe(trailing);
+    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ keypair: "owner.json" });
+    const lines = warned.join("").split("\n").filter((line) => line.startsWith("warning:"));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(backup);
+  });
+
+  it("names the backup in the error when setup fails after writing", async () => {
+    const owner = await funded();
+    const old = JSON.stringify({ url: "devnet", keypair: "owner.json", extra: 1 });
+    h.files.set(SETTINGS, old);
+    const live = runtime({ "owner.json": owner });
+    const real = live.transport("devnet");
+    const broken = { ...real, getAccount: async () => { throw new Error("node down"); } } as typeof real;
+    const failure = (await setup(broken, live, "devnet", "owner.json").then(() => new Error("no failure"), (error: unknown) => error)) as Error;
+    expect(failure.message).toContain("node down");
+    const backup = [...h.files.keys()].find((name) => name.endsWith(".bak")) ?? "";
+    expect(failure.message).toContain(backup);
+    expect(h.files.get(backup)).toBe(old);
   });
 
   it("leaves the file untouched when the copy cannot be read back", async () => {
@@ -193,12 +248,15 @@ describe("the wallet server", () => {
     expect(JSON.stringify(refused.value)).not.toContain("delete");
   });
 
-  it("repairs a wrongly typed keypair through setup and keeps a backup", async () => {
+  it("refuses setup on a file it cannot read, with the file named and the file untouched", async () => {
     const client = await served();
-    const bad = JSON.stringify({ url: "devnet", keypair: 5 });
-    h.files.set(SETTINGS, bad);
-    const made = await ok(client, "wallet_setup");
-    expect(h.files.get(made["settings_backup"] as string)).toBe(bad);
-    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ keypair: WALLET });
+    for (const text of ['{ "url": "devnet", "keypair": "owner.json", }', JSON.stringify({ url: "devnet", keypair: 5 }), JSON.stringify({ url: "devnet", keypair: "owner.json", "confirm-url": 9 })]) {
+      h.files.set(SETTINGS, text);
+      const refused = await call(client, "wallet_setup");
+      expect(refused.error).toBe(true);
+      expect(JSON.stringify(refused.value)).toContain(SETTINGS);
+      expect(h.files.get(SETTINGS)).toBe(text);
+      expect([...h.files.keys()].filter((name) => name.endsWith(".bak"))).toEqual([]);
+    }
   });
 });
