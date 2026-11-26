@@ -147,8 +147,8 @@ describe("the wallet server's split releases", () => {
     const { owner, intent, nonce, coauthors, recipients } = await splitEscrow(work, [10_000]);
     const made = await announced(intent, coauthors[0] as KeyPairSigner, work);
     const ask = { owner, nonce, recipients, delivered_sha256: work };
-    const one = await ok(client, "wallet_attest_split", { ...ask, without_receipt: "the first reason" });
-    const two = await ok(client, "wallet_attest_split", { ...ask, without_receipt: "the second reason" });
+    const one = await ok(client, "wallet_attest_split", { ...ask, without_receipt: "the first reason, past the review gate" });
+    const two = await ok(client, "wallet_attest_split", { ...ask, without_receipt: "the second reason, past the review gate" });
     expect(one["approval"]).toMatch(/^[0-9a-f]{16}$/);
     expect(two["approval"]).not.toBe(one["approval"]);
     await judgedBy([owner], { owner, nonce: BigInt(nonce), intent, specSha256: "4b".repeat(32), deliveredSha256: work, announcement: made.announcement });
@@ -157,11 +157,11 @@ describe("the wallet server's split releases", () => {
     expect([one["approval"], two["approval"]]).not.toContain(receipted["approval"]);
     const signed = await signedBy(recipients, coauthors, one["envelope"] as string);
     const send = { ...ask, recipients: signed, send: true };
-    expect((await call(client, "wallet_attest_split", { ...send, without_receipt: "the second reason", approval: one["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    expect((await call(client, "wallet_attest_split", { ...send, without_receipt: "the second reason, past the review gate", approval: one["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
     expect((await call(client, "wallet_attest_split", { ...send, approval: one["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
-    expect((await call(client, "wallet_attest_split", { ...send, without_receipt: "the first reason", approval: receipted["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    expect((await call(client, "wallet_attest_split", { ...send, without_receipt: "the first reason, past the review gate", approval: receipted["approval"] })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
     expect(await paidTo(coauthors[0]!.address)).toBeLessThan(1n);
-    expect(await ok(client, "wallet_attest_split", { ...send, without_receipt: "the first reason", approval: one["approval"] })).toMatchObject({ sent: true, unchecked: { reason: "the first reason" } });
+    expect(await ok(client, "wallet_attest_split", { ...send, without_receipt: "the first reason, past the review gate", approval: one["approval"] })).toMatchObject({ sent: true, unchecked: { reason: "the first reason, past the review gate" } });
   });
 
   it("refuses a split without a valid delivered_sha256, or before any announcement opens to it", async () => {

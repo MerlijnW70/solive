@@ -15,6 +15,7 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, funded, h, NOW, transport, world } from "./harness.js";
 import { EXIT_REFUSED } from "../src/judge-errors.js";
+import { servedSpec } from "./spec-served.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -58,6 +59,7 @@ async function panel(module: string) {
   } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
+  servedSpec(intent, SPEC);
   const made = await announced(intent, worker, sha(module), "https://" + "example.org/count.mjs");
   const judging = (member: string, verdict: string) => [
     "judge", "--keypair", member, "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper", "--verdict", verdict,

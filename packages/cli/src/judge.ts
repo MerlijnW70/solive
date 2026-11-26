@@ -31,6 +31,8 @@ import { type Cases, casesOf, casePinsRead, judgeViper, type Judged as CasesJudg
 import { keptReceipt, routeOfPlan } from "./judge-receipt.js";
 import { secondsLeft } from "./monotonic.js";
 import { type Reviewed, reviewedBy, reviewFailed, reviewGate, reviewsOf } from "./review.js";
+import { keepReviewRecord, type Recorded, type SpecRecord } from "./review-record.js";
+import { readReviewBlock } from "./review-block.js";
 import { escrowFor, pinnedSpec } from "./judge-escrow.js";
 import { openingAfterWait, waitedRefusal } from "./judge-wait.js";
 
@@ -159,6 +161,18 @@ async function resavedWork(transport: Transport, intent: Address, read: Artifact
   }
 }
 
+function recordedReview(spec: Uint8Array): Recorded {
+  const read = readReviewBlock(spec);
+  return "problem" in read ? { problem: read.problem } : (read.pins ?? null);
+}
+
+async function keptGate(home: string, record: SpecRecord): Promise<void> {
+  const unkept = await keepReviewRecord(home, record);
+  if (unkept !== undefined && record.review !== null && "reviewers" in record.review) {
+    throw new JudgeRefused(unkept);
+  }
+}
+
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport, stop?: AbortSignal, pinChecked = false): Promise<Verdict> {
   if (command.verdict !== undefined) {
     await writableVerdict(command.verdict);
@@ -186,6 +200,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
   }
   const specBytes = await pinnedSpec(command.spec, address, specHash);
+  await keptGate(runtime.home, { cluster: await transport.genesisHash(), intent: address, specSha256: specHash, review: recordedReview(specBytes) });
   const gate = reviewGate(specBytes, command.reviews);
   const plan = runPlan(specBytes, command);
   const viper = plan.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;

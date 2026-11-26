@@ -18,7 +18,7 @@ import { judgedBy } from "./receipt-kit.js";
 
 const SPEC = "5c".repeat(32);
 const WORK = "e7".repeat(32);
-const REASON = "the hirer checked this work by hand";
+const REASON = "the hirer checked this work by hand and skips the review gate";
 
 const statusOf = (intent: Address) => {
   const view = h.svm.getAccount(intent);

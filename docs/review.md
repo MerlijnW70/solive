@@ -46,7 +46,9 @@ A `pay` review lets the check decide. A `fail` review fails the work without run
 
 `solive_wallet_attest`, `solive_wallet_attest_split`, `committee vote` and `solive_wallet_committee_vote` read the spec from its url. When it has the block, they sign only with a receipt that records a review of `threshold` named reviewers. `--without-receipt` and `without_receipt` then need a reason that contains the words `review gate`, and the warning says the review gate was skipped.
 
-The spec is read from the url its owner published. When none is published or the wallet cannot open a sealed spec, the receipt gate cannot see the block, and the review rests on `judge` alone. `solive_wallet_judge_work` judges nothing for a spec with the block. `solive_get_spec` and `intent-engine spec` show the block as `judge_review`.
+The spec is read from the url its owner published. When none is published, the url now serves bytes with another sha256, a sealed spec cannot be opened or the read fails, the review gate is unknown. Then these tools sign nothing, not even with a receipt, unless `--without-receipt` or `without_receipt` gives a reason that contains the words `review gate`. The refusal says why the gate is unknown.
+
+`judge` on a spec with the block saves a record of the escrow, the spec's sha256 and the reviewers on this machine. Later signatures here keep the review gate for that escrow, even when its url changes or goes away. `solive_wallet_judge_work` judges nothing for a spec with the block. `solive_get_spec` and `intent-engine spec` show the block as `judge_review`.
 
 ## Next
 

@@ -8,6 +8,7 @@ import { FAIL_RECEIPT_KIND, RECEIPT_KIND, readReceipt, type ReceiptOutcome, Rece
 import { sanitized } from "./untrusted-text.js";
 import { VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 import { REVIEW_FENCE, type ReviewPins } from "./review-block.js";
+import { type RecordRead, reviewRecordOf } from "./review-record.js";
 
 export const OVERRIDE_FLAG = "--without-receipt";
 export const OVERRIDE_INPUT = "without_receipt";
@@ -32,7 +33,21 @@ const differs = (field: string, held: string, want: string): string => `the judg
 
 export const REVIEW_GATE_WORDS = "review gate";
 
-export type Gate = { pins: ReviewPins } | { problem: string } | undefined;
+export type Gate = { pins: ReviewPins } | { problem: string } | { unknown: string } | { ungated: true };
+
+export const UNGATED: Gate = Object.freeze({ ungated: true as const });
+
+export const NOT_READ = "no spec was read for this signature";
+
+export const unknownGate = (why: string): string => `the review gate is unknown because ${why}`;
+
+export const unknownOverrideRefused = (why: string): string =>
+  `${unknownGate(why)}, so this escrow may need a signed review and a signature without a receipt needs a reason that names the ${REVIEW_GATE_WORDS}, with those words`;
+
+export const unknownReceiptRefused = (why: string): string =>
+  `${unknownGate(why)}, so no judge receipt can show this escrow needs no signed review; sign only with a reason that names the ${REVIEW_GATE_WORDS}, with those words`;
+
+export const reviewUnchecked = (why: string): string => `the ${REVIEW_GATE_WORDS} was not checked: ${why}`;
 
 const reviewersOf = (pins: ReviewPins): string => `${pins.threshold} of the reviewers ${pins.reviewers.join(", ")}`;
 
@@ -49,7 +64,7 @@ export function reviewMismatch(route: Route, pins: ReviewPins): string | undefin
   return route.review === undefined || signers.size < pins.threshold ? unreviewedReceipt(pins) : undefined;
 }
 
-const gateProblem = (gate: Gate): string | undefined => (gate !== undefined && "problem" in gate ? `${gate.problem}, so nothing can be signed for this escrow` : undefined);
+const gateProblem = (gate: Gate): string | undefined => ("problem" in gate ? `${gate.problem}, so nothing can be signed for this escrow` : undefined);
 
 function routeMismatch(route: Route, pins: Pins): string | undefined {
   if (route.sandbox === "viper" && route.engine === undefined) {
@@ -93,24 +108,29 @@ export function mismatchOf(receipt: Stored, target: Target, judges: readonly Add
   return routeMismatch(receipt.route, pins);
 }
 
-export async function authorize(home: string, target: Target, judges: readonly Address[], override: string | undefined, options: StoreOptions = {}, want: ReceiptOutcome = "pass", gate: Gate = undefined): Promise<Authority> {
+export async function authorize(home: string, target: Target, judges: readonly Address[], override: string | undefined, options: StoreOptions = {}, want: ReceiptOutcome = "pass", gate: Gate = { unknown: NOT_READ }): Promise<Authority> {
   const problem = want === "pass" ? gateProblem(gate) : undefined;
   if (problem !== undefined) {
     throw new ReceiptRefused("tampered", problem);
   }
-  const pins = want === "pass" && gate !== undefined && "pins" in gate ? gate.pins : undefined;
+  const pins = want === "pass" && "pins" in gate ? gate.pins : undefined;
+  const unknown = want === "pass" && "unknown" in gate ? gate.unknown : undefined;
   if (override !== undefined) {
     const reason = sanitized(override.trim(), REASON_LIMIT);
     if (reason === "") {
       throw new ReceiptRefused("missing", EMPTY_REASON);
     }
-    if (pins === undefined) {
+    if (pins === undefined && unknown === undefined) {
       return { by: "override", unchecked: { reason, warning: uncheckedWarning(target, reason, want) } };
     }
     if (!reason.toLowerCase().includes(REVIEW_GATE_WORDS)) {
-      throw new ReceiptRefused("missing", reviewOverrideRefused(pins));
+      throw new ReceiptRefused("missing", pins === undefined ? unknownOverrideRefused(unknown ?? NOT_READ) : reviewOverrideRefused(pins));
     }
-    return { by: "override", unchecked: { reason, warning: `${reviewSkipped(pins)}; ${uncheckedWarning(target, reason, want)}` } };
+    const skipped = pins === undefined ? reviewUnchecked(unknown ?? NOT_READ) : reviewSkipped(pins);
+    return { by: "override", unchecked: { reason, warning: `${skipped}; ${uncheckedWarning(target, reason, want)}` } };
+  }
+  if (unknown !== undefined) {
+    throw new ReceiptRefused("missing", unknownReceiptRefused(unknown));
   }
   let worst: ReceiptRefused | undefined;
   for (const judge of judges) {
@@ -148,12 +168,24 @@ export async function proofSpecOf(transport: Transport, intent: Address): Promis
   return params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0) ? undefined : getBase16Decoder().decode(params.specHash).toLowerCase();
 }
 
-export async function authorizeEscrow(home: string | undefined, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined, want: ReceiptOutcome = "pass", gate: Gate = undefined): Promise<Authority> {
+export function withRecord(held: RecordRead, gate: Gate): Gate {
+  if (held === undefined || "problem" in gate) {
+    return gate;
+  }
+  if ("problem" in held || "pins" in held) {
+    return held;
+  }
+  return "unknown" in gate || ("unknown" in held && "ungated" in gate) ? held : gate;
+}
+
+export async function authorizeEscrow(home: string | undefined, transport: Transport, at: Omit<Target, "cluster" | "specSha256">, judges: readonly Address[], override: string | undefined, want: ReceiptOutcome = "pass", gate: Gate = { unknown: NOT_READ }): Promise<Authority> {
   const specSha256 = await proofSpecOf(transport, at.intent);
   if (home === undefined || specSha256 === undefined) {
     throw new ReceiptRefused("missing", `escrow ${at.intent} is not an open proof escrow this wallet judges, so no judge receipt can match it`);
   }
-  return authorize(home, { ...at, specSha256, cluster: await transport.genesisHash() }, judges, override, {}, want, gate);
+  const cluster = await transport.genesisHash();
+  const held = want === "pass" ? await reviewRecordOf(home, cluster, at.intent, specSha256) : undefined;
+  return authorize(home, { ...at, specSha256, cluster }, judges, override, {}, want, withRecord(held, gate));
 }
 
 export const CLI_RECEIPT_NEXT = `run judge on this work first, which saves a receipt when the check passes, or pass ${OVERRIDE_FLAG} <reason> to sign without one; nothing was signed or sent`;
