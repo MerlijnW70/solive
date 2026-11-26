@@ -72,8 +72,8 @@ export function toJson(value: unknown): unknown {
 }
 
 export class OutputMismatch extends Error {
-  constructor(action: string, cause: InvalidInput) {
-    super(`${action} produced output outside its schema: ${cause.message}`);
+  constructor(action: string, cause: InvalidInput, wrote: readonly string[] = []) {
+    super(`${action} produced output outside its schema: ${cause.message}${wrote.length === 0 ? "" : `; it had already ${wrote.join(", ")}, and that stays`}`);
     this.name = "OutputMismatch";
   }
 }
@@ -113,7 +113,7 @@ export async function invoke(action: AnyAction, ctx: AgentContext, raw: unknown)
     try {
       action.output.read(value, "");
     } catch (error) {
-      throw error instanceof InvalidInput ? new OutputMismatch(action.name, error) : error;
+      throw error instanceof InvalidInput ? new OutputMismatch(action.name, error, call.wrote) : error;
     }
     return { ok: true, value: value as Record<string, unknown> };
   } catch (error) {

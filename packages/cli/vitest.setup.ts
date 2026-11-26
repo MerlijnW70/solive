@@ -22,7 +22,7 @@ export const CPU_ALONE = ["test/host-judge-cpu.test.ts", "test/judge-node-band.t
 export default defineConfig({
   test: {
     globalSetup: [fileURLToPath(new URL("./test/run-root-setup.ts", import.meta.url))],
-    setupFiles: [fileURLToPath(import.meta.url), fileURLToPath(new URL("./test/faucet-setup.ts", import.meta.url))],
+    setupFiles: [fileURLToPath(import.meta.url), fileURLToPath(new URL("./test/faucet-setup.ts", import.meta.url)), fileURLToPath(new URL("./test/answer-setup.ts", import.meta.url))],
     maxWorkers: workers,
     execArgv: ["--expose-gc"],
     projects: [

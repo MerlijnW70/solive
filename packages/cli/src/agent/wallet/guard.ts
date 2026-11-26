@@ -432,6 +432,7 @@ export async function sent(
   }
   await notMainnet(ctx);
   const signature = await execute(ctx.transport, prepared, signer);
+  call.wrote.push(`sent transaction ${signature}`);
   return { ...shown, sent: true, signature, ...(next?.done === undefined ? {} : { next: next.done }) };
 }
 
@@ -467,6 +468,7 @@ async function sentOnDevice(
   }
   await notMainnet(ctx);
   const signature = await execute(ctx.transport, previewed.view, signer);
+  call.wrote.push(`sent transaction ${signature}`);
   return { ...previewed.shown, message_hash: messageHash(messageOf(previewed.view)), as_previewed: true, sent: true, signature, ...(next?.done === undefined ? {} : { next: next.done }) };
 }
 
