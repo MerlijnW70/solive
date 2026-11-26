@@ -78,6 +78,6 @@ Each announcement shows its `sha256` and `sha256_from` when that is known: `paid
 
 When the node does not show the announcement of the work yet, `judge` polls for it up to `--announce-wait` seconds, then refuses and names the wait. If this machine's own `deliver` announced the work and the node still does not list it, `judge` names that announcement and exits 75.
 
-For a worker key you hand out yourself, `job create --name <job> --spec SPEC.md --worker-key <name> --amount 0.01 --backup-dir <folder>` makes the key, backs it up and reads the backup back before funding it, and creates the escrow with you as judge; a second run with the same name sends nothing.
+For a worker key you hand out yourself, `job create --name <job> --spec SPEC.md --worker-key <name> --amount 0.01 --backup-dir <folder>` makes the key, backs it up and reads the backup back before funding it, and creates the escrow with you as judge; a second run with the same name sends nothing. From a clone of the repository, `scripts/devnet-job-e2e.sh` runs job create, deliver, judge and pay end to end on devnet.
 
 To do the same with your own spec, follow [Your first paid job](first-job.md).
