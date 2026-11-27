@@ -65,7 +65,7 @@ describe("the plain Node band on a real container", () => {
   it("gives work no way to raise its own displacement: each attack with a right answer past its budget fails on a quiet host", SLOW, async () => {
     for (const cpus of ["1", "0.1"]) {
       for (const [attack, source] of Object.entries(ATTACKS)) {
-        if (cpus === "0.1" && !attack.includes("thr")) continue;
+        if (cpus === "0.1" && !attack.includes("thr") && !attack.includes("sleeping")) continue;
         const { node, outcome } = await judged(source, cpus);
         expect([outcome.outcome, node.stop, node.failures.map((failure) => failure.verdict)], `${cpus} ${attack}`).toEqual(["fail", undefined, ["stopped"]]);
       }
