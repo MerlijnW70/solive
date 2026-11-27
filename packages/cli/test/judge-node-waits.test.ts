@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { NODE_SAMPLE_FEWEST_MS, NODE_SAMPLE_LOAD, NODE_SAMPLE_MS } from "../src/node-judge.js";
-import { sampleGapMs, sampleMeanMs, waitedAt, type Waits } from "../src/verdict-model.js";
+import { type Meter, metered, nextDue, sampleGapMs, sampleMeanMs } from "../src/verdict-model.js";
 
 const BUDGET = 1_000;
 const CPU = 700;
+const LATE = NODE_SAMPLE_MS;
+const START: Meter = { idleMs: 0, ioMs: 0, at: 0, state: "run", open: false };
+
+const sampler = (seen: (at: number) => string | null, woken: (due: number) => number, gapMs: number, until: number) => {
+  let meter = START;
+  let due = gapMs;
+  while (due < until) {
+    const at = woken(due);
+    const state = seen(at);
+    meter = metered(meter, due, at, state, gapMs, LATE);
+    due = nextDue(due, at, state !== null, gapMs, LATE);
+  }
+  return meter;
+};
 
 const seeded = (seed: number) => {
   let state = seed >>> 0;
@@ -63,29 +77,51 @@ const watching = (idleMs: number): Work => {
   };
 };
 
-const metered = (work: Work, random: () => number, meanMs: number) => {
-  let waits: Waits = { idleMs: 0, ioMs: 0 };
-  let before = "run";
-  let at = 0;
+const charge = (work: Work, random: () => number, meanMs: number) => {
+  let meter = START;
+  let due = 0;
   while (!work.done()) {
-    at += sampleGapMs(random(), meanMs);
-    const state = work.running(at) ? "run" : "idle";
-    work.seen(at);
-    waits = waitedAt(waits, state, before, meanMs, 0);
-    before = state;
+    due = nextDue(due, due, true, sampleGapMs(random(), meanMs), LATE);
+    const state = work.running(due) ? "run" : "idle";
+    work.seen(due);
+    meter = metered(meter, due, due, state, meanMs, LATE);
   }
-  return { charged: work.used() + waits.idleMs, truth: work.wall() };
+  return { charged: work.used() + meter.idleMs, truth: work.wall() };
 };
 
 describe("the plain Node launcher's count of the time a case waits by its own choice", () => {
-  it("credits an idle or disk sample the mean gap it was drawn with, and a skipped part only between two samples of the same kind", () => {
-    const none = { idleMs: 0, ioMs: 0 };
-    expect(waitedAt(none, "idle", "run", 4, 3)).toEqual({ idleMs: 4, ioMs: 0 });
-    expect(waitedAt(none, "idle", "idle", 4, 3)).toEqual({ idleMs: 7, ioMs: 0 });
-    expect(waitedAt(none, "disk", "run", 4, 3)).toEqual({ idleMs: 0, ioMs: 4 });
-    expect(waitedAt(none, "disk", "disk", 4, 3)).toEqual({ idleMs: 0, ioMs: 7 });
-    expect(waitedAt(none, "run", "idle", 4, 3)).toEqual(none);
-    expect(waitedAt({ idleMs: 10, ioMs: 20 }, "idle", "disk", 4, 3)).toEqual({ idleMs: 14, ioMs: 20 });
+  it("credits a sample on time its mean gap, and a skipped stretch, with no weight, only when the reads on both sides of it saw the same kind of waiting", () => {
+    const idle = { ...START, state: "idle" };
+    expect(metered(START, 10, 12, "idle", 4, LATE)).toEqual({ idleMs: 4, ioMs: 0, at: 12, state: "idle", open: false });
+    expect(metered(START, 10, 12, "disk", 4, LATE)).toEqual({ idleMs: 0, ioMs: 4, at: 12, state: "disk", open: false });
+    expect(metered(idle, 10, 12, "run", 4, LATE)).toEqual({ idleMs: 0, ioMs: 0, at: 12, state: "run", open: false });
+    expect(metered(START, 10, 10 + LATE, "idle", 4, LATE).idleMs).toBe(4);
+    expect(metered(START, 10, 10.5 + LATE, "idle", 4, LATE)).toEqual({ idleMs: 0, ioMs: 0, at: 10.5 + LATE, state: "idle", open: false });
+    expect(metered(idle, 10, 10.5 + LATE, "idle", 4, LATE)).toEqual({ idleMs: 10.5 + LATE, ioMs: 0, at: 10.5 + LATE, state: "idle", open: false });
+    expect(metered({ ...START, state: "disk" }, 10, 30, "idle", 4, LATE)).toEqual({ idleMs: 0, ioMs: 0, at: 30, state: "idle", open: false });
+    expect(metered({ ...START, state: "disk", at: 5 }, 10, 30, "disk", 4, LATE)).toEqual({ idleMs: 0, ioMs: 25, at: 30, state: "disk", open: false });
+    const failed = metered(idle, 10, 12, null, 4, LATE);
+    expect(failed).toEqual({ ...idle, open: true });
+    expect(metered(failed, 14, 15, "idle", 4, LATE)).toEqual({ idleMs: 15, ioMs: 0, at: 15, state: "idle", open: false });
+    expect(metered(failed, 14, 15, "run", 4, LATE).idleMs).toBe(0);
+  });
+
+  it("draws the next sample a gap after its drawn time when on time, and a gap after the read when late or failed", () => {
+    expect(nextDue(10, 12, true, 3, LATE)).toBe(13);
+    expect(nextDue(10, 10 + LATE, true, 3, LATE)).toBe(13);
+    expect(nextDue(10, 10.5 + LATE, true, 3, LATE)).toBe(13.5 + LATE);
+    expect(nextDue(10, 12, false, 3, LATE)).toBe(15);
+  });
+
+  it("counts a stall in the launcher by the reads before and after it, with no extra sample at the late wake", () => {
+    const stalled = (due: number) => (due >= 60 && due < 130 ? 130 : due);
+    expect(sampler((at) => (at < 100 ? "run" : "idle"), stalled, 4, 200)).toEqual({ idleMs: 68, ioMs: 0, at: 198, state: "idle", open: false });
+    expect(sampler(() => "idle", stalled, 4, 200)).toEqual({ idleMs: 198, ioMs: 0, at: 198, state: "idle", open: false });
+    expect(sampler((at) => (at < 100 ? "idle" : "run"), stalled, 4, 200).idleMs).toBe(56);
+    expect(sampler((at) => (at < 100 ? "disk" : "idle"), stalled, 4, 200)).toEqual({ idleMs: 68, ioMs: 56, at: 198, state: "idle", open: false });
+    const missing = (at: number) => (at >= 60 && at < 130 ? null : "idle");
+    expect(sampler(missing, (due) => due, 4, 200)).toEqual({ idleMs: 196, ioMs: 0, at: 196, state: "idle", open: false });
+    expect(sampler((at) => (at >= 60 && at < 130 ? null : at < 100 ? "run" : "idle"), (due) => due, 4, 200).idleMs).toBe(64);
   });
 
   it("draws memoryless gaps around the mean, so a case that saw the last sample learns nothing of the next", () => {
@@ -110,7 +146,7 @@ describe("the plain Node launcher's count of the time a case waits by its own ch
   it("charges work that runs 1 ms and waits 1 ms past its budget, at every mean gap, though most gaps hold both", () => {
     for (const meanMs of [NODE_SAMPLE_FEWEST_MS, 2.5, NODE_SAMPLE_MS]) {
       const random = seeded(meanMs * 1_000);
-      const runs = Array.from({ length: 300 }, () => metered(alternating(random, 1, 1.08), random, meanMs));
+      const runs = Array.from({ length: 300 }, () => charge(alternating(random, 1, 1.08), random, meanMs));
       const truth = runs.reduce((sum, run) => sum + run.truth, 0) / runs.length;
       const charged = runs.reduce((sum, run) => sum + run.charged, 0) / runs.length;
       expect(Math.min(...runs.map((run) => run.charged)), `${meanMs}`).toBeGreaterThan(BUDGET);
@@ -121,7 +157,7 @@ describe("the plain Node launcher's count of the time a case waits by its own ch
   it("charges work that runs only until it sees a sample and then waits, as much as it truly used", () => {
     for (const idleMs of [0.5, 2, 5]) {
       const random = seeded(idleMs * 100);
-      const runs = Array.from({ length: 300 }, () => metered(watching(idleMs), random, 2.5));
+      const runs = Array.from({ length: 300 }, () => charge(watching(idleMs), random, 2.5));
       const truth = runs.reduce((sum, run) => sum + run.truth, 0) / runs.length;
       const charged = runs.reduce((sum, run) => sum + run.charged, 0) / runs.length;
       expect(Math.abs(charged - truth) / truth, `${idleMs}`).toBeLessThan(0.02);

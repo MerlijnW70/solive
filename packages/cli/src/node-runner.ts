@@ -20,13 +20,15 @@ export const UNPREPARED = "unprepared";
 
 export const SAME_UID = "the plain Node launcher runs under the uid its cases would run under, so a case could reach it, and no case was run";
 
-import { displacedShare, sampleGapMs, sampleMeanMs, waitedAt } from "./verdict-model.js";
+import { NODE_SAMPLER, NODE_TASKS } from "./node-sampler.js";
+import { displacedShare, metered } from "./verdict-model.js";
 
 export const NODE_LAUNCHER = `
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
+import { Worker } from "node:worker_threads";
 const caseFile = process.argv[2];
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 let config;
@@ -46,7 +48,6 @@ const others = () => {
   const list = pids();
   return list === null ? null : list.length;
 };
-const running = () => readdirSync("/proc").filter((pid) => /^\\d{1,10}$/.test(pid) && pid !== "1" && pid !== String(process.pid));
 const usage = () => {
   try {
     const found = /^usage_usec (\\d{1,20})$/m.exec(readFileSync(config.cpuStat, "utf8"));
@@ -59,31 +60,7 @@ const own = () => {
   const at = process.cpuUsage();
   return at.user + at.system;
 };
-const taskState = () => {
-  let list;
-  try {
-    list = running();
-  } catch {
-    return null;
-  }
-  let disk = false;
-  for (const pid of list) {
-    let tasks = [];
-    try {
-      tasks = readdirSync("/proc/" + pid + "/task");
-    } catch {}
-    for (const task of tasks) {
-      try {
-        const stat = readFileSync("/proc/" + pid + "/task/" + task + "/stat", "utf8");
-        const state = stat.charAt(stat.lastIndexOf(")") + 2);
-        if (state === "R") return "run";
-        if (state === "D") disk = true;
-      } catch {}
-    }
-  }
-  return disk ? "disk" : "idle";
-};
-const voluntary = (pid) => {
+${NODE_TASKS}const voluntary = (pid) => {
   try {
     const found = /^voluntary_ctxt_switches:\\s+(\\d{1,20})$/m.exec(readFileSync("/proc/" + pid + "/task/" + pid + "/status", "utf8"));
     return found === null ? null : Number(found[1]);
@@ -130,11 +107,44 @@ const release = async (before) => {
   }
 };
 const displacedShare = ${displacedShare};
-const waitedAt = ${waitedAt};
-const sampleGapMs = ${sampleGapMs};
-const sampleMeanMs = ${sampleMeanMs};
-const pause = new Int32Array(new SharedArrayBuffer(4));
-const unit = () => (randomBytes(6).readUIntBE(0, 6) + 1) / 2 ** 48;
+const metered = ${metered};
+const now = () => performance.timeOrigin + performance.now();
+const gate = new Int32Array(new SharedArrayBuffer(4));
+const plan = new Float64Array(new SharedArrayBuffer(16));
+let sampler = null;
+let round = 0;
+let onSample = null;
+let onLost = null;
+const arm = (start, share) => {
+  plan[0] = start;
+  plan[1] = share;
+  round += 1;
+  Atomics.store(gate, 0, round);
+  Atomics.notify(gate, 0);
+  return round;
+};
+const disarm = () => {
+  onSample = null;
+  onLost = null;
+  Atomics.store(gate, 0, 0);
+  Atomics.notify(gate, 0);
+};
+const startSampler = async () => {
+  sampler = new Worker(${JSON.stringify(NODE_SAMPLER)}, { eval: true, workerData: { gate, plan, config } });
+  sampler.on("message", (sample) => onSample?.(sample));
+  sampler.once("exit", () => {
+    sampler = null;
+    onLost?.();
+  });
+  sampler.on("error", () => undefined);
+  sampler.unref();
+  try {
+    await once(sampler, "online");
+    return true;
+  } catch {
+    return false;
+  }
+};
 const charged = (clock) => clock.usedMs + clock.idleMs + Math.max(0, clock.ioMs - config.caseMs);
 const settle = async () => {
   const until = performance.now() + config.settleMs;
@@ -198,96 +208,70 @@ const runCase = (token, json, zeros) =>
     let lastAt = 0;
     let throttledFrom = null;
     let from = null;
-    let last = 0;
-    let lastState = "run";
+    let meter = null;
     let unread = false;
     let base = null;
-    let sampler;
-    let share = 1;
-    let weight = 0;
-    let due = 0;
-    let dropped = 0;
     let exited = false;
-    const halt = () => {
-      clearTimeout(sampler);
-      clearImmediate(sampler);
-    };
     const stopBy = (cause) => {
       if (exited) return;
       clock.stoppedBy ??= cause;
       timedOut = true;
       child.kill("SIGKILL");
     };
-    const read = (final) => {
-      if (from === null) return false;
-      const now = performance.now();
-      const state = final ? lastState : taskState();
+    const closing = () => {
+      if (from === null) return;
       const cpu = usage();
-      const at = performance.now();
-      if (state === null || cpu === null) {
-        if (final) unread = true;
-        else if (now - last >= config.missMs) clock.metered = false;
-        return false;
-      }
-      if (!final) Object.assign(clock, waitedAt(clock, state, lastState, weight, dropped));
-      last = now;
-      lastState = state;
-      clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
-      if (final) return true;
-      const vol = voluntary(child.pid);
-      if (vol !== null && vol === lastVol && lastRaw !== null) {
-        bound ??= { spanMs: 0, usedMs: 0 };
-        bound.spanMs += at - lastAt;
-        bound.usedMs += (cpu - lastRaw) / 1000;
-      } else if (bound !== null) {
-        stretches.push(bound);
-        bound = null;
-      }
-      lastVol = vol;
-      lastRaw = cpu;
-      lastAt = at;
-      return true;
+      if (cpu === null) unread = true;
+      else clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
     };
-    const plan = (costMs) => {
-      weight = sampleMeanMs(costMs, share, config.sampleLoad, config.sampleFewestMs, config.sampleMs);
-      return due + sampleGapMs(unit(), weight);
+    const sampled = (mine) => ([seen, due, at, found, weight]) => {
+      if (seen !== mine || from === null || exited) return;
+      const cpu = usage();
+      const state = cpu === null ? null : found;
+      if (state === null && at - meter.at >= config.missMs) clock.metered = false;
+      meter = metered(meter, due, at, state, weight, config.sampleMs);
+      clock.idleMs = meter.idleMs;
+      clock.ioMs = meter.ioMs;
+      if (state !== null) {
+        clock.usedMs = Math.max(clock.usedMs, (cpu - from.cpu - (own() - from.own)) / 1000);
+        const read = performance.now();
+        const vol = voluntary(child.pid);
+        if (vol !== null && vol === lastVol && lastRaw !== null) {
+          bound ??= { spanMs: 0, usedMs: 0 };
+          bound.spanMs += read - lastAt;
+          bound.usedMs += (cpu - lastRaw) / 1000;
+        } else if (bound !== null) {
+          stretches.push(bound);
+          bound = null;
+        }
+        lastVol = vol;
+        lastRaw = cpu;
+        lastAt = read;
+      }
+      if (charged(clock) >= config.killMs || !clock.metered) stopBy("budget");
     };
-    const tick = () => {
-      if (exited) return;
-      const left = due - performance.now();
-      if (left > 3) {
-        sampler = setTimeout(tick, Math.floor(left) - 2);
-        return;
-      }
-      if (left > 0) Atomics.wait(pause, 0, 0, left);
-      const began = performance.now();
-      const fresh = read(false);
-      if (charged(clock) >= config.killMs || !clock.metered) {
-        stopBy("budget");
-        return;
-      }
-      if (fresh) dropped = 0;
-      const next = plan(performance.now() - began);
-      const behind = performance.now() - next;
-      if (!fresh) dropped += next - due;
-      if (behind > config.sampleMs) dropped += behind;
-      due = behind > config.sampleMs ? next + behind : next;
-      sampler = setImmediate(tick);
+    const lost = () => {
+      clock.metered = false;
+      stopBy("budget");
     };
     child.stdio[${STARTED_FD}].once("data", () => {
       const cpu = usage();
       if (cpu === null) clock.metered = false;
       lastAt = performance.now();
       from = { cpu: cpu ?? 0, own: own() };
-      last = performance.now();
       lastVol = voluntary(child.pid);
       lastRaw = cpu;
       throttledFrom = throttles();
-      share = quota()?.cap ?? 1;
-      due = performance.now();
-      due = plan(0);
       clock.started = true;
-      if (!exited) tick();
+      if (exited) return;
+      if (sampler === null) {
+        lost();
+        return;
+      }
+      const start = now();
+      meter = { idleMs: 0, ioMs: 0, at: start, state: "run", open: false };
+      onSample = sampled(arm(start, quota()?.cap ?? 1));
+      onLost = lost;
     });
     child.stdio[${STARTED_FD}].on("error", () => undefined);
     const timer = setTimeout(() => stopBy("backstop"), config.backstopMs);
@@ -304,8 +288,8 @@ const runCase = (token, json, zeros) =>
     child.stdin.end(JSON.stringify({ token, json, zeros, path: config.path, uid: config.uid, gid: config.gid }));
     child.once("exit", (exitCode, endedBy) => {
       clearTimeout(timer);
-      halt();
-      read(true);
+      disarm();
+      closing();
       exited = true;
       base = from;
       from = null;
@@ -315,7 +299,7 @@ const runCase = (token, json, zeros) =>
     });
     child.once("error", (error) => {
       clearTimeout(timer);
-      halt();
+      disarm();
       sweep();
       done({ token, out: "", code: null, signal: null, timedOut, over, failed: String(error && error.message ? error.message : error) });
     });
@@ -362,7 +346,7 @@ for await (const line of lines) {
       process.stdout.write((lock === "unlocked" ? ${JSON.stringify(NODE_UNLOCKED)} : ${JSON.stringify(NODE_UNPROBED)}) + "\\n");
       process.exit(0);
     }
-    if (usage() === null || taskState() === null) {
+    if (usage() === null || taskState() === null || !(await startSampler())) {
       process.stdout.write(${JSON.stringify(NODE_UNMETERED)} + "\\n");
       process.exit(0);
     }

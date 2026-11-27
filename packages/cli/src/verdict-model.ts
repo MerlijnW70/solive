@@ -56,11 +56,17 @@ export function displacedShare(stretches: readonly Stretch[], cap: number, margi
   return room > 0 ? Math.min(1, lost / room) : 0;
 }
 
-export type Waits = { idleMs: number; ioMs: number };
+export type Meter = { idleMs: number; ioMs: number; at: number; state: string; open: boolean };
 
-export function waitedAt(waits: Waits, state: string, before: string, weightMs: number, skippedMs: number): Waits {
-  const credit = (kind: string) => (state === kind ? weightMs + (before === kind ? skippedMs : 0) : 0);
-  return { idleMs: waits.idleMs + credit("idle"), ioMs: waits.ioMs + credit("disk") };
+export function metered(meter: Meter, due: number, at: number, state: string | null, weightMs: number, lateMs: number): Meter {
+  if (state === null) return { ...meter, open: true };
+  const skipped = meter.open || at - due > lateMs;
+  const credit = (kind: string) => (state !== kind ? 0 : !skipped ? weightMs : meter.state === kind ? at - meter.at : 0);
+  return { idleMs: meter.idleMs + credit("idle"), ioMs: meter.ioMs + credit("disk"), at, state, open: false };
+}
+
+export function nextDue(due: number, at: number, read: boolean, gapMs: number, lateMs: number): number {
+  return read && at - due <= lateMs ? due + gapMs : at + gapMs;
 }
 
 export function sampleGapMs(unit: number, meanMs: number): number {
